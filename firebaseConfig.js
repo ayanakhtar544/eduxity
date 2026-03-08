@@ -1,6 +1,7 @@
 // File: firebaseConfig.js
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
+import { getStorage } from "firebase/storage";
 import { getFirestore } from 'firebase/firestore';
 
 // Ab keys seedha .env file se aayengi, code mein nahi dikhengi
@@ -16,3 +17,4 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const storage = getStorage(app);

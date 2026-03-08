@@ -2,23 +2,24 @@
   "expo": {
     "name": "Eduxity",
     "slug": "eduxity-app",
+    "scheme": "eduxity",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/images/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.abushahma.eduxity"
+      "backgroundColor": "#2563EB",
+      "plugins": [
+        "expo-router",
+        "@react-native-google-signin/google-signin"
+      ]
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png"
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png"
       },
       "package": "com.abushahma.eduxity"
     },
@@ -26,11 +27,12 @@
       "eas": {
         "projectId": "e56f89af-152f-4f0f-896c-02dd37f0c5a4"
       }
-    }
-  },
-  "extra": {
-    "eas": {
-      "projectId": "YOUR_PROJECT_ID_WILL_APPEAR_HERE"
+    },
+    "plugins": [
+      "@react-native-google-signin/google-signin"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.abushahma.eduxity"
     }
   }
 }

@@ -1,311 +1,327 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, TextInput, TouchableOpacity, 
-  KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, 
-  ActivityIndicator, Alert, Dimensions, Image
+  SafeAreaView, StatusBar,ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../firebaseConfig';
-import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, getDoc } from 'firebase/firestore';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithCredential, signInWithPopup } from 'firebase/auth';
-import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import Animated, { FadeInDown, FadeInUp, Layout, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
-
-const { width } = Dimensions.get('window');
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  updateProfile 
+} from 'firebase/auth';
+import { doc, getDoc, collection, query, where, getDocs, setDoc } from 'firebase/firestore';
+import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 
 export default function AuthScreen() {
   const router = useRouter();
   
-  // --- STATES ---
-  const [isLogin, setIsLogin] = useState(true); 
+  // 🧠 Toggle State: true = Login, false = Sign Up
+  const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  
+
+  // 📝 Form States
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
-  // 🔥 GOOGLE CONFIGURATION
+  // 🔍 Real-Time Username Checker States
+  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
+
+  // 🚀 SMART DEBOUNCE LOGIC FOR USERNAME CHECK
   useEffect(() => {
-    GoogleSignin.configure({
-      webClientId: '533697646387-g625mqqnmaj2mmm0ve7f6tvqaistm1kq.apps.googleusercontent.com', 
-    });
-  }, []);
-
-  // --- ANIMATIONS ---
-  const buttonScale = useSharedValue(1);
-  const animatedBtnStyle = useAnimatedStyle(() => ({ transform: [{ scale: buttonScale.value }] }));
-
-  // ==========================================
-  // 📧 EMAIL AUTH LOGIC (WITH UNIQUE USERNAME)
-  // ==========================================
-const handleAuth = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert("Hold on!", "Email aur password daalna zaroori hai bhai.");
+    // Agar login page par hai, ya username 3 character se chota hai toh check mat karo
+    if (isLogin || username.trim().length < 3) {
+      setUsernameStatus('idle');
       return;
     }
-    if (!isLogin && (!name.trim() || !username.trim())) {
-      Alert.alert("Hold on!", "Bhai Name aur Username dono bharna padega Signup ke liye.");
+
+    // Username mein space ya special characters na hon
+    const usernameRegex = /^[a-zA-Z0-9_]+$/;
+    if (!usernameRegex.test(username.trim())) {
+      setUsernameStatus('taken'); // Invalid format ko taken maankar red dikhayenge
       return;
+    }
+
+    // Har key press par Firebase hit na ho, isliye 500ms ka Debounce lagaya hai
+    const delayDebounceFn = setTimeout(async () => {
+      setUsernameStatus('checking');
+      try {
+        const q = query(
+          collection(db, 'users'), 
+          where('username', '==', username.toLowerCase().trim())
+        );
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot.empty) {
+          setUsernameStatus('available');
+        } else {
+          setUsernameStatus('taken');
+        }
+      } catch (error) {
+        console.log("Username check error:", error);
+        setUsernameStatus('idle');
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [username, isLogin]);
+
+
+  // 🚀 CORE AUTHENTICATION ENGINE
+  const handleAuth = async () => {
+    if (!email || !password) {
+      Alert.alert("Missing Fields", "Email aur Password dono daalna zaroori hai bhai!");
+      return;
+    }
+    
+    // Naye account ke validations
+    if (!isLogin) {
+      if (!name) {
+        Alert.alert("Missing Name", "Apna naam toh batao!");
+        return;
+      }
+      if (usernameStatus !== 'available') {
+        Alert.alert("Invalid Username", "Kripya ek unique aur valid username chunein.");
+        return;
+      }
     }
 
     setLoading(true);
+
     try {
       if (isLogin) {
-        // 🟢 LOGIN (Purana User -> Seedha Home par)
-        await signInWithEmailAndPassword(auth, email.trim(), password);
-        router.replace('/(tabs)/'); 
+        // 🔐 1. LOGIN SYSTEM
+        const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+        
+        // Check if user has completed Onboarding
+        const userDocRef = doc(db, 'users', userCredential.user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        
+        if (userDocSnap.exists() && userDocSnap.data().onboardingCompleted) {
+          router.replace('/(tabs)'); 
+        } else {
+          router.replace('/onboarding'); 
+        }
+
       } else {
-        // 🔵 SIGNUP (Naya User -> Onboarding par)
-        const usernameLower = username.trim().toLowerCase();
-        const usernameRegex = /^[a-zA-Z0-9_]{3,15}$/;
-        if (!usernameRegex.test(usernameLower)) {
-          Alert.alert("Invalid Username", "Username 3-15 characters, no spaces.");
-          setLoading(false); return;
-        }
-
-        const q = query(collection(db, 'users'), where('username', '==', usernameLower));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          Alert.alert("Username Taken", "Bhai ye username pehle se kisi ne le liya hai.");
-          setLoading(false); return;
-        }
-
+        // 🚀 2. SIGN UP (CREATE ACCOUNT) SYSTEM
         const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-        const user = userCredential.user;
-        await updateProfile(user, { displayName: name.trim() });
         
-        await setDoc(doc(db, 'users', user.uid), {
-          uid: user.uid, name: name.trim(), username: usernameLower,
-          email: email.trim().toLowerCase(),
-          profilePic: `https://ui-avatars.com/api/?name=${name.trim()}&background=random`,
-          xp: 0, level: 1, joinedGroups: [], createdAt: serverTimestamp(),
+        // Update Name in Firebase Auth
+        await updateProfile(userCredential.user, {
+          displayName: name.trim()
         });
-        
-        // 🚨 NAYA USER -> ONBOARDING
+
+        // 💾 Pehli baar Database mein User ko initialize karo with UNIQUE USERNAME
+        await setDoc(doc(db, 'users', userCredential.user.uid), {
+          uid: userCredential.user.uid,
+          email: email.trim(),
+          displayName: name.trim(),
+          username: username.toLowerCase().trim(), // Handle hamesha lowercase mein
+          onboardingCompleted: false
+        });
+
+        // Naya account ban gaya, ab aage ki deep detail ke liye Onboarding pe bhejo
         router.replace('/onboarding');
       }
     } catch (error: any) {
-      Alert.alert("Error", error.message); 
+      console.log("Auth Error:", error);
+      let errorMsg = "Kuch galat ho gaya. Dobara try karo.";
+      if (error.code === 'auth/email-already-in-use') errorMsg = "Ye email pehle se registered hai. Niche se Login select karo!";
+      if (error.code === 'auth/wrong-password') errorMsg = "Password galat hai bhai.";
+      if (error.code === 'auth/user-not-found') errorMsg = "Account nahi mila. Pehle Create Account karo.";
+      Alert.alert("Authentication Failed", errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
-  // ==========================================
-  // 🌐 SOCIAL AUTH LOGIC
-  // ==========================================
-const handleGoogleLogin = async () => {
-    setLoading(true);
-    try {
-      let user;
-      if (Platform.OS === 'web') {
-        const provider = new GoogleAuthProvider();
-        const userCredential = await signInWithPopup(auth, provider);
-        user = userCredential.user;
-      } else {
-        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-        await GoogleSignin.signIn();
-        const { idToken } = await GoogleSignin.getTokens();
-        if (!idToken) throw new Error("No ID token found");
-        const credential = GoogleAuthProvider.credential(idToken);
-        const userCredential = await signInWithCredential(auth, credential);
-        user = userCredential.user;
-      }
-
-      // 🕵️‍♂️ CHECK KARO KYA USER PEHLE SE HAI
-      const docRef = doc(db, 'users', user.uid);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        // 🟢 PURANA USER -> Seedha Home
-        router.replace('/(tabs)/');
-      } else {
-        // 🔵 NAYA USER -> Data save karo aur Onboarding par bhejo
-        const defaultUsername = user.email ? user.email.split('@')[0] : `user${Math.floor(Math.random() * 10000)}`;
-        await setDoc(docRef, {
-          uid: user.uid, name: user.displayName || "Student", username: defaultUsername,
-          email: user.email, profilePic: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`,
-          xp: 0, level: 1, createdAt: serverTimestamp(),
-        });
-        router.replace('/onboarding');
-      }
-    } catch (error: any) {
-      console.log("Google Login Error:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleFacebookLogin = () => {
-    Alert.alert("Coming Soon", "Facebook login abhi setup karna baaki hai!");
-  };
-
-  // ==========================================
-  // 🎨 MAIN RENDER
-  // ==========================================
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
+      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
       
-      {/* Background Decoration */}
-      <View style={styles.bgCircle1} />
-      <View style={styles.bgCircle2} />
-
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'center' }}>
-        
-        {/* Header */}
-        <Animated.View entering={FadeInDown.duration(800).springify()} style={styles.headerContainer}>
-          <View style={styles.logoBox}>
-            <Ionicons name="rocket" size={40} color="#2563eb" />
-          </View>
-          <Text style={styles.title}>Eduxity</Text>
-          <Text style={styles.subtitle}>{isLogin ? 'Welcome back, Scholar!' : 'Join the smartest community!'}</Text>
-        </Animated.View>
-
-        {/* Form Card */}
-        <Animated.View layout={Layout.springify()} style={styles.formCard}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex1}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           
-          {/* Dynamic Signup Fields */}
-          {!isLogin && (
-            <Animated.View entering={FadeInUp.duration(400)}>
-              {/* Name Input */}
-              <View style={styles.inputWrapper}>
-                <Ionicons name="person-outline" size={20} color="#64748b" style={styles.inputIcon} />
-                <TextInput 
-                  style={styles.input} placeholder="Full Name (e.g. Abushahma)" placeholderTextColor="#94a3b8"
-                  value={name} onChangeText={setName}
-                />
-              </View>
-              {/* Username Input */}
-              <View style={styles.inputWrapper}>
-                <Ionicons name="at-outline" size={20} color="#64748b" style={styles.inputIcon} />
-                <TextInput 
-                  style={styles.input} placeholder="Unique Username" placeholderTextColor="#94a3b8"
-                  value={username} onChangeText={setUsername} autoCapitalize="none"
-                />
-              </View>
-            </Animated.View>
-          )}
+          {/* 🎓 LOGO & HEADER */}
+          <Animated.View entering={FadeInDown.delay(100)} style={styles.headerContainer}>
+            <View style={styles.logoBox}>
+              <Ionicons name="school" size={40} color="#fff" />
+            </View>
+            <Text style={styles.appName}>Eduxity</Text>
+            <Text style={styles.tagline}>
+              {isLogin ? 'Welcome back! Ready to learn?' : 'Join the fastest growing student network!'}
+            </Text>
+          </Animated.View>
 
-          {/* Email Input */}
-          <View style={styles.inputWrapper}>
-            <Ionicons name="mail-outline" size={20} color="#64748b" style={styles.inputIcon} />
-            <TextInput 
-              style={styles.input} placeholder="Email Address" placeholderTextColor="#94a3b8"
-              value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address"
-            />
-          </View>
+          {/* 📝 FORM CONTAINER */}
+          <Animated.View entering={FadeInUp.delay(200)} style={styles.formContainer}>
+            
+            {/* 🆕 Create Account Fields */}
+            {!isLogin && (
+              <>
+                {/* Full Name Input */}
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="person-outline" size={20} color="#64748b" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Full Name (e.g. Ayaan Akhtar)"
+                    placeholderTextColor="#94a3b8"
+                    value={name}
+                    onChangeText={setName}
+                  />
+                </View>
 
-          {/* Password Input */}
-          <View style={styles.inputWrapper}>
-            <Ionicons name="lock-closed-outline" size={20} color="#64748b" style={styles.inputIcon} />
-            <TextInput 
-              style={styles.input} placeholder="Password" placeholderTextColor="#94a3b8"
-              value={password} onChangeText={setPassword} secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-              <Ionicons name={showPassword ? "eye-outline" : "eye-off-outline"} size={20} color="#94a3b8" />
-            </TouchableOpacity>
-          </View>
+                {/* Unique Username Input */}
+                <View style={[
+                  styles.inputWrapper, 
+                  usernameStatus === 'available' && { borderColor: '#10b981', borderWidth: 1.5 },
+                  usernameStatus === 'taken' && { borderColor: '#ef4444', borderWidth: 1.5 }
+                ]}>
+                  <Text style={styles.atSymbol}>@</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="unique_username"
+                    placeholderTextColor="#94a3b8"
+                    value={username}
+                    onChangeText={setUsername}
+                    autoCapitalize="none"
+                    maxLength={15}
+                  />
+                  
+                  {/* Real-time Indicator Icons */}
+                  {usernameStatus === 'checking' && <ActivityIndicator size="small" color="#2563eb" />}
+                  {usernameStatus === 'available' && <Ionicons name="checkmark-circle" size={20} color="#10b981" />}
+                  {usernameStatus === 'taken' && <Ionicons name="close-circle" size={20} color="#ef4444" />}
+                </View>
+                
+                {/* Username helper text */}
+                {!isLogin && username.length > 0 && (
+                  <Text style={[
+                    styles.usernameHelper, 
+                    usernameStatus === 'taken' ? { color: '#ef4444' } : { color: '#10b981' }
+                  ]}>
+                    {usernameStatus === 'checking' && 'Checking availability...'}
+                    {usernameStatus === 'available' && 'Awesome! Username is available.'}
+                    {usernameStatus === 'taken' && 'Oops! Taken or invalid format.'}
+                  </Text>
+                )}
+              </>
+            )}
 
-          {/* Forgot Password */}
-          {isLogin && (
-            <TouchableOpacity style={styles.forgotPassBtn}>
-              <Text style={styles.forgotPassText}>Forgot Password?</Text>
-            </TouchableOpacity>
-          )}
+            {/* Email Input */}
+            <View style={styles.inputWrapper}>
+              <Ionicons name="mail-outline" size={20} color="#64748b" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Email Address"
+                placeholderTextColor="#94a3b8"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
 
-          {/* Main Action Button */}
-          <Animated.View style={[animatedBtnStyle, { marginTop: 10 }]}>
+            {/* Password Input */}
+            <View style={styles.inputWrapper}>
+              <Ionicons name="lock-closed-outline" size={20} color="#64748b" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor="#94a3b8"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            {isLogin && (
+              <TouchableOpacity style={styles.forgotBtn}>
+                <Text style={styles.forgotText}>Forgot Password?</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* 🚀 MAIN ACTION BUTTON */}
             <TouchableOpacity 
-              activeOpacity={0.8}
-              onPressIn={() => buttonScale.value = withSpring(0.95)}
-              onPressOut={() => buttonScale.value = withSpring(1)}
+              style={[
+                styles.actionBtn, 
+                (!isLogin && usernameStatus !== 'available') && { opacity: 0.6 } // Disable look if username is not available
+              ]} 
               onPress={handleAuth}
-              disabled={loading}
+              disabled={loading || (!isLogin && usernameStatus !== 'available')}
             >
-              <LinearGradient colors={['#3b82f6', '#1d4ed8']} style={styles.mainBtn}>
-                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.mainBtnText}>{isLogin ? 'Sign In' : 'Create Account'}</Text>}
-              </LinearGradient>
+              {loading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.actionBtnText}>
+                  {isLogin ? 'Login' : 'Create Account'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+          </Animated.View>
+
+          {/* 🔄 TOGGLE BUTTON */}
+          <Animated.View entering={FadeInDown.delay(300)} style={styles.footer}>
+            <Text style={styles.footerText}>
+              {isLogin ? "Don't have an account? " : "Already have an account? "}
+            </Text>
+            <TouchableOpacity onPress={() => {
+              setIsLogin(!isLogin);
+              setName(''); 
+              setUsername(''); // Reset handle
+              setUsernameStatus('idle');
+            }}>
+              <Text style={styles.toggleText}>
+                {isLogin ? 'Sign Up' : 'Login'}
+              </Text>
             </TouchableOpacity>
           </Animated.View>
-        </Animated.View>
 
-        {/* Social Auth Section */}
-        <Animated.View entering={FadeInUp.delay(300).duration(600)} style={styles.socialSection}>
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <View style={styles.socialButtonsRow}>
-            <TouchableOpacity style={styles.socialBtn} onPress={handleGoogleLogin}>
-              <Image source={{uri: 'https://cdn-icons-png.flaticon.com/512/3002/3002219.png'}} style={styles.socialIcon} />
-              <Text style={styles.socialBtnText}>Google</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.socialBtn} onPress={handleFacebookLogin}>
-              <FontAwesome5 name="facebook" size={22} color="#1877F2" style={{marginRight: 8}} />
-              <Text style={styles.socialBtnText}>Facebook</Text>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
-
-        {/* Toggle Login/Signup */}
-        <TouchableOpacity style={styles.toggleBtn} onPress={() => setIsLogin(!isLogin)}>
-          <Text style={styles.toggleText}>
-            {isLogin ? "Don't have an account? " : "Already have an account? "}
-            <Text style={styles.toggleTextBold}>{isLogin ? 'Sign Up' : 'Log In'}</Text>
-          </Text>
-        </TouchableOpacity>
-
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 // ==========================================
-// 🎨 ULTRA MODERN STYLES
+// 🎨 PREMIUM AUTHENTICATION STYLES
 // ==========================================
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' }, 
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  flex1: { flex: 1 },
+  scrollContent: { flexGrow: 1, paddingHorizontal: 25, justifyContent: 'center', paddingVertical: 40 },
   
-  bgCircle1: { position: 'absolute', top: -100, right: -50, width: 300, height: 300, borderRadius: 150, backgroundColor: 'rgba(59, 130, 246, 0.15)' },
-  bgCircle2: { position: 'absolute', bottom: -50, left: -100, width: 250, height: 250, borderRadius: 125, backgroundColor: 'rgba(16, 185, 129, 0.1)' },
+  headerContainer: { alignItems: 'center', marginBottom: 35 },
+  logoBox: { width: 80, height: 80, backgroundColor: '#2563eb', borderRadius: 25, justifyContent: 'center', alignItems: 'center', shadowColor: '#2563eb', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 15, marginBottom: 15 },
+  appName: { fontSize: 32, fontWeight: '900', color: '#0f172a', marginBottom: 5 },
+  tagline: { fontSize: 15, color: '#64748b', textAlign: 'center', fontWeight: '500' },
 
-  headerContainer: { alignItems: 'center', marginTop: 40, marginBottom: 30 },
-  logoBox: { width: 80, height: 80, backgroundColor: '#ffffff', borderRadius: 24, justifyContent: 'center', alignItems: 'center', shadowColor: '#3b82f6', shadowOffset: {width: 0, height: 10}, shadowOpacity: 0.3, shadowRadius: 20, elevation: 10, marginBottom: 15, transform: [{rotate: '-5deg'}] },
-  title: { fontSize: 32, fontWeight: '900', color: '#ffffff', letterSpacing: 1 },
-  subtitle: { fontSize: 14, color: '#94a3b8', marginTop: 5, fontWeight: '500' },
-
-  formCard: { backgroundColor: '#ffffff', marginHorizontal: 20, borderRadius: 30, padding: 25, shadowColor: '#000', shadowOffset: {width: 0, height: 20}, shadowOpacity: 0.15, shadowRadius: 30, elevation: 15 },
+  formContainer: { backgroundColor: '#fff', padding: 25, borderRadius: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.05, shadowRadius: 20, elevation: 5 },
   
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 16, height: 55, paddingHorizontal: 15, marginBottom: 15, borderWidth: 1, borderColor: '#e2e8f0' },
-  inputIcon: { marginRight: 12 },
-  input: { flex: 1, fontSize: 16, color: '#1e293b', fontWeight: '500' },
-  
-  forgotPassBtn: { alignSelf: 'flex-end', marginBottom: 15 },
-  forgotPassText: { color: '#3b82f6', fontWeight: '700', fontSize: 13 },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 15, marginBottom: 15, paddingHorizontal: 15, height: 55, borderWidth: 1, borderColor: '#e2e8f0' },
+  inputIcon: { marginRight: 10 },
+  atSymbol: { fontSize: 18, fontWeight: '700', color: '#64748b', marginRight: 5 },
+  input: { flex: 1, fontSize: 16, color: '#0f172a' },
+  eyeIcon: { padding: 5 },
 
-  mainBtn: { height: 55, borderRadius: 16, justifyContent: 'center', alignItems: 'center', shadowColor: '#2563eb', shadowOffset: {width: 0, height: 8}, shadowOpacity: 0.3, shadowRadius: 15 },
-  mainBtnText: { color: '#ffffff', fontSize: 18, fontWeight: '800', letterSpacing: 0.5 },
+  usernameHelper: { fontSize: 12, fontWeight: '600', marginTop: -10, marginBottom: 15, marginLeft: 5 },
 
-  socialSection: { marginTop: 30, paddingHorizontal: 20 },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.1)' },
-  dividerText: { color: '#64748b', paddingHorizontal: 10, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
-  
-  socialButtonsRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  socialBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', height: 50, borderRadius: 14, marginHorizontal: 5, shadowColor: '#000', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.1, shadowRadius: 5, elevation: 3 },
-  socialIcon: { width: 20, height: 20, marginRight: 8 },
-  socialBtnText: { fontSize: 15, fontWeight: '700', color: '#1e293b' },
+  forgotBtn: { alignSelf: 'flex-end', marginBottom: 20 },
+  forgotText: { color: '#2563eb', fontSize: 13, fontWeight: '700' },
 
-  toggleBtn: { marginTop: 30, alignItems: 'center' },
-  toggleText: { color: '#94a3b8', fontSize: 14, fontWeight: '500' },
-  toggleTextBold: { color: '#ffffff', fontWeight: '800' },
+  actionBtn: { backgroundColor: '#2563eb', borderRadius: 15, height: 55, justifyContent: 'center', alignItems: 'center', shadowColor: '#2563eb', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 10, marginTop: 10 },
+  actionBtnText: { color: '#fff', fontSize: 18, fontWeight: '800' },
+
+  footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 30 },
+  footerText: { fontSize: 15, color: '#64748b', fontWeight: '500' },
+  toggleText: { fontSize: 15, color: '#2563eb', fontWeight: '800' }
 });

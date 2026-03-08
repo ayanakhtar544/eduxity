@@ -1,357 +1,314 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, Image, TouchableOpacity, 
-  SafeAreaView, StatusBar, ScrollView, TextInput, ActivityIndicator, Dimensions, Platform, Alert, Modal, FlatList
+  SafeAreaView, StatusBar, ActivityIndicator, FlatList, Alert, Dimensions 
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { auth, db } from '../../firebaseConfig';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as ImagePicker from 'expo-image-picker';
+import { signOut } from 'firebase/auth';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import Animated, { FadeInDown, SlideInRight } from 'react-native-reanimated';
 
-import Animated, { FadeInDown } from 'react-native-reanimated';
-
-const { width, height } = Dimensions.get('window');
-
-// 🗄️ STRUCTURED DATA DICTIONARIES (For Dropdowns)
-const GENDER_OPTIONS = ['Male', 'Female', 'Other', 'Prefer not to say'];
-const CLASS_OPTIONS = ['Class 9', 'Class 10', 'Class 11', 'Class 12', 'Dropper', 'College 1st Year', 'College 2nd Year', 'College 3rd Year', 'College 4th Year'];
-const EXAM_OPTIONS = ['JEE Main', 'JEE Advanced', 'NEET', 'CUET', 'NDA', 'UPSC', 'Board Exams', 'None'];
-const BOARD_OPTIONS = ['CBSE', 'ICSE', 'State Board', 'Other'];
-
-// 🗺️ State to City Mapping (Tum isme aur add kar sakte ho baad mein)
-const INDIA_LOCATIONS: any = {
-  "Jharkhand": ["Dhanbad", "Ranchi", "Bokaro", "Jamshedpur", "Hazaribagh"],
-  "Maharashtra": ["Mumbai", "Pune", "Nagpur", "Nashik"],
-  "Delhi": ["New Delhi", "Dwarka", "Rohini"],
-  "Uttar Pradesh": ["Lucknow", "Kanpur", "Noida", "Varanasi", "Prayagraj"],
-  "Bihar": ["Patna", "Gaya", "Bhagalpur", "Muzaffarpur"],
-  "Rajasthan": ["Kota", "Jaipur", "Jodhpur", "Udaipur"]
-};
-const STATE_OPTIONS = Object.keys(INDIA_LOCATIONS);
+const { width } = Dimensions.get('window');
+const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 
 export default function ProfileScreen() {
-  const [activeUid, setActiveUid] = useState<string | null>(null);
+  const router = useRouter();
+  const user = auth.currentUser;
+
+  // 🧠 State Management
+  const [activeTab, setActiveTab] = useState<'posts' | 'saved'>('posts');
+  const [myPosts, setMyPosts] = useState<any[]>([]);
+  const [savedPosts, setSavedPosts] = useState<any[]>([]);
+  const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
 
-  // 📝 EXTENDED Profile Data State
-  const [profile, setProfile] = useState({
-    name: '', bio: '', about: '', profilePic: '', coverPic: '', level: 1, xp: 0,
-    dob: '', gender: '', state: '', city: '', school: '', board: '', classYear: '', targetExam: '', instagram: '', github: ''
-  });
-
-  // 🎛️ Modals & Pickers State
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [activeDropdown, setActiveDropdown] = useState<{ visible: boolean, type: string, data: string[], title: string }>({
-    visible: false, type: '', data: [], title: ''
-  });
-
-  // ==========================================
-  // 🔒 1. AUTH & FETCH PROFILE
-  // ==========================================
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) { setActiveUid(user.uid); await fetchProfile(user.uid, user); } 
-      else { setActiveUid(null); setLoading(false); }
-    });
-    return () => unsubscribe();
-  }, []);
+    if (user) {
+      fetchUserData();
+      fetchProfileData();
+    }
+  }, [user]);
 
-  const fetchProfile = async (uid: string, userAuth: any) => {
+  // 🚀 FETCH ASLI DATA
+  const fetchUserData = async () => {
+    if (!user) return;
     try {
-      const userDoc = await getDoc(doc(db, 'users', uid));
-      if (userDoc.exists()) setProfile((prev) => ({ ...prev, ...userDoc.data() }));
-      else setProfile((prev) => ({ ...prev, name: userAuth.displayName || 'New Scholar', profilePic: userAuth.photoURL || `https://ui-avatars.com/api/?name=${userAuth.displayName || 'User'}&background=random` }));
-    } catch (error) { console.log("Error fetching profile:", error); } 
-    finally { setLoading(false); }
-  };
-
-  // ==========================================
-  // 📸 2. HELPERS (Images, Dates, Dropdowns)
-  // ==========================================
-  const pickImage = async (type: 'profile' | 'cover') => {
-    let result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: type === 'cover' ? [16, 9] : [1, 1], quality: 0.5 });
-    if (!result.canceled) {
-      if (type === 'cover') setProfile({ ...profile, coverPic: result.assets[0].uri });
-      else setProfile({ ...profile, profilePic: result.assets[0].uri });
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+      if (userDocSnap.exists()) {
+        setUserData(userDocSnap.data());
+      }
+    } catch (error) {
+      console.log("Error fetching user data:", error);
     }
   };
 
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
-    if (selectedDate) {
-      // Format to DD/MM/YYYY
-      const formattedDate = `${selectedDate.getDate().toString().padStart(2, '0')}/${(selectedDate.getMonth() + 1).toString().padStart(2, '0')}/${selectedDate.getFullYear()}`;
-      setProfile({ ...profile, dob: formattedDate });
-    }
-  };
-
-  const openDropdown = (type: string, data: string[], title: string) => {
-    setActiveDropdown({ visible: true, type, data, title });
-  };
-
-  const handleDropdownSelect = (value: string) => {
-    if (activeDropdown.type === 'state') {
-      // Agar state change hua, toh purani city clear kardo
-      setProfile({ ...profile, state: value, city: '' });
-    } else {
-      setProfile({ ...profile, [activeDropdown.type]: value });
-    }
-    setActiveDropdown({ ...activeDropdown, visible: false });
-  };
-
-  const handleSave = async () => {
-    if (!activeUid) return;
-    setSaving(true);
+  const fetchProfileData = async () => {
+    setLoading(true);
     try {
-      await setDoc(doc(db, 'users', activeUid), { ...profile, updatedAt: serverTimestamp(), uid: activeUid }, { merge: true });
-      Alert.alert("Data Saved! 🎉", "Profile ekdum clear filterable data ke sath save ho gayi.");
-      setIsEditing(false);
-    } catch (error) { Alert.alert("Error", "Save fail ho gaya."); } 
-    finally { setSaving(false); }
+      const postsQuery = query(collection(db, 'posts'), where('authorId', '==', user?.uid));
+      const postsSnapshot = await getDocs(postsQuery);
+      let fetchedMyPosts = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      fetchedMyPosts.sort((a: any, b: any) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
+      setMyPosts(fetchedMyPosts);
+
+      const savedQuery = query(collection(db, 'posts'), where('savedBy', 'array-contains', user?.uid));
+      const savedSnapshot = await getDocs(savedQuery);
+      let fetchedSavedPosts = savedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      fetchedSavedPosts.sort((a: any, b: any) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
+      setSavedPosts(fetchedSavedPosts);
+    } catch (error) {
+      console.log("Error fetching profile posts:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // 🗔 DROPDOWN MODAL UI COMPONENT
-  const RenderDropdownModal = () => (
-    <Modal visible={activeDropdown.visible} animationType="slide" transparent={true} onRequestClose={() => setActiveDropdown({...activeDropdown, visible: false})}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{activeDropdown.title}</Text>
-            <TouchableOpacity onPress={() => setActiveDropdown({...activeDropdown, visible: false})}><Ionicons name="close-circle" size={28} color="#94a3b8" /></TouchableOpacity>
-          </View>
-          <FlatList
-            data={activeDropdown.data}
-            keyExtractor={(item) => item}
-            showsVerticalScrollIndicator={false}
-            renderItem={({item}) => (
-              <TouchableOpacity style={styles.modalItem} onPress={() => handleDropdownSelect(item)}>
-                <Text style={styles.modalItemText}>{item}</Text>
-                {profile[activeDropdown.type as keyof typeof profile] === item && <Ionicons name="checkmark" size={20} color="#2563eb" />}
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={<Text style={{textAlign: 'center', marginTop: 20, color: '#64748b'}}>No options available.</Text>}
-          />
+  const handleLogout = async () => {
+    Alert.alert("Logout", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Logout", style: "destructive", onPress: async () => { await signOut(auth); router.replace('/auth'); } }
+    ]);
+  };
+
+  const renderMiniPost = ({ item, index }: { item: any, index: number }) => (
+    <Animated.View entering={FadeInDown.delay(index * 100).springify()} style={styles.miniPostCard}>
+      <View style={styles.miniPostHeader}>
+        <View style={styles.badgeContainer}>
+          <Ionicons name={item.type === 'code' ? 'code-slash' : item.type === 'poll' ? 'stats-chart' : item.type === 'image' ? 'image' : 'text'} size={14} color="#2563eb" />
+          <Text style={styles.miniPostType}>{item.type.toUpperCase()}</Text>
         </View>
+        <Text style={styles.miniPostLikes}>❤️ {item.likes?.length || 0}</Text>
       </View>
-    </Modal>
+      <Text style={styles.miniPostText} numberOfLines={2}>
+        {item.text || item.codeSnippet || "Media Post..."}
+      </Text>
+    </Animated.View>
   );
 
-  // ==========================================
-  // 🎨 4. RENDER: EDIT MODE
-  // ==========================================
-  if (isEditing) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => setIsEditing(false)} style={styles.iconBtn}><Ionicons name="close" size={26} color="#0f172a" /></TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit Data</Text>
-          <TouchableOpacity onPress={handleSave} disabled={saving}>
-            {saving ? <ActivityIndicator size="small" color="#2563eb" /> : <Text style={styles.saveBtnText}>Save</Text>}
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 150 }}>
-          <TouchableOpacity style={styles.editCoverArea} onPress={() => pickImage('cover')}>
-            {profile.coverPic ? <Image source={{ uri: profile.coverPic }} style={styles.coverImg} /> : <LinearGradient colors={['#cbd5e1', '#94a3b8']} style={styles.coverImg} />}
-            <View style={styles.overlayIcon}><Ionicons name="camera" size={24} color="#fff" /></View>
-          </TouchableOpacity>
-
-          <View style={styles.editAvatarContainer}>
-            <TouchableOpacity onPress={() => pickImage('profile')}>
-              <Image source={{ uri: profile.profilePic }} style={styles.editAvatarImg} />
-              <View style={styles.editAvatarBadge}><Ionicons name="camera" size={16} color="#fff" /></View>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.formSection}>
-            <Text style={styles.sectionHeader}>1. Personal Info</Text>
-            
-            <Text style={styles.inputLabel}>Full Name</Text>
-            <TextInput style={styles.input} value={profile.name} onChangeText={(t) => setProfile({...profile, name: t})} placeholder="Type name" />
-
-            <View style={styles.rowInputs}>
-              <View style={{ flex: 1, marginRight: 10 }}>
-                <Text style={styles.inputLabel}>Gender</Text>
-                <TouchableOpacity style={styles.dropdownBox} onPress={() => openDropdown('gender', GENDER_OPTIONS, 'Select Gender')}>
-                  <Text style={[styles.dropdownText, !profile.gender && {color: '#94a3b8'}]}>{profile.gender || 'Select'}</Text>
-                  <Ionicons name="chevron-down" size={18} color="#64748b" />
-                </TouchableOpacity>
-              </View>
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={styles.inputLabel}>Date of Birth</Text>
-                <TouchableOpacity style={styles.dropdownBox} onPress={() => setShowDatePicker(true)}>
-                  <Text style={[styles.dropdownText, !profile.dob && {color: '#94a3b8'}]}>{profile.dob || 'DD/MM/YYYY'}</Text>
-                  <Ionicons name="calendar-outline" size={18} color="#64748b" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <Text style={styles.sectionHeader}>2. Location (Strict Filtering)</Text>
-            <Text style={styles.inputLabel}>State</Text>
-            <TouchableOpacity style={styles.dropdownBox} onPress={() => openDropdown('state', STATE_OPTIONS, 'Select State')}>
-              <Text style={[styles.dropdownText, !profile.state && {color: '#94a3b8'}]}>{profile.state || 'Choose State'}</Text>
-              <Ionicons name="chevron-down" size={18} color="#64748b" />
-            </TouchableOpacity>
-
-            <Text style={styles.inputLabel}>City</Text>
-            <TouchableOpacity 
-              style={[styles.dropdownBox, !profile.state && { opacity: 0.5 }]} 
-              disabled={!profile.state}
-              onPress={() => openDropdown('city', INDIA_LOCATIONS[profile.state] || [], 'Select City')}
-            >
-              <Text style={[styles.dropdownText, !profile.city && {color: '#94a3b8'}]}>{profile.city || (profile.state ? 'Choose City' : 'Select State First')}</Text>
-              <Ionicons name="chevron-down" size={18} color="#64748b" />
-            </TouchableOpacity>
-
-            <Text style={styles.sectionHeader}>3. Academic Data</Text>
-            <View style={styles.rowInputs}>
-              <View style={{ flex: 1, marginRight: 10 }}>
-                <Text style={styles.inputLabel}>Current Class</Text>
-                <TouchableOpacity style={styles.dropdownBox} onPress={() => openDropdown('classYear', CLASS_OPTIONS, 'Select Class')}>
-                  <Text style={[styles.dropdownText, !profile.classYear && {color: '#94a3b8'}]}>{profile.classYear || 'Select'}</Text>
-                  <Ionicons name="chevron-down" size={18} color="#64748b" />
-                </TouchableOpacity>
-              </View>
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={styles.inputLabel}>Board</Text>
-                <TouchableOpacity style={styles.dropdownBox} onPress={() => openDropdown('board', BOARD_OPTIONS, 'Select Board')}>
-                  <Text style={[styles.dropdownText, !profile.board && {color: '#94a3b8'}]}>{profile.board || 'Select'}</Text>
-                  <Ionicons name="chevron-down" size={18} color="#64748b" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <Text style={styles.inputLabel}>Target Exam</Text>
-            <TouchableOpacity style={styles.dropdownBox} onPress={() => openDropdown('targetExam', EXAM_OPTIONS, 'Target Exam')}>
-              <Text style={[styles.dropdownText, !profile.targetExam && {color: '#94a3b8'}]}>{profile.targetExam || 'Choose Target Exam'}</Text>
-              <Ionicons name="chevron-down" size={18} color="#64748b" />
-            </TouchableOpacity>
-            
-            <Text style={styles.inputLabel}>School / Coaching Name</Text>
-            <TextInput style={styles.input} value={profile.school} onChangeText={(t) => setProfile({...profile, school: t})} placeholder="Type full name" />
-          </View>
-        </ScrollView>
-
-        {/* --- EXTRAS: Date Picker & Dropdown Modals --- */}
-        {showDatePicker && (
-          <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={styles.inputLabel}>Date of Birth</Text>
-                <TextInput 
-                 style={styles.input} 
-                 value={profile.dob} 
-                 onChangeText={(t) => setProfile({...profile, dob: t})} 
-                 placeholder="DD/MM/YYYY" 
-                 maxLength={10} />
-             </View>
-        )}
-        <RenderDropdownModal />
-      </SafeAreaView>
-    );
-  }
-
-  // ==========================================
-  // 🎨 5. RENDER: VIEW MODE
-  // ==========================================
-  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#4f46e5" /></View>;
+  // 🎮 GAMIFICATION LOGIC
+  const currentLevel = userData?.stats?.level || 1;
+  const currentXp = userData?.stats?.xp || 0;
+  const nextLevelXp = currentLevel * 1000;
+  const xpPercentage = Math.min((currentXp / nextLevelXp) * 100, 100);
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
-        
-        <View style={styles.coverContainer}>
-          {profile.coverPic ? <Image source={{ uri: profile.coverPic }} style={styles.coverImg} /> : <LinearGradient colors={['#4f46e5', '#3b82f6']} style={styles.coverImg} />}
-          <SafeAreaView style={styles.absoluteTopRight}>
-            <TouchableOpacity style={styles.glassBtn} onPress={() => setIsEditing(true)}><Ionicons name="pencil" size={20} color="#fff" /></TouchableOpacity>
-          </SafeAreaView>
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+
+      {/* --- 🔝 TOP ACTION BAR --- */}
+      <View style={styles.topBar}>
+        <Text style={styles.username}>@{user?.displayName?.replace(/\s/g, '').toLowerCase() || 'student'}</Text>
+        <View style={styles.topIcons}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/edit-profile')}>
+            <Ionicons name="settings-outline" size={24} color="#0f172a" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={26} color="#ef4444" />
+          </TouchableOpacity>
         </View>
+      </View>
 
-        <View style={styles.profileInfoContainer}>
-          <Animated.View entering={FadeInDown.delay(100)} style={styles.avatarWrapper}>
-            <Image source={{ uri: profile.profilePic }} style={styles.mainAvatar} />
-            <View style={styles.levelBadge}><Text style={styles.levelText}>Lv.{profile.level || 1}</Text></View>
-          </Animated.View>
-
-          <Animated.View entering={FadeInDown.delay(200)} style={styles.textCenter}>
-            <Text style={styles.fullName}>{profile.name || "Unknown Scholar"}</Text>
-            <Text style={styles.bioText}>{profile.city ? `${profile.city}, ${profile.state}` : "Update your location!"}</Text>
+      <FlatList
+        data={activeTab === 'posts' ? myPosts : savedPosts}
+        keyExtractor={(item) => item.id}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        refreshing={loading}
+        onRefresh={() => { fetchUserData(); fetchProfileData(); }}
+        ListHeaderComponent={
+          <View style={styles.headerWrapper}>
             
-            <View style={styles.tagsRow}>
-              {profile.classYear && <View style={styles.tagContainer}><Ionicons name="school" size={14} color="#3b82f6" /><Text style={styles.tagText}>{profile.classYear}</Text></View>}
-              {profile.targetExam && <View style={[styles.tagContainer, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}><Ionicons name="flame" size={14} color="#ef4444" /><Text style={[styles.tagText, { color: '#ef4444' }]}>{profile.targetExam}</Text></View>}
-              {profile.board && <View style={[styles.tagContainer, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}><Ionicons name="library" size={14} color="#16a34a" /><Text style={[styles.tagText, { color: '#16a34a' }]}>{profile.board}</Text></View>}
-            </View>
-          </Animated.View>
+            {/* --- 👤 MAIN PROFILE HEADER --- */}
+            <View style={styles.profileSection}>
+              <View style={styles.avatarWrapper}>
+                <Image source={{ uri: user?.photoURL || DEFAULT_AVATAR }} style={styles.profileAvatar} />
+                <View style={styles.levelBadge}>
+                  <Text style={styles.levelText}>Lvl {currentLevel}</Text>
+                </View>
+              </View>
+              
+              <View style={styles.profileDetails}>
+                <Text style={styles.fullName}>{user?.displayName || 'Eduxity User'}</Text>
+                
+                <View style={styles.roleContainer}>
+                  <Ionicons name="school" size={14} color="#2563eb" />
+                  <Text style={styles.roleText}>{userData?.roleDetail || 'Community Member'}</Text>
+                </View>
 
-          <Animated.View entering={FadeInDown.delay(300)} style={styles.cardContainer}>
-            <Text style={styles.sectionTitle}>Profile Details</Text>
-            {profile.dob && <View style={styles.detailRow}><Ionicons name="calendar" size={20} color="#64748b" /><Text style={styles.detailText}>DOB: {profile.dob}</Text></View>}
-            {profile.gender && <View style={styles.detailRow}><Ionicons name="person" size={20} color="#64748b" /><Text style={styles.detailText}>{profile.gender}</Text></View>}
-            {profile.school && <View style={styles.detailRow}><Ionicons name="business" size={20} color="#64748b" /><Text style={styles.detailText}>{profile.school}</Text></View>}
-          </Animated.View>
-        </View>
-      </ScrollView>
-    </View>
+                {/* XP Progress Bar */}
+                <View style={styles.xpContainer}>
+                  <View style={styles.xpHeader}>
+                    <Text style={styles.xpText}>XP Progress</Text>
+                    <Text style={styles.xpValues}>{currentXp} / {nextLevelXp}</Text>
+                  </View>
+                  <View style={styles.xpBarBackground}>
+                    <View style={[styles.xpBarFill, { width: `${xpPercentage}%` }]} />
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {/* --- 📍 ABOUT & DEMOGRAPHICS CARD --- */}
+            <View style={styles.aboutCard}>
+              {userData?.bio ? <Text style={styles.bioText}>{userData.bio}</Text> : null}
+              
+              <View style={styles.infoRowGrid}>
+                {userData?.institutionName ? (
+                  <View style={styles.infoRow}>
+                    <Ionicons name="business" size={16} color="#64748b" />
+                    <Text style={styles.infoText}>{userData.institutionName}</Text>
+                  </View>
+                ) : null}
+                
+                {(userData?.city || userData?.state) ? (
+                  <View style={styles.infoRow}>
+                    <Ionicons name="location" size={16} color="#64748b" />
+                    <Text style={styles.infoText}>
+                      {[userData?.city, userData?.state].filter(Boolean).join(', ')}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {userData?.dob ? (
+                  <View style={styles.infoRow}>
+                    <Ionicons name="calendar" size={16} color="#64748b" />
+                    <Text style={styles.infoText}>Born {userData.dob}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              {/* Social Links (Will be added from Edit Profile) */}
+              {(userData?.githubLink || userData?.linkedinLink || userData?.instagramLink) && (
+                <View style={styles.socialLinksRow}>
+                  {userData.githubLink && <TouchableOpacity><Ionicons name="logo-github" size={24} color="#0f172a" style={styles.socialIcon}/></TouchableOpacity>}
+                  {userData.linkedinLink && <TouchableOpacity><Ionicons name="logo-linkedin" size={24} color="#0077b5" style={styles.socialIcon}/></TouchableOpacity>}
+                  {userData.instagramLink && <TouchableOpacity><Ionicons name="logo-instagram" size={24} color="#e1306c" style={styles.socialIcon}/></TouchableOpacity>}
+                </View>
+              )}
+
+              {userData?.interests && userData.interests.length > 0 && (
+                <View style={styles.interestsContainer}>
+                  {userData.interests.map((interest: string, index: number) => (
+                    <View key={index} style={styles.interestTag}>
+                      <Text style={styles.interestTagText}>{interest}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* --- 🔥 LIVE CONSISTENCY DASHBOARD --- */}
+            <View style={styles.highlightCardsContainer}>
+              <View style={[styles.highlightCard, { backgroundColor: '#fff3cd' }]}>
+                <Text style={styles.highlightEmoji}>🔥</Text>
+                <Text style={styles.highlightValue}>{userData?.stats?.streak || 0}</Text>
+                <Text style={styles.highlightLabel}>Streak</Text>
+              </View>
+              <View style={[styles.highlightCard, { backgroundColor: '#d1fae5' }]}>
+                <Text style={styles.highlightEmoji}>🎯</Text>
+                <Text style={styles.highlightValue}>{userData?.stats?.accuracy || 0}%</Text>
+                <Text style={styles.highlightLabel}>Accuracy</Text>
+              </View>
+              <View style={[styles.highlightCard, { backgroundColor: '#dbeafe' }]}>
+                <Text style={styles.highlightEmoji}>📝</Text>
+                <Text style={styles.highlightValue}>{userData?.stats?.totalSolved || 0}</Text>
+                <Text style={styles.highlightLabel}>Solved</Text>
+              </View>
+            </View>
+
+            {/* --- 🗂️ TAB SELECTOR --- */}
+            <View style={styles.tabContainer}>
+              <TouchableOpacity style={[styles.tabBtn, activeTab === 'posts' && styles.activeTabBtn]} onPress={() => setActiveTab('posts')}>
+                <Ionicons name="grid-outline" size={20} color={activeTab === 'posts' ? '#2563eb' : '#64748b'} />
+                <Text style={[styles.tabText, activeTab === 'posts' && styles.activeTabText]}>Posts ({myPosts.length})</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={[styles.tabBtn, activeTab === 'saved' && styles.activeTabBtn]} onPress={() => setActiveTab('saved')}>
+                <Ionicons name="bookmark-outline" size={20} color={activeTab === 'saved' ? '#2563eb' : '#64748b'} />
+                <Text style={[styles.tabText, activeTab === 'saved' && styles.activeTabText]}>Saved ({savedPosts.length})</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        }
+        renderItem={renderMiniPost}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Ionicons name={activeTab === 'posts' ? "document-text-outline" : "bookmarks-outline"} size={60} color="#cbd5e1" />
+            <Text style={styles.emptyText}>{activeTab === 'posts' ? "No posts yet." : "No saved posts."}</Text>
+          </View>
+        }
+      />
+    </SafeAreaView>
   );
 }
 
 // ==========================================
-// 🎨 FAANG LEVEL STYLES
+// 🎨 PREMIUM STYLES
 // ==========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 10 : 20, paddingBottom: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
+  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#f1f5f9' },
+  username: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
+  topIcons: { flexDirection: 'row', gap: 15 },
   iconBtn: { padding: 5 },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
-  saveBtnText: { fontSize: 16, fontWeight: '800', color: '#2563eb' },
+
+  headerWrapper: { backgroundColor: '#f8fafc', paddingBottom: 10 },
+
+  profileSection: { flexDirection: 'row', padding: 20, alignItems: 'center', backgroundColor: '#fff' },
+  avatarWrapper: { position: 'relative', marginRight: 20 },
+  profileAvatar: { width: 86, height: 86, borderRadius: 43, borderWidth: 3, borderColor: '#2563eb' },
+  levelBadge: { position: 'absolute', bottom: -5, alignSelf: 'center', backgroundColor: '#0f172a', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 2, borderColor: '#fff' },
+  levelText: { color: '#fbbf24', fontSize: 10, fontWeight: '900' },
   
-  // Dropdown Modal Styles
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 25, paddingBottom: 40, maxHeight: height * 0.7 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 20, borderBottomWidth: 1, borderColor: '#f1f5f9', marginBottom: 10 },
-  modalTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
-  modalItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderColor: '#f8fafc' },
-  modalItemText: { fontSize: 16, color: '#1e293b', fontWeight: '600' },
+  profileDetails: { flex: 1 },
+  fullName: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
+  
+  roleContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4, marginBottom: 12 },
+  roleText: { fontSize: 13, color: '#2563eb', fontWeight: '700', marginLeft: 6 },
+  
+  xpContainer: { width: '100%' },
+  xpHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  xpText: { fontSize: 11, fontWeight: '700', color: '#64748b' },
+  xpValues: { fontSize: 11, fontWeight: '800', color: '#0f172a' },
+  xpBarBackground: { height: 8, backgroundColor: '#e2e8f0', borderRadius: 4, overflow: 'hidden' },
+  xpBarFill: { height: '100%', backgroundColor: '#fbbf24', borderRadius: 4 },
 
-  // Form Inputs
-  formSection: { paddingHorizontal: 20 },
-  sectionHeader: { fontSize: 18, fontWeight: '900', color: '#0f172a', marginTop: 25, marginBottom: 5, borderBottomWidth: 1, borderColor: '#e2e8f0', paddingBottom: 10 },
-  rowInputs: { flexDirection: 'row', justifyContent: 'space-between' },
-  inputLabel: { fontSize: 13, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, marginTop: 15 },
-  input: { backgroundColor: '#f1f5f9', borderRadius: 14, paddingHorizontal: 15, paddingVertical: 14, fontSize: 16, color: '#0f172a', fontWeight: '600' },
-  dropdownBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 14, paddingHorizontal: 15, paddingVertical: 14 },
-  dropdownText: { fontSize: 16, color: '#0f172a', fontWeight: '600' },
+  aboutCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 10, padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
+  bioText: { fontSize: 14, color: '#334155', lineHeight: 22, marginBottom: 15, fontWeight: '500' },
+  
+  infoRowGrid: { gap: 8, marginBottom: 15 },
+  infoRow: { flexDirection: 'row', alignItems: 'center' },
+  infoText: { fontSize: 13, color: '#475569', marginLeft: 8, fontWeight: '600' },
 
-  // Rest of Profile View Styles
-  coverContainer: { width: '100%', height: 220, position: 'relative' },
-  coverImg: { width: '100%', height: '100%' },
-  absoluteTopRight: { position: 'absolute', top: 0, right: 15, zIndex: 10 },
-  glassBtn: { backgroundColor: 'rgba(0,0,0,0.5)', width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginTop: Platform.OS === 'android' ? 40 : 10 },
-  profileInfoContainer: { flex: 1, paddingHorizontal: 20, marginTop: -60 },
-  avatarWrapper: { alignSelf: 'center', position: 'relative', marginBottom: 15 },
-  mainAvatar: { width: 120, height: 120, borderRadius: 60, borderWidth: 5, borderColor: '#f8fafc', backgroundColor: '#fff' },
-  levelBadge: { position: 'absolute', bottom: 5, right: 0, backgroundColor: '#f59e0b', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 2, borderColor: '#fff' },
-  levelText: { color: '#fff', fontSize: 12, fontWeight: '900' },
-  textCenter: { alignItems: 'center', marginBottom: 25 },
-  fullName: { fontSize: 26, fontWeight: '900', color: '#0f172a', letterSpacing: -0.5 },
-  bioText: { fontSize: 15, color: '#64748b', fontWeight: '500', marginTop: 4, textAlign: 'center' },
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: 10, gap: 10 },
-  tagContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff6ff', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: '#bfdbfe' },
-  tagText: { marginLeft: 6, fontSize: 13, fontWeight: '700' },
-  cardContainer: { backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.05, shadowRadius: 8 },
-  sectionTitle: { fontSize: 16, fontWeight: '900', color: '#0f172a', marginBottom: 15, textTransform: 'uppercase', letterSpacing: 0.5 },
-  detailRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  detailText: { fontSize: 15, color: '#475569', marginLeft: 12, fontWeight: '600' },
+  socialLinksRow: { flexDirection: 'row', gap: 15, marginBottom: 15, paddingTop: 10, borderTopWidth: 1, borderColor: '#f1f5f9' },
+  socialIcon: { marginRight: 5 },
 
-  editCoverArea: { width: '100%', height: 180, position: 'relative' },
-  overlayIcon: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' },
-  editAvatarContainer: { alignSelf: 'center', marginTop: -50, marginBottom: 20 },
-  editAvatarImg: { width: 100, height: 100, borderRadius: 50, borderWidth: 4, borderColor: '#fff' },
-  editAvatarBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#2563eb', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#fff' },
+  interestsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  interestTag: { backgroundColor: '#f8fafc', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
+  interestTagText: { fontSize: 12, fontWeight: '700', color: '#475569' },
+
+  highlightCardsContainer: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 15, backgroundColor: '#fff', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#f1f5f9', marginTop: 15 },
+  highlightCard: { width: (width - 50) / 3, paddingVertical: 15, borderRadius: 16, alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5 },
+  highlightEmoji: { fontSize: 24, marginBottom: 5 },
+  highlightValue: { fontSize: 16, fontWeight: '900', color: '#0f172a' },
+  highlightLabel: { fontSize: 11, fontWeight: '700', color: '#64748b', marginTop: 2 },
+
+  tabContainer: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#f1f5f9' },
+  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 15 },
+  activeTabBtn: { borderBottomWidth: 2, borderBottomColor: '#2563eb' },
+  tabText: { fontSize: 14, fontWeight: '700', color: '#64748b', marginLeft: 8 },
+  activeTabText: { color: '#2563eb' },
+
+  miniPostCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 15, padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
+  miniPostHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  badgeContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff6ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  miniPostType: { fontSize: 10, fontWeight: '800', color: '#2563eb', marginLeft: 6 },
+  miniPostLikes: { fontSize: 12, fontWeight: '700', color: '#475569' },
+  miniPostText: { fontSize: 14, color: '#1e293b', lineHeight: 20 },
+
+  emptyState: { alignItems: 'center', marginTop: 50 },
+  emptyText: { marginTop: 15, fontSize: 16, fontWeight: '600', color: '#94a3b8' }
 });

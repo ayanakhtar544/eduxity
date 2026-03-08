@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, FlatList, Image, TouchableOpacity, 
   SafeAreaView, StatusBar, TextInput, ActivityIndicator, Alert,
@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { 
   collection, query, where, addDoc, serverTimestamp, 
-  onSnapshot, doc, updateDoc, deleteDoc
+  onSnapshot, doc, updateDoc, deleteDoc, getDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../../firebaseConfig';
@@ -20,6 +20,7 @@ export default function NetworkScreen() {
   
   // 🚨 Strict Auth State
   const [activeUid, setActiveUid] = useState<string | null>(null);
+  const [currentUserData, setCurrentUserData] = useState<any>(null); // 👈 Asli user data for matching
 
   // 🗂️ Core States
   const [activeTab, setActiveTab] = useState<'recommended' | 'requests' | 'friends'>('recommended');
@@ -31,14 +32,24 @@ export default function NetworkScreen() {
   const [myConnections, setMyConnections] = useState<any[]>([]);
 
   // ============================================================================
-  // 🔒 1. STRICT AUTH CHECK
+  // 🔒 1. STRICT AUTH CHECK & FETCH MY DATA
   // ============================================================================
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setActiveUid(user.uid);
+        // Fetch Current User's detailed Profile (Role, Interests, etc.)
+        try {
+          const myDoc = await getDoc(doc(db, 'users', user.uid));
+          if (myDoc.exists()) {
+            setCurrentUserData(myDoc.data());
+          }
+        } catch (error) {
+          console.log("Error fetching my data for matching:", error);
+        }
       } else {
         setActiveUid(null);
+        setCurrentUserData(null);
         setAllUsers([]);
         setMyConnections([]);
       }
@@ -85,27 +96,65 @@ export default function NetworkScreen() {
   }, [activeUid]);
 
   // ============================================================================
-  // 🧠 3. SMART FILTERING LOGIC (Derived State)
+  // 🧠 3. THE "FAANG" MATCHING ALGORITHM
+  // ============================================================================
+  const calculateMatchScore = (user: any, me: any) => {
+    let score = 0;
+    if (!me) return 0;
+
+    // 1. Same Role / Class (+50 Points)
+    if (user.roleDetail && me.roleDetail && user.roleDetail === me.roleDetail) {
+      score += 50;
+    }
+
+    // 2. Same City or State (+20 Points)
+    if (user.city && me.city && user.city.toLowerCase() === me.city.toLowerCase()) {
+      score += 20;
+    } else if (user.state && me.state && user.state === me.state) {
+      score += 10;
+    }
+
+    // 3. Shared Interests (+10 Points per interest)
+    if (user.interests && me.interests) {
+      const sharedInterests = user.interests.filter((i: string) => me.interests.includes(i));
+      score += (sharedInterests.length * 10);
+      user.sharedInterestCount = sharedInterests.length; // Save for UI badge
+    }
+
+    return score;
+  };
+
+  // ============================================================================
+  // 🧠 4. SMART FILTERING & SORTING LOGIC
   // ============================================================================
   
-  // 1. Recommended: Wo log jinke sath koi connection history nahi hai
+  // 1. Recommended: Remove already connected/requested users
   let recommendedUsers = allUsers.filter(user => {
     const hasConnection = myConnections.some(conn => conn.senderId === user.uid || conn.receiverId === user.uid);
     return !hasConnection;
   });
 
-  // 2. Incoming Requests: Wo log jinhone mujhe request bheji hai (status: pending)
+  // 🔥 Apply Sorting Algorithm!
+  if (currentUserData) {
+    recommendedUsers.sort((a, b) => {
+      const scoreA = calculateMatchScore(a, currentUserData);
+      const scoreB = calculateMatchScore(b, currentUserData);
+      return scoreB - scoreA; // Descending order (Highest score first)
+    });
+  }
+
+  // 2. Incoming Requests:
   let incomingRequests = myConnections.filter(conn => 
     conn.receiverId === activeUid && conn.status === 'pending'
   );
 
-  // 3. Friends: Wo log jinki request accepted hai
+  // 3. Friends:
   let acceptedFriends = myConnections.filter(conn => conn.status === 'accepted');
 
-  // Search Filter
+  // Search Filter (Overwrites sorting if user is searching manually)
   if (searchQuery.trim() !== '') {
     const q = searchQuery.toLowerCase();
-    recommendedUsers = recommendedUsers.filter(u => u.name?.toLowerCase().includes(q));
+    recommendedUsers = recommendedUsers.filter(u => u.displayName?.toLowerCase().includes(q) || u.name?.toLowerCase().includes(q));
     incomingRequests = incomingRequests.filter(c => c.senderName?.toLowerCase().includes(q));
     acceptedFriends = acceptedFriends.filter(c => {
       const friendName = c.senderId === activeUid ? c.receiverName : c.senderName;
@@ -114,20 +163,19 @@ export default function NetworkScreen() {
   }
 
   // ============================================================================
-  // ⚡ 4. REAL FIREBASE ACTIONS
+  // ⚡ 5. REAL FIREBASE ACTIONS
   // ============================================================================
   
   const handleSendRequest = async (receiver: any) => {
     if (!activeUid) return;
     try {
-      // Optimistic UI ke liye turant ek fake entry add kar sakte ho, par real-time fast hai
       await addDoc(collection(db, 'connections'), {
         senderId: activeUid,
         senderName: auth.currentUser?.displayName || "Student",
         senderAvatar: auth.currentUser?.photoURL || `https://ui-avatars.com/api/?name=${auth.currentUser?.displayName}`,
         receiverId: receiver.uid,
-        receiverName: receiver.name || "Student",
-        receiverAvatar: receiver.profilePic || `https://ui-avatars.com/api/?name=${receiver.name}`,
+        receiverName: receiver.displayName || receiver.name || "Student",
+        receiverAvatar: receiver.photoURL || receiver.profilePic || `https://ui-avatars.com/api/?name=${receiver.name}`,
         status: 'pending',
         timestamp: serverTimestamp()
       });
@@ -139,7 +187,7 @@ export default function NetworkScreen() {
   const handleAcceptRequest = async (connectionId: string) => {
     try {
       await updateDoc(doc(db, 'connections', connectionId), { status: 'accepted' });
-      setActiveTab('friends'); // Switch to friends tab to show success
+      setActiveTab('friends'); 
     } catch (error) {
       Alert.alert("Error", "Request accept nahi hui.");
     }
@@ -147,36 +195,64 @@ export default function NetworkScreen() {
 
   const handleRejectRequest = async (connectionId: string) => {
     try {
-      await deleteDoc(doc(db, 'connections', connectionId)); // Turant delete karo
+      await deleteDoc(doc(db, 'connections', connectionId));
     } catch (error) {
       console.log("Error rejecting:", error);
     }
   };
 
   // ============================================================================
-  // 🎨 5. UI RENDER COMPONENTS
+  // 🎨 6. UI RENDER COMPONENTS
   // ============================================================================
   
-  const renderRecommendedCard = ({ item, index }: any) => (
-    <Animated.View entering={FadeInUp.delay(index * 100)} layout={Layout.springify()} style={styles.cardPremium}>
-      <TouchableOpacity 
-        style={styles.cardInfoCenter} 
-        activeOpacity={0.7}
-        onPress={() => router.push({ pathname: '/user/[id]', params: { id: item.uid } })}
-      >
-        <Image source={{ uri: item.profilePic || `https://ui-avatars.com/api/?name=${item.name}` }} style={styles.avatarLarge} />
-        <Text style={styles.userNameLarge} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.userSubtitle}>Level {item.level || 1} • Scholar</Text>
-      </TouchableOpacity>
+  const renderRecommendedCard = ({ item, index }: any) => {
+    // Determine the smart badge logic based on algorithm
+    let badgeText = "";
+    let badgeColor = "#64748b"; // Default Grey
+    
+    if (currentUserData) {
+      if (item.roleDetail && item.roleDetail === currentUserData.roleDetail) {
+        badgeText = "Same Class";
+        badgeColor = "#10b981"; // Emerald Green
+      } else if (item.city && item.city === currentUserData.city) {
+        badgeText = "From your City";
+        badgeColor = "#3b82f6"; // Blue
+      } else if (item.sharedInterestCount > 0) {
+        badgeText = `${item.sharedInterestCount} Shared Interests`;
+        badgeColor = "#f59e0b"; // Orange
+      }
+    }
 
-      <TouchableOpacity style={styles.actionBtnFull} onPress={() => handleSendRequest(item)} activeOpacity={0.8}>
-        <LinearGradient colors={['#4f46e5', '#3b82f6']} style={styles.btnGradientFull}>
-          <Ionicons name="person-add" size={16} color="#fff" />
-          <Text style={styles.btnTextFull}>Connect</Text>
-        </LinearGradient>
-      </TouchableOpacity>
-    </Animated.View>
-  );
+    return (
+      <Animated.View entering={FadeInUp.delay(index * 100)} layout={Layout.springify()} style={styles.cardPremium}>
+        <TouchableOpacity 
+          style={styles.cardInfoCenter} 
+          activeOpacity={0.7}
+          onPress={() => router.push({ pathname: '/user/[id]', params: { id: item.uid || item.id } })}
+        >
+          <Image source={{ uri: item.photoURL || item.profilePic || `https://ui-avatars.com/api/?name=${item.displayName || 'User'}` }} style={styles.avatarLarge} />
+          
+          <Text style={styles.userNameLarge} numberOfLines={1}>{item.displayName || item.name || 'User'}</Text>
+          <Text style={styles.userSubtitle} numberOfLines={1}>{item.roleDetail || item.role || 'Scholar'}</Text>
+
+          {/* 🧠 ALGORITHM BADGE */}
+          {badgeText !== "" && (
+            <View style={[styles.algoBadge, { backgroundColor: badgeColor + '20' }]}>
+              <Text style={[styles.algoBadgeText, { color: badgeColor }]}>{badgeText}</Text>
+            </View>
+          )}
+
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionBtnFull} onPress={() => handleSendRequest(item)} activeOpacity={0.8}>
+          <LinearGradient colors={['#4f46e5', '#3b82f6']} style={styles.btnGradientFull}>
+            <Ionicons name="person-add" size={16} color="#fff" />
+            <Text style={styles.btnTextFull}>Connect</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
 
   const renderRequestCard = ({ item, index }: any) => (
     <Animated.View entering={FadeInUp.delay(index * 100)} layout={Layout.springify()} style={styles.listCard}>
@@ -237,7 +313,7 @@ export default function NetworkScreen() {
   };
 
   // ============================================================================
-  // 📱 6. MAIN RENDER LAYOUT
+  // 📱 7. MAIN RENDER LAYOUT
   // ============================================================================
   return (
     <SafeAreaView style={styles.container}>
@@ -288,7 +364,7 @@ export default function NetworkScreen() {
           {activeTab === 'recommended' && (
             <FlatList
               data={recommendedUsers}
-              keyExtractor={(item) => item.uid}
+              keyExtractor={(item) => item.uid || item.id}
               numColumns={2}
               columnWrapperStyle={{ justifyContent: 'space-between', paddingHorizontal: 15 }}
               contentContainerStyle={styles.listArea}
@@ -353,8 +429,11 @@ const styles = StyleSheet.create({
   cardInfoCenter: { alignItems: 'center', marginBottom: 15, width: '100%' },
   avatarLarge: { width: 66, height: 66, borderRadius: 33, backgroundColor: '#f1f5f9', marginBottom: 10, borderWidth: 2, borderColor: '#e2e8f0' },
   userNameLarge: { fontSize: 15, fontWeight: '800', color: '#0f172a', textAlign: 'center' },
-  userSubtitle: { fontSize: 12, color: '#64748b', fontWeight: '600', marginTop: 2 },
+  userSubtitle: { fontSize: 11, color: '#64748b', fontWeight: '600', marginTop: 4, textAlign: 'center' },
   
+  algoBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginTop: 8 },
+  algoBadgeText: { fontSize: 10, fontWeight: '800' },
+
   actionBtnFull: { width: '100%', borderRadius: 12, overflow: 'hidden' },
   btnGradientFull: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10 },
   btnTextFull: { color: '#fff', fontSize: 13, fontWeight: '800', marginLeft: 6 },

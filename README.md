@@ -1,50 +1,58 @@
-# Welcome to your Expo app 👋
+# 🚀 Next-Gen Study Group App (Eduxity)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A highly scalable, real-time study group application built with **React Native (Expo)** and **Firebase**. Designed for modern educators and students, this app features a Discord-style Voice Lounge, Live Timed Tests, Interactive MCQs, and a revolutionary "Zero-Cost" Homework Upload Engine with advanced analytics.
 
-## Get started
+---
 
-1. Install dependencies
+## 🌟 Key Features
 
-   ```bash
-   npm install
-   ```
+### 🎙️ Drop-In Voice Lounge
+* **Discord-Style Audio Rooms:** Members can join the live voice lounge instantly.
+* **Real-time UI:** See who is speaking, muted, or active with dynamic avatar rings.
+* **Background Audio:** Runs smoothly in the background using `expo-av`.
 
-2. Start the app
+### 🪣 Homework Bucket & Analytics Dashboard (Zero-Cost Storage)
+* **Smart Compression & Bypass:** Extreme image compression (`quality: 0.2`) and base64 bypassing ensure zero phone freezes and bypass mobile file-system permission limits.
+* **Zero-Cost Engine:** Native integration with **ImgBB API** saves Firebase Storage costs entirely.
+* **24-Hour Auto-Expiry:** Uploaded homework links automatically expire after 24 hours (Snapchat style) to maintain privacy and declutter space.
+* **Advanced Teacher Dashboard:** * Visual Pie-chart style completion percentages (Completed vs. Pending).
+  * Page distribution analytics (e.g., 60% students uploaded 5 pages).
+  * Expandable student roster (Accordion UI) with individual image previews.
+  * Full-screen Image Zoom capability.
 
-   ```bash
-   npx expo start
-   ```
+### 🧠 Smart Chat Bubbles
+* **Live Tests:** Timed assessments with auto-submit functionality and instant score calculation.
+* **Live Polls / MCQs:** Real-time percentage distribution and correct/incorrect visualizations.
+* **Subjective Q&A:** Direct text submission blocks embedded directly within the chat feed.
 
-In the output, you'll find options to open the app in a
+### 📋 Daily Targets (Shared To-Do List)
+* Leaders can assign daily targets/tasks to the group.
+* Members can check off tasks, updating the completion counter in real-time.
+* Animated expandable/collapsible tray using `react-native-reanimated`.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+---
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 🛠️ Tech Stack
 
-## Get a fresh project
+* **Frontend:** React Native, Expo, Expo Router
+* **Backend (BaaS):** Firebase (Firestore Real-time DB, Firebase Auth)
+* **Storage / CDN:** ImgBB API (REST)
+* **Animations:** React Native Reanimated
+* **Media / Hardware:** Expo Image Picker, Expo AV (Audio)
 
-When you're ready, run:
+---
 
-```bash
-npm run reset-project
-```
+## 📂 Project Structure
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```text
+📦 project-root
+ ┣ 📂 app
+ ┃ ┣ 📂 (tabs)           # Main bottom tabs (Explore, Chats, Profile)
+ ┃ ┣ 📂 chat
+ ┃ ┃ ┗ 📜 [id].tsx       # The Core Chat & Dashboard Engine (Masterpiece)
+ ┃ ┗ 📜 _layout.tsx      # Root layout and navigation
+ ┣ 📂 assets             # Images, Fonts, Icons
+ ┣ 📜 firebaseConfig.js  # Firebase initialization and exports
+ ┣ 📜 .env               # API Keys and Secrets
+ ┣ 📜 app.json           # Expo configuration
+ ┗ 📜 package.json       # Dependencies

@@ -4,17 +4,21 @@ import {
   FlatList, KeyboardAvoidingView, Platform, SafeAreaView, 
   Image, ActivityIndicator, StatusBar, Modal, Alert, ScrollView
 } from 'react-native';
+import { createAgoraRtcEngine, ClientRoleType, ChannelProfileType } from '../../helpers/agoraHelper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker'; 
 import { auth, db } from '../../firebaseConfig';
 import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
-//import { Audio } from 'expo-av'; 
+import { Audio } from 'expo-av'; 
+import { awardXP } from '../../helpers/gamificationEngine';
+import { increment } from 'firebase/firestore';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInUp, Layout, useSharedValue, useAnimatedStyle, withSpring, withTiming } from 'react-native-reanimated';
 
 // 🚨 API KEY FROM .ENV FILE
 const IMGBB_API_KEY = process.env.EXPO_PUBLIC_IMGBB_API_KEY; 
+const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID;
 
 // ============================================================================
 // 🚀 UPLOAD ENGINE (WITH 24-HOUR AUTO-EXPIRATION)
@@ -62,6 +66,17 @@ const ChatBubble = ({ message, isMe, groupId, onOpenTest, openDashboard }: any) 
     try {
       const msgRef = doc(db, 'groups', groupId, 'messages', message.id);
       await updateDoc(msgRef, { [`responses.${currentUid}`]: answerValue });
+
+      // 🚀 GAMIFICATION TRIGGER FOR MCQ
+      if (message.type === 'mcq') {
+        const isCorrect = message.correctOption === answerValue;
+        const xpToGive = isCorrect ? 20 : 5; // Sahi pe 20 XP, galat try karne pe at least 5 XP
+        
+        const reward = await awardXP(currentUid, xpToGive, "MCQ Answer");
+        if (reward?.leveledUp) {
+          Alert.alert("⭐ LEVEL UP! ⭐", `Congratulations! You are now Level ${reward.newLevel}!`);
+        }
+      }
     } catch (e) { console.log("Answer submit fail hua:", e); }
   };
 
@@ -109,8 +124,18 @@ const ChatBubble = ({ message, isMe, groupId, onOpenTest, openDashboard }: any) 
           }
         };
         await updateDoc(doc(db, 'groups', groupId, 'messages', message.id), { submissions: updatedSubmissions });
+            // Bacche ke profile me 50 XP jod do
+          await updateDoc(doc(db, 'users', currentUid), { 
+            xp: increment(50) 
+          });
         Alert.alert("Success! 🎉", `${validLinks.length} pages submitted successfully.`);
       }
+
+      // 🚀 GAMIFICATION TRIGGER
+        const reward = await awardXP(currentUid, 50, "Homework Upload");
+        if (reward?.leveledUp) {
+          Alert.alert("⭐ LEVEL UP! ⭐", `Congratulations! You've reached Level ${reward.newLevel}!`);
+        }
       // Note: Error alert pehle hi uploadToImgBB mein dikh jayega, toh yahan alert hata diya.
       
     } catch (e) { 
@@ -354,6 +379,7 @@ export default function ChatScreen() {
 
 
   const flatListRef = useRef<FlatList>(null);
+  const agoraEngineRef = useRef<any>(null);
   const sendButtonScale = useSharedValue(1);
   const todoHeight = useSharedValue(0);
 
@@ -479,7 +505,17 @@ export default function ChatScreen() {
     activeTest.questions.forEach((q: any, idx: number) => { if (testAnswers[idx] === q.correct) score++; });
     const msgRef = doc(db, 'groups', id as string, 'messages', activeTest.id);
     await updateDoc(msgRef, { [`responses.${auth.currentUser.uid}`]: { score, answers: testAnswers } });
-    Alert.alert("Test Submitted! 🎉", `Your score is ${score} out of ${activeTest.questions.length}`);
+    
+    // 🚀 GAMIFICATION TRIGGER FOR TESTS
+    const earnedXP = score * 15; // Har sahi jawab ka 15 XP!
+    const reward = await awardXP(auth.currentUser.uid, earnedXP, "Test Submitted");
+    
+    if (reward?.leveledUp) {
+      Alert.alert("🎉 TEST SUBMITTED & LEVEL UP!", `Score: ${score}/${activeTest.questions.length}\nLevel Reached: ${reward.newLevel} ⭐`);
+    } else {
+      Alert.alert("Test Submitted! 🎉", `Your score is ${score} out of ${activeTest.questions.length}\nYou earned +${earnedXP} XP!`);
+    }
+    
     setActiveTest(null);
   };
 
@@ -498,30 +534,125 @@ export default function ChatScreen() {
     setBucketTitle('');
   };
 
+// ==========================================
+  // 🎙️ THE REAL-TIME AGORA VOICE ENGINE
+  // ==========================================
+  
+  // Initialize Agora when entering the lounge
+  const setupAgoraEngine = async () => {
+    try {
+      if (!AGORA_APP_ID) {
+        Alert.alert("Agora API Key Missing", "Please add EXPO_PUBLIC_AGORA_APP_ID to .env");
+        return false;
+      }
+      agoraEngineRef.current = createAgoraRtcEngine();
+      const engine = agoraEngineRef.current;
+      
+      engine.initialize({ appId: AGORA_APP_ID });
+      
+      // 🚨 AGORA ERROR TRACKER (Ye exact problem batayega)
+      engine.addListener('onError', (errCode, msg) => {
+        console.log("❌ AGORA ERROR FATAL:", errCode, msg);
+        if (errCode === 101) console.log("👉 Reason: App ID galat hai!");
+        if (errCode === 109) console.log("👉 Reason: Token galat hai ya expire ho gaya!");
+      });
+
+      // Join Success Listener
+      engine.addListener('onJoinChannelSuccess', (connection, elapsed) => {
+        console.log("✅ AGORA JOIN SUCCESS! Channel:", connection.channelId, "UID:", connection.localUid);
+      });
+
+      // User Joined Listener
+      engine.addListener('onUserJoined', (connection, remoteUid, elapsed) => {
+        console.log("🗣️ KOI AUR BHI AAYA! Remote UID:", remoteUid);
+      });
+
+      // User Offline Listener
+      engine.addListener('onUserOffline', (connection, remoteUid, reason) => {
+        console.log("👋 KOI GAYA! Remote UID:", remoteUid, "Reason:", reason);
+      });
+
+      return true;
+    } catch (e) {
+      console.log("Agora Setup Error:", e);
+      return false;
+    }
+  };
+
   const toggleVoiceLounge = async () => {
+    // 🚨 Web Browser Check
+    if (Platform.OS === 'web') {
+      Alert.alert("Mobile Only", "Voice Lounge is currently available only on the Android & iOS app! 📱");
+      return;
+    }
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
+    // We use a simple hash of the user ID to pass to Agora (it expects a number)
+    const agoraUid = Math.abs(uid.split('').reduce((a,b)=>{a=((a<<5)-a)+b.charCodeAt(0);return a&a},0));
+
     try {
       if (isInLounge) {
+        // 🔴 LEAVE LOUNGE
+        agoraEngineRef.current?.leaveChannel();
+        agoraEngineRef.current?.release(); // Free up memory
+        
         const updatedUsers = activeVoiceUsers.filter((u: any) => u.uid !== uid);
         await updateDoc(doc(db, 'groups', id as string), { activeVoice: updatedUsers });
         setIsInLounge(false);
       } else {
+        // 🟢 JOIN LOUNGE
         const permissionResponse = await Audio.requestPermissionsAsync();
         if (permissionResponse.granted) {
-          await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true, staysActiveInBackground: true, shouldDuckAndroid: true, playThroughEarpieceAndroid: false });
-          const newUser = { uid, name: auth.currentUser.displayName?.split(' ')[0] || 'User', avatar: auth.currentUser.photoURL || `https://ui-avatars.com/api/?name=${auth.currentUser.displayName}`, isMuted: isMicMuted };
+          
+         // 1. Setup Agora Hardware
+          const isSetup = await setupAgoraEngine();
+          if (!isSetup) return;
+
+          // 🚨 THE AGGRESSIVE AUDIO SETUP (Puraana hata kar ye daalo)
+          const engine = agoraEngineRef.current;
+          
+          engine?.enableAudio();
+          engine?.setChannelProfile(ChannelProfileType.ChannelProfileLiveBroadcasting); // Communication ki jagah LiveBroadcasting better hai
+          engine?.setClientRole(ClientRoleType.ClientRoleBroadcaster);
+          
+          // Forcefully unmute local audio and route to speaker
+          engine?.muteLocalAudioStream(false);
+          engine?.setEnableSpeakerphone(true);
+          engine?.adjustRecordingSignalVolume(100); // Mic volume full
+          engine?.adjustPlaybackSignalVolume(100);  // Speaker volume full
+
+          // Join Channel
+          engine?.joinChannel('', String(id), agoraUid, {
+            clientRoleType: ClientRoleType.ClientRoleBroadcaster,
+            publishMicrophoneTrack: true, // Force publish
+            autoSubscribeAudio: true,     // Force subscribe
+          });
+
+          // 3. Update Firebase UI State
+          const newUser = { 
+            uid, 
+            name: auth.currentUser.displayName?.split(' ')[0] || 'User', 
+            avatar: auth.currentUser.photoURL || `https://ui-avatars.com/api/?name=${auth.currentUser.displayName}`, 
+            isMuted: isMicMuted 
+          };
           await updateDoc(doc(db, 'groups', id as string), { activeVoice: [...activeVoiceUsers, newUser] });
           setIsInLounge(true);
-        } else { Alert.alert("Permission Denied", "Mic ki permission zaroori hai!"); }
+        } else { 
+          Alert.alert("Permission Denied", "Mic ki permission zaroori hai!"); 
+        }
       }
-    } catch (e) { console.log(e); }
+    } catch (e) { console.log("Lounge Toggle Error:", e); }
   };
 
   const toggleMic = async () => {
     if (!isInLounge || !auth.currentUser) return;
     const newMutedState = !isMicMuted;
     setIsMicMuted(newMutedState);
+    
+    // 🎙️ Mute/Unmute Real Audio in Agora
+    agoraEngineRef.current?.muteLocalAudioStream(newMutedState);
+
+    // 🎨 Update Firebase UI for others to see the muted icon
     const updatedUsers = activeVoiceUsers.map((u: any) => u.uid === auth.currentUser?.uid ? { ...u, isMuted: newMutedState } : u);
     await updateDoc(doc(db, 'groups', id as string), { activeVoice: updatedUsers });
   };
@@ -551,6 +682,15 @@ export default function ChatScreen() {
               <Ionicons name="chevron-forward" size={12} color="#bfdbfe" />
             </View>
           </TouchableOpacity>
+
+       {/* 🏆 THE LEADERBOARD TROPHY BUTTON */}
+          <TouchableOpacity 
+            onPress={() => router.push(`/chat/leaderboard/${id}`)} 
+            style={{ padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, marginLeft: 'auto' }}
+          >
+            <Ionicons name="trophy" size={22} color="#fde047" />
+          </TouchableOpacity>
+
           {!isInLounge ? (
             <TouchableOpacity onPress={toggleVoiceLounge} style={{ padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, marginLeft: 10 }}>
               <Ionicons name="call" size={22} color="#fff" />

@@ -10,14 +10,14 @@ import {
   arrayUnion, arrayRemove, limit, addDoc, serverTimestamp, getDoc, where 
 } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
+import { registerForPushNotificationsAsync } from '../../helpers/notificationEngine'; // Path check kar lena
 import Animated, { FadeInDown, Layout, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 
 const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
-
 const CATEGORIES = ['All', 'General', 'JEE Warriors', 'Coding Group', 'Doubts', 'Resources'];
 
 // ==========================================
-// 🔥 THE TABAHI POST CARD
+// 🔥 THE TABAHI POST CARD (Same as before)
 // ==========================================
 const PostCard = ({ item, currentUid }: any) => {
   const router = useRouter();
@@ -88,7 +88,6 @@ const PostCard = ({ item, currentUid }: any) => {
 
   return (
     <Animated.View entering={FadeInDown.duration(400).springify()} layout={Layout.springify()} style={styles.postCard}>
-      
       {/* 🧠 ALGORITHM REASON BADGE */}
       {item.algoReason && (
         <View style={styles.algoReasonBar}>
@@ -209,30 +208,36 @@ export default function FeedScreen() {
   
   // 🧠 State Logic
   const [posts, setPosts] = useState<any[]>([]);
-  const [algoPosts, setAlgoPosts] = useState<any[]>([]); // New state for Smart Feed
+  const [algoPosts, setAlgoPosts] = useState<any[]>([]); 
   const [otherStories, setOtherStories] = useState<any[]>([]);
   const [myStory, setMyStory] = useState<any>(null);
   
-  // Recommendation Engine States
   const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [myFriends, setMyFriends] = useState<string[]>([]);
-  
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
 
+  // 🚨 THE NEW PUSH NOTIFICATION ENGINE HOOK 🚨
+  useEffect(() => {
+    const setupNotifications = async () => {
+      if (currentUid) {
+        console.log("Push Notification Setup Init for:", currentUid);
+        await registerForPushNotificationsAsync(currentUid);
+      }
+    };
+    setupNotifications();
+  }, [currentUid]);
+
   // 🚀 FETCH CURRENT USER DATA & CONNECTIONS FOR ALGORITHM
   useEffect(() => {
     if (!currentUid) return;
-
-    // Fetch My Interests
     const fetchMyData = async () => {
       const docSnap = await getDoc(doc(db, 'users', currentUid));
       if (docSnap.exists()) setCurrentUserData(docSnap.data());
     };
     fetchMyData();
 
-    // Fetch My Friends
     const unsubSent = onSnapshot(query(collection(db, 'connections'), where('senderId', '==', currentUid)), (snap) => {
       const sent = snap.docs.filter(d => d.data().status === 'accepted').map(d => d.data().receiverId);
       const unsubRec = onSnapshot(query(collection(db, 'connections'), where('receiverId', '==', currentUid)), (recSnap) => {
@@ -241,7 +246,6 @@ export default function FeedScreen() {
       });
       return () => unsubRec();
     });
-
     return () => unsubSent();
   }, [currentUid]);
 
@@ -275,13 +279,11 @@ export default function FeedScreen() {
       let score = 0;
       let reason = "";
 
-      // 1. Network Priority (Highest Weight)
       if (myFriends.includes(post.authorId)) {
         score += 100;
         reason = "From your Network";
       }
 
-      // 2. Personalization & Interests Match
       const myInterests: string[] = currentUserData?.interests || [];
       const postCategory = post.category || "";
       const isInterestMatch = myInterests.some(i => i.toLowerCase().includes(postCategory.toLowerCase()));
@@ -291,35 +293,26 @@ export default function FeedScreen() {
         reason = "Suggested for You";
       }
 
-      // 3. Virality / Engagement
       const likesCount = post.likes?.length || 0;
       const commentsCount = post.commentsCount || 0;
       score += (likesCount * 2) + (commentsCount * 5);
       
-      if (likesCount > 10 && !reason) {
-        reason = "Popular on Eduxity";
-      }
+      if (likesCount > 10 && !reason) reason = "Popular on Eduxity";
 
-      // 4. Freshness
       const now = Date.now();
       const postTime = post.createdAt?.toMillis() || now;
       const hoursOld = (now - postTime) / (1000 * 60 * 60);
-      if (hoursOld < 24) {
-        score += 20; // Bump fresh posts
-      }
+      if (hoursOld < 24) score += 20;
 
       return { score, reason };
     };
 
-    // Apply algorithm
     let smartPosts = posts.map(post => {
       const { score, reason } = calculateScoreAndReason(post);
       return { ...post, algoScore: score, algoReason: reason };
     });
 
-    // Sort by algoScore descending
     smartPosts.sort((a, b) => b.algoScore - a.algoScore);
-    
     setAlgoPosts(smartPosts);
   }, [posts, currentUserData, myFriends]);
 
@@ -328,7 +321,6 @@ export default function FeedScreen() {
     setTimeout(() => setRefreshing(false), 1000); 
   };
 
-  // Filter based on Tabs
   const filteredPosts = selectedCategory === 'All' 
     ? algoPosts 
     : algoPosts.filter(post => post.category === selectedCategory);
@@ -454,7 +446,7 @@ export default function FeedScreen() {
 }
 
 // ==========================================
-// 🎨 STYLES
+// 🎨 STYLES (Kept exactly as you had them)
 // ==========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
@@ -494,7 +486,6 @@ const styles = StyleSheet.create({
   
   postCard: { backgroundColor: '#fff', marginTop: 8, paddingTop: 15, paddingBottom: 5, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#f1f5f9' },
   
-  // 🧠 Algo Badge Style
   algoReasonBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingBottom: 8, marginBottom: 8, borderBottomWidth: 1, borderColor: '#f8fafc' },
   algoReasonText: { fontSize: 11, fontWeight: '700', color: '#64748b', marginLeft: 5, textTransform: 'uppercase', letterSpacing: 0.5 },
 

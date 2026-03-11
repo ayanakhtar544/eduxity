@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, FlatList, Image, TouchableOpacity, 
-  SafeAreaView, StatusBar, TextInput, ActivityIndicator, Alert,
+  StatusBar, TextInput, ActivityIndicator, Alert,
   Platform
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
   collection, query, where, addDoc, serverTimestamp, 
   onSnapshot, doc, updateDoc, deleteDoc, getDoc

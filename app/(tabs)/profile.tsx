@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  View, Text, StyleSheet, Image, TouchableOpacity, 
-  SafeAreaView, StatusBar, ActivityIndicator, FlatList, Alert, Dimensions 
+  View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, ActivityIndicator, FlatList, Alert, Dimensions, ScrollView, Platform
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../../firebaseConfig';
 import { signOut } from 'firebase/auth';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
-import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
-import Animated, { FadeInDown, SlideInRight } from 'react-native-reanimated';
+import { collection, query, where, getDocs, doc, onSnapshot, deleteDoc } from 'firebase/firestore'; // 🗑️ deleteDoc add kiya
+import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
+import { BADGES_LIST } from '../../helpers/gamificationEngine'; 
 
 const { width } = Dimensions.get('window');
 const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
@@ -17,7 +18,6 @@ export default function ProfileScreen() {
   const router = useRouter();
   const user = auth.currentUser;
 
-  // 🧠 State Management
   const [activeTab, setActiveTab] = useState<'posts' | 'saved'>('posts');
   const [myPosts, setMyPosts] = useState<any[]>([]);
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
@@ -25,26 +25,22 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user) {
-      fetchUserData();
-      fetchProfileData();
-    }
+    if (!user) return;
+    
+    // 🚀 LIVE USER DATA LISTENER
+    const userDocRef = doc(db, 'users', user.uid);
+    const unsubscribeUser = onSnapshot(userDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setUserData(docSnap.data());
+      }
+    });
+
+    fetchProfileData();
+
+    return () => unsubscribeUser();
   }, [user]);
 
-  // 🚀 FETCH ASLI DATA
-  const fetchUserData = async () => {
-    if (!user) return;
-    try {
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDocSnap = await getDoc(userDocRef);
-      if (userDocSnap.exists()) {
-        setUserData(userDocSnap.data());
-      }
-    } catch (error) {
-      console.log("Error fetching user data:", error);
-    }
-  };
-
+  // 🚀 FETCH REAL POSTS DATA
   const fetchProfileData = async () => {
     setLoading(true);
     try {
@@ -73,30 +69,94 @@ export default function ProfileScreen() {
     ]);
   };
 
+  // 🗑️ CROSS-PLATFORM DELETE FUNCTION (For Profile Posts)
+  const handleDeleteFromProfile = async (postId: string) => {
+    if (Platform.OS === 'web') {
+      // 🌐 Web Browser ke liye Alert
+      const confirmDelete = window.confirm("Delete Post? This will permanently remove it.");
+      if (confirmDelete) {
+        try {
+          await deleteDoc(doc(db, 'posts', postId));
+          // Turant UI se hata do (Fast UX)
+          setMyPosts(prev => prev.filter(p => p.id !== postId));
+        } catch (error) {
+          console.log(error);
+          alert("Could not delete post.");
+        }
+      }
+    } else {
+      // 📱 Mobile App ke liye Alert
+      Alert.alert("Delete Post?", "This will permanently remove the post from Eduxity.", [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive", 
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, 'posts', postId));
+              // Turant UI se hata do (Fast UX)
+              setMyPosts(prev => prev.filter(p => p.id !== postId));
+            } catch (error) {
+              console.log(error);
+              Alert.alert("Error", "Could not delete post.");
+            }
+          }
+        }
+      ]);
+    }
+  };
+
   const renderMiniPost = ({ item, index }: { item: any, index: number }) => (
     <Animated.View entering={FadeInDown.delay(index * 100).springify()} style={styles.miniPostCard}>
       <View style={styles.miniPostHeader}>
-        <View style={styles.badgeContainer}>
-          <Ionicons name={item.type === 'code' ? 'code-slash' : item.type === 'poll' ? 'stats-chart' : item.type === 'image' ? 'image' : 'text'} size={14} color="#2563eb" />
-          <Text style={styles.miniPostType}>{item.type.toUpperCase()}</Text>
+        <View style={{flexDirection: 'row', alignItems: 'center'}}>
+          <View style={styles.badgeContainer}>
+            <Ionicons 
+              name={item.type === 'code' ? 'code-slash' : item.type === 'poll' ? 'stats-chart' : item.type === 'resource' ? 'book' : item.type === 'image' ? 'image' : 'text'} 
+              size={14} color="#4f46e5" 
+            />
+            <Text style={styles.miniPostType}>{item.type.toUpperCase()}</Text>
+          </View>
+          <Text style={styles.miniPostLikes}>❤️ {item.likes?.length || 0}</Text>
         </View>
-        <Text style={styles.miniPostLikes}>❤️ {item.likes?.length || 0}</Text>
+
+        {/* 🗑️ DELETE BUTTON (Only in 'posts' tab) */}
+        {activeTab === 'posts' && (
+          <TouchableOpacity onPress={() => handleDeleteFromProfile(item.id)} style={styles.deleteMiniBtn}>
+            <Ionicons name="trash-outline" size={18} color="#ef4444" />
+          </TouchableOpacity>
+        )}
       </View>
       <Text style={styles.miniPostText} numberOfLines={2}>
-        {item.text || item.codeSnippet || "Media Post..."}
+        {item.title || item.text || item.codeSnippet || "Media Post..."}
       </Text>
     </Animated.View>
   );
 
-  // 🎮 GAMIFICATION LOGIC
-  const currentLevel = userData?.stats?.level || 1;
-  const currentXp = userData?.stats?.xp || 0;
-  const nextLevelXp = currentLevel * 1000;
-  const xpPercentage = Math.min((currentXp / nextLevelXp) * 100, 100);
+  // ==========================================
+  // 🎮 REAL GAMIFICATION MATHS
+  // ==========================================
+  const gami = userData?.gamification || {};
+  const currentLevel = gami.level || 1;
+  const currentXp = gami.xp || 0;
+  
+  const prevLevelXp = Math.pow(currentLevel - 1, 2) * 100;
+  const nextLevelXp = Math.pow(currentLevel, 2) * 100;
+  
+  const xpEarnedInCurrentLevel = currentXp - prevLevelXp;
+  const xpNeededForNextLevel = nextLevelXp - prevLevelXp;
+  const xpPercentage = Math.min(Math.max((xpEarnedInCurrentLevel / xpNeededForNextLevel) * 100, 0), 100);
+
+  const userBadgeIds = gami.badges || [];
+  const unlockedBadges = BADGES_LIST.filter(b => userBadgeIds.includes(b.id));
+
+  const currentStreak = gami.currentStreak || 0;
+  const eduCoins = gami.eduCoins || 0;
+  const totalLikes = gami.stats?.likesReceived || 0;
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
 
       {/* --- 🔝 TOP ACTION BAR --- */}
       <View style={styles.topBar}>
@@ -117,7 +177,7 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}
         refreshing={loading}
-        onRefresh={() => { fetchUserData(); fetchProfileData(); }}
+        onRefresh={() => { fetchProfileData(); }}
         ListHeaderComponent={
           <View style={styles.headerWrapper}>
             
@@ -134,15 +194,15 @@ export default function ProfileScreen() {
                 <Text style={styles.fullName}>{user?.displayName || 'Eduxity User'}</Text>
                 
                 <View style={styles.roleContainer}>
-                  <Ionicons name="school" size={14} color="#2563eb" />
+                  <Ionicons name="school" size={14} color="#4f46e5" />
                   <Text style={styles.roleText}>{userData?.roleDetail || 'Community Member'}</Text>
                 </View>
 
-                {/* XP Progress Bar */}
+                {/* 🎮 REAL XP PROGRESS BAR */}
                 <View style={styles.xpContainer}>
                   <View style={styles.xpHeader}>
-                    <Text style={styles.xpText}>XP Progress</Text>
-                    <Text style={styles.xpValues}>{currentXp} / {nextLevelXp}</Text>
+                    <Text style={styles.xpText}>Level {currentLevel} Progress</Text>
+                    <Text style={styles.xpValues}>{currentXp} / {nextLevelXp} XP</Text>
                   </View>
                   <View style={styles.xpBarBackground}>
                     <View style={[styles.xpBarFill, { width: `${xpPercentage}%` }]} />
@@ -151,36 +211,69 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            {/* --- 📍 ABOUT & DEMOGRAPHICS CARD --- */}
+            {/* --- 🎖️ BADGES VAULT --- */}
+            <View style={styles.badgesCard}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>My Badges</Text>
+                <Text style={styles.badgeCount}>{unlockedBadges.length} / {BADGES_LIST.length}</Text>
+              </View>
+              
+              {unlockedBadges.length > 0 ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgesScroll}>
+                  {unlockedBadges.map((badge, idx) => (
+                    <Animated.View entering={FadeIn.delay(idx * 100)} key={badge.id} style={styles.badgeItem}>
+                      <Text style={styles.badgeEmoji}>{badge.icon}</Text>
+                      <Text style={styles.badgeName}>{badge.name}</Text>
+                    </Animated.View>
+                  ))}
+                </ScrollView>
+              ) : (
+                <View style={styles.noBadgesContainer}>
+                  <Ionicons name="shield-checkmark-outline" size={30} color="#cbd5e1" />
+                  <Text style={styles.noBadgesText}>Complete tasks to unlock badges!</Text>
+                </View>
+              )}
+            </View>
+
+            {/* --- 🔥 REAL STATS DASHBOARD --- */}
+            <View style={styles.highlightCardsContainer}>
+              <View style={[styles.highlightCard, { backgroundColor: '#fff7ed', borderColor: '#ffedd5' }]}>
+                <Text style={styles.highlightEmoji}>🔥</Text>
+                <Text style={styles.highlightValue}>{currentStreak}</Text>
+                <Text style={styles.highlightLabel}>Day Streak</Text>
+              </View>
+              <View style={[styles.highlightCard, { backgroundColor: '#fefce8', borderColor: '#fef9c3' }]}>
+                <Text style={styles.highlightEmoji}>🪙</Text>
+                <Text style={styles.highlightValue}>{eduCoins}</Text>
+                <Text style={styles.highlightLabel}>EduCoins</Text>
+              </View>
+              <View style={[styles.highlightCard, { backgroundColor: '#fdf2f8', borderColor: '#fce7f3' }]}>
+                <Text style={styles.highlightEmoji}>❤️</Text>
+                <Text style={styles.highlightValue}>{totalLikes}</Text>
+                <Text style={styles.highlightLabel}>Total Likes</Text>
+              </View>
+            </View>
+
+            {/* --- 📍 ABOUT CARD --- */}
             <View style={styles.aboutCard}>
-              {userData?.bio ? <Text style={styles.bioText}>{userData.bio}</Text> : null}
+              <Text style={styles.cardTitle}>About Me</Text>
+              {userData?.bio ? <Text style={styles.bioText}>{userData.bio}</Text> : <Text style={styles.bioText}>No bio added yet.</Text>}
               
               <View style={styles.infoRowGrid}>
-                {userData?.institutionName ? (
+                {userData?.institutionName && (
                   <View style={styles.infoRow}>
                     <Ionicons name="business" size={16} color="#64748b" />
                     <Text style={styles.infoText}>{userData.institutionName}</Text>
                   </View>
-                ) : null}
-                
-                {(userData?.city || userData?.state) ? (
+                )}
+                {(userData?.city || userData?.state) && (
                   <View style={styles.infoRow}>
                     <Ionicons name="location" size={16} color="#64748b" />
-                    <Text style={styles.infoText}>
-                      {[userData?.city, userData?.state].filter(Boolean).join(', ')}
-                    </Text>
+                    <Text style={styles.infoText}>{[userData?.city, userData?.state].filter(Boolean).join(', ')}</Text>
                   </View>
-                ) : null}
-
-                {userData?.dob ? (
-                  <View style={styles.infoRow}>
-                    <Ionicons name="calendar" size={16} color="#64748b" />
-                    <Text style={styles.infoText}>Born {userData.dob}</Text>
-                  </View>
-                ) : null}
+                )}
               </View>
 
-              {/* Social Links (Will be added from Edit Profile) */}
               {(userData?.githubLink || userData?.linkedinLink || userData?.instagramLink) && (
                 <View style={styles.socialLinksRow}>
                   {userData.githubLink && <TouchableOpacity><Ionicons name="logo-github" size={24} color="#0f172a" style={styles.socialIcon}/></TouchableOpacity>}
@@ -200,34 +293,15 @@ export default function ProfileScreen() {
               )}
             </View>
 
-            {/* --- 🔥 LIVE CONSISTENCY DASHBOARD --- */}
-            <View style={styles.highlightCardsContainer}>
-              <View style={[styles.highlightCard, { backgroundColor: '#fff3cd' }]}>
-                <Text style={styles.highlightEmoji}>🔥</Text>
-                <Text style={styles.highlightValue}>{userData?.stats?.streak || 0}</Text>
-                <Text style={styles.highlightLabel}>Streak</Text>
-              </View>
-              <View style={[styles.highlightCard, { backgroundColor: '#d1fae5' }]}>
-                <Text style={styles.highlightEmoji}>🎯</Text>
-                <Text style={styles.highlightValue}>{userData?.stats?.accuracy || 0}%</Text>
-                <Text style={styles.highlightLabel}>Accuracy</Text>
-              </View>
-              <View style={[styles.highlightCard, { backgroundColor: '#dbeafe' }]}>
-                <Text style={styles.highlightEmoji}>📝</Text>
-                <Text style={styles.highlightValue}>{userData?.stats?.totalSolved || 0}</Text>
-                <Text style={styles.highlightLabel}>Solved</Text>
-              </View>
-            </View>
-
             {/* --- 🗂️ TAB SELECTOR --- */}
             <View style={styles.tabContainer}>
               <TouchableOpacity style={[styles.tabBtn, activeTab === 'posts' && styles.activeTabBtn]} onPress={() => setActiveTab('posts')}>
-                <Ionicons name="grid-outline" size={20} color={activeTab === 'posts' ? '#2563eb' : '#64748b'} />
-                <Text style={[styles.tabText, activeTab === 'posts' && styles.activeTabText]}>Posts ({myPosts.length})</Text>
+                <Ionicons name="grid-outline" size={20} color={activeTab === 'posts' ? '#4f46e5' : '#64748b'} />
+                <Text style={[styles.tabText, activeTab === 'posts' && styles.activeTabText]}>My Posts ({myPosts.length})</Text>
               </TouchableOpacity>
               
               <TouchableOpacity style={[styles.tabBtn, activeTab === 'saved' && styles.activeTabBtn]} onPress={() => setActiveTab('saved')}>
-                <Ionicons name="bookmark-outline" size={20} color={activeTab === 'saved' ? '#2563eb' : '#64748b'} />
+                <Ionicons name="bookmark-outline" size={20} color={activeTab === 'saved' ? '#4f46e5' : '#64748b'} />
                 <Text style={[styles.tabText, activeTab === 'saved' && styles.activeTabText]}>Saved ({savedPosts.length})</Text>
               </TouchableOpacity>
             </View>
@@ -237,7 +311,7 @@ export default function ProfileScreen() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Ionicons name={activeTab === 'posts' ? "document-text-outline" : "bookmarks-outline"} size={60} color="#cbd5e1" />
-            <Text style={styles.emptyText}>{activeTab === 'posts' ? "No posts yet." : "No saved posts."}</Text>
+            <Text style={styles.emptyText}>{activeTab === 'posts' ? "You haven't posted anything yet." : "No saved posts."}</Text>
           </View>
         }
       />
@@ -246,69 +320,84 @@ export default function ProfileScreen() {
 }
 
 // ==========================================
-// 🎨 PREMIUM STYLES
+// 🎨 ULTRA-PREMIUM STYLES
 // ==========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#f1f5f9' },
+  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
   username: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
   topIcons: { flexDirection: 'row', gap: 15 },
-  iconBtn: { padding: 5 },
+  iconBtn: { padding: 4 },
 
   headerWrapper: { backgroundColor: '#f8fafc', paddingBottom: 10 },
 
-  profileSection: { flexDirection: 'row', padding: 20, alignItems: 'center', backgroundColor: '#fff' },
+  // Profile Header
+  profileSection: { flexDirection: 'row', padding: 20, alignItems: 'center', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#f1f5f9' },
   avatarWrapper: { position: 'relative', marginRight: 20 },
-  profileAvatar: { width: 86, height: 86, borderRadius: 43, borderWidth: 3, borderColor: '#2563eb' },
-  levelBadge: { position: 'absolute', bottom: -5, alignSelf: 'center', backgroundColor: '#0f172a', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 2, borderColor: '#fff' },
-  levelText: { color: '#fbbf24', fontSize: 10, fontWeight: '900' },
+  profileAvatar: { width: 90, height: 90, borderRadius: 45, borderWidth: 3, borderColor: '#e2e8f0' },
+  levelBadge: { position: 'absolute', bottom: -5, alignSelf: 'center', backgroundColor: '#0f172a', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOffset: {width:0, height:2}, shadowOpacity: 0.2, shadowRadius: 4 },
+  levelText: { color: '#fbbf24', fontSize: 11, fontWeight: '900' },
   
   profileDetails: { flex: 1 },
-  fullName: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
-  
+  fullName: { fontSize: 22, fontWeight: '900', color: '#0f172a' },
   roleContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4, marginBottom: 12 },
-  roleText: { fontSize: 13, color: '#2563eb', fontWeight: '700', marginLeft: 6 },
+  roleText: { fontSize: 13, color: '#4f46e5', fontWeight: '800', marginLeft: 6 },
   
-  xpContainer: { width: '100%' },
-  xpHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  xpText: { fontSize: 11, fontWeight: '700', color: '#64748b' },
-  xpValues: { fontSize: 11, fontWeight: '800', color: '#0f172a' },
+  // Real XP Bar
+  xpContainer: { width: '100%', backgroundColor: '#f8fafc', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
+  xpHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  xpText: { fontSize: 11, fontWeight: '800', color: '#64748b', textTransform: 'uppercase' },
+  xpValues: { fontSize: 11, fontWeight: '800', color: '#4f46e5' },
   xpBarBackground: { height: 8, backgroundColor: '#e2e8f0', borderRadius: 4, overflow: 'hidden' },
-  xpBarFill: { height: '100%', backgroundColor: '#fbbf24', borderRadius: 4 },
+  xpBarFill: { height: '100%', backgroundColor: '#4f46e5', borderRadius: 4 },
 
-  aboutCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 10, padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
-  bioText: { fontSize: 14, color: '#334155', lineHeight: 22, marginBottom: 15, fontWeight: '500' },
-  
-  infoRowGrid: { gap: 8, marginBottom: 15 },
-  infoRow: { flexDirection: 'row', alignItems: 'center' },
-  infoText: { fontSize: 13, color: '#475569', marginLeft: 8, fontWeight: '600' },
+  // Real Stats Cards
+  highlightCardsContainer: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 15, marginTop: 15 },
+  highlightCard: { width: (width - 50) / 3, paddingVertical: 15, borderRadius: 16, alignItems: 'center', borderWidth: 1 },
+  highlightEmoji: { fontSize: 26, marginBottom: 5 },
+  highlightValue: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+  highlightLabel: { fontSize: 11, fontWeight: '800', color: '#64748b', marginTop: 2, textTransform: 'uppercase' },
 
-  socialLinksRow: { flexDirection: 'row', gap: 15, marginBottom: 15, paddingTop: 10, borderTopWidth: 1, borderColor: '#f1f5f9' },
+  // Badges Vault
+  badgesCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 15, paddingVertical: 15, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 15, marginBottom: 10 },
+  cardTitle: { fontSize: 16, fontWeight: '900', color: '#0f172a' },
+  badgeCount: { fontSize: 12, fontWeight: '800', color: '#4f46e5', backgroundColor: '#e0e7ff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  badgesScroll: { paddingHorizontal: 15, gap: 12 },
+  badgeItem: { alignItems: 'center', backgroundColor: '#f8fafc', padding: 12, borderRadius: 14, borderWidth: 1, borderColor: '#f1f5f9', width: 80 },
+  badgeEmoji: { fontSize: 28, marginBottom: 6 },
+  badgeName: { fontSize: 10, fontWeight: '800', color: '#475569', textAlign: 'center' },
+  noBadgesContainer: { alignItems: 'center', paddingVertical: 10 },
+  noBadgesText: { fontSize: 13, color: '#94a3b8', fontWeight: '600', marginTop: 8 },
+
+  // About Card
+  aboutCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 15, padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
+  bioText: { fontSize: 14, color: '#334155', lineHeight: 22, marginTop: 10, marginBottom: 15, fontWeight: '500' },
+  infoRowGrid: { gap: 10, marginBottom: 15 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#f1f5f9' },
+  infoText: { fontSize: 13, color: '#475569', marginLeft: 8, fontWeight: '700' },
+  socialLinksRow: { flexDirection: 'row', gap: 15, marginBottom: 15, paddingTop: 15, borderTopWidth: 1, borderColor: '#f1f5f9' },
   socialIcon: { marginRight: 5 },
-
   interestsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  interestTag: { backgroundColor: '#f8fafc', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
-  interestTagText: { fontSize: 12, fontWeight: '700', color: '#475569' },
+  interestTag: { backgroundColor: '#e0e7ff', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  interestTagText: { fontSize: 12, fontWeight: '800', color: '#4f46e5' },
 
-  highlightCardsContainer: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 15, backgroundColor: '#fff', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#f1f5f9', marginTop: 15 },
-  highlightCard: { width: (width - 50) / 3, paddingVertical: 15, borderRadius: 16, alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5 },
-  highlightEmoji: { fontSize: 24, marginBottom: 5 },
-  highlightValue: { fontSize: 16, fontWeight: '900', color: '#0f172a' },
-  highlightLabel: { fontSize: 11, fontWeight: '700', color: '#64748b', marginTop: 2 },
-
-  tabContainer: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#f1f5f9' },
+  // Tabs
+  tabContainer: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', marginTop: 15 },
   tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 15 },
-  activeTabBtn: { borderBottomWidth: 2, borderBottomColor: '#2563eb' },
-  tabText: { fontSize: 14, fontWeight: '700', color: '#64748b', marginLeft: 8 },
-  activeTabText: { color: '#2563eb' },
+  activeTabBtn: { borderBottomWidth: 3, borderBottomColor: '#4f46e5' },
+  tabText: { fontSize: 14, fontWeight: '800', color: '#64748b', marginLeft: 8 },
+  activeTabText: { color: '#4f46e5' },
 
-  miniPostCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 15, padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
+  // Mini Posts List
+  miniPostCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 12, padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: {width: 0, height: 1}, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
   miniPostHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  badgeContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff6ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  miniPostType: { fontSize: 10, fontWeight: '800', color: '#2563eb', marginLeft: 6 },
-  miniPostLikes: { fontSize: 12, fontWeight: '700', color: '#475569' },
-  miniPostText: { fontSize: 14, color: '#1e293b', lineHeight: 20 },
+  badgeContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef2ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  miniPostType: { fontSize: 10, fontWeight: '900', color: '#4f46e5', marginLeft: 6 },
+  miniPostLikes: { fontSize: 12, fontWeight: '800', color: '#475569', marginLeft: 10 },
+  deleteMiniBtn: { backgroundColor: '#fef2f2', padding: 6, borderRadius: 10 },
+  miniPostText: { fontSize: 15, color: '#1e293b', lineHeight: 22, fontWeight: '500' },
 
-  emptyState: { alignItems: 'center', marginTop: 50 },
-  emptyText: { marginTop: 15, fontSize: 16, fontWeight: '600', color: '#94a3b8' }
+  emptyState: { alignItems: 'center', marginTop: 60 },
+  emptyText: { marginTop: 15, fontSize: 15, fontWeight: '700', color: '#94a3b8' }
 });

@@ -9,7 +9,8 @@ const ACTION_MAP = {
   'CREATE_POST': { baseXP: 20, coins: 2, statKey: 'postsCreated' },
   'POLL_ANSWER': { baseXP: 10, coins: 1, statKey: 'pollsAnswered' },
   'POLL_CORRECT': { baseXP: 30, coins: 5, statKey: 'pollsCorrect' }, 
-  'RECEIVE_LIKE': { baseXP: 5, coins: 1, statKey: 'likesReceived' }
+  'RECEIVE_LIKE': { baseXP: 5, coins: 1, statKey: 'likesReceived' },
+  'STUDY_SESSION': { baseXP: 50, coins: 5, statKey: 'studySessions' }
 };
 
 export type ActionType = keyof typeof ACTION_MAP;

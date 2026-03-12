@@ -180,6 +180,7 @@ export default function StudyVaultScreen() {
           }
         />
       )}
+      
 
       {/* ➕ FLOATING ACTION BUTTON */}
       <TouchableOpacity 

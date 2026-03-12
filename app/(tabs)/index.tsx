@@ -11,14 +11,15 @@ import {
   arrayUnion, arrayRemove, limit, addDoc, serverTimestamp, getDoc, where, deleteDoc
 } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient'; 
 import { registerForPushNotificationsAsync } from '../../helpers/notificationEngine'; 
 import { processAction } from '../../helpers/gamificationEngine'; 
-import Animated, { FadeInDown, Layout, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics'; // Added for premium feel
+import Animated, { FadeInDown, Layout, useSharedValue, useAnimatedStyle, withSpring, withTiming, interpolate, Extrapolation } from 'react-native-reanimated';
 
 const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 const CATEGORIES = ['All', 'General', 'JEE Warriors', 'Coding Group', 'Doubts', 'Resources'];
 
-// 🕒 TIME FORMATTER LOGIC
 const timeAgo = (timestamp: number | undefined) => {
   if (!timestamp) return 'Just now';
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -29,6 +30,121 @@ const timeAgo = (timestamp: number | undefined) => {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+};
+
+// ==========================================
+// 🃏 INLINE FLASHCARD PLAYER COMPONENT
+// ==========================================
+const InlineFlashcardPlayer = ({ cardsData, title }: { cardsData: any[], title: string }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [isFinished, setIsFinished] = useState(false);
+  const flipAnim = useSharedValue(0);
+
+  if (!cardsData || cardsData.length === 0) return null;
+
+  const currentCard = cardsData[currentIndex];
+
+  const frontStyle = useAnimatedStyle(() => {
+    const rotateY = interpolate(flipAnim.value, [0, 180], [0, 180], Extrapolation.CLAMP);
+    return {
+      transform: [{ perspective: 1000 }, { rotateY: `${rotateY}deg` }],
+      backfaceVisibility: 'hidden',
+      zIndex: flipAnim.value < 90 ? 1 : 0,
+      opacity: flipAnim.value < 90 ? 1 : 0,
+    };
+  });
+
+  const backStyle = useAnimatedStyle(() => {
+    const rotateY = interpolate(flipAnim.value, [0, 180], [180, 360], Extrapolation.CLAMP);
+    return {
+      transform: [{ perspective: 1000 }, { rotateY: `${rotateY}deg` }],
+      backfaceVisibility: 'hidden',
+      zIndex: flipAnim.value > 90 ? 1 : 0,
+      opacity: flipAnim.value > 90 ? 1 : 0,
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0
+    };
+  });
+
+  const handleFlip = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsFlipped(!isFlipped);
+    flipAnim.value = withTiming(isFlipped ? 0 : 180, { duration: 400 });
+  };
+
+  const handleNext = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (currentIndex < cardsData.length - 1) {
+      flipAnim.value = 0;
+      setIsFlipped(false);
+      setCurrentIndex(prev => prev + 1);
+    } else {
+      setIsFinished(true);
+    }
+  };
+
+  const handleRestart = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    flipAnim.value = 0;
+    setIsFlipped(false);
+    setCurrentIndex(0);
+    setIsFinished(false);
+  };
+
+  if (isFinished) {
+    return (
+      <View style={styles.inlineFlashcardContainer}>
+        <View style={styles.flashcardFinish}>
+          <Ionicons name="trophy" size={50} color="#fde047" />
+          <Text style={styles.finishDeckTitle}>Deck Completed!</Text>
+          <Text style={styles.finishDeckSub}>You revised {cardsData.length} cards.</Text>
+          <TouchableOpacity style={styles.restartDeckBtn} onPress={handleRestart}>
+            <Ionicons name="refresh" size={16} color="#fff" />
+            <Text style={styles.restartDeckText}>Revise Again</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.inlineFlashcardContainer}>
+      <View style={styles.inlineFlashcardHeader}>
+        <Text style={styles.inlineFlashcardTitle} numberOfLines={1}>{title || 'Revision Deck'}</Text>
+        <Text style={styles.inlineFlashcardCount}>{currentIndex + 1} / {cardsData.length}</Text>
+      </View>
+
+      <View style={styles.inlineCardArea}>
+        {/* FRONT */}
+        <Animated.View style={[styles.inlineCard, styles.inlineCardFront, frontStyle]}>
+          <Text style={styles.inlineCardCategory}>Question</Text>
+          <ScrollView contentContainerStyle={styles.inlineScrollCenter}>
+            <Text style={styles.inlineCardQuestion}>{currentCard?.q}</Text>
+          </ScrollView>
+          <TouchableOpacity style={styles.inlineFlipBtn} onPress={handleFlip}>
+            <Ionicons name="refresh" size={16} color="#fff" style={{marginRight: 5}}/>
+            <Text style={styles.inlineFlipText}>Tap to see Answer</Text>
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* BACK */}
+        <Animated.View style={[styles.inlineCard, styles.inlineCardBack, backStyle]}>
+          <Text style={styles.inlineCardCategory}>Answer</Text>
+          <ScrollView contentContainerStyle={styles.inlineScrollCenter}>
+            <Text style={styles.inlineCardAnswer}>{currentCard?.a}</Text>
+          </ScrollView>
+          <View style={styles.inlineCardActions}>
+            <TouchableOpacity style={[styles.inlineActionBtn, {backgroundColor: '#ef4444'}]} onPress={handleNext}>
+              <Text style={styles.inlineActionText}>Forgot</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.inlineActionBtn, {backgroundColor: '#10b981'}]} onPress={handleNext}>
+              <Text style={styles.inlineActionText}>Knew It</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </View>
+    </View>
+  );
 };
 
 // ==========================================
@@ -70,7 +186,6 @@ const PostCard = ({ item, currentUid }: any) => {
       } else {
         await updateDoc(postRef, { likes: arrayUnion(currentUid) });
         await sendNotification(); 
-        
         if (item.authorId !== currentUid) {
            await processAction(item.authorId, 'RECEIVE_LIKE');
         }
@@ -88,39 +203,20 @@ const PostCard = ({ item, currentUid }: any) => {
     } catch (error) { console.log("Save error:", error); }
   };
 
-  // 🗑️ CROSS-PLATFORM DELETE POST LOGIC
   const handleDeletePost = async () => {
     if (Platform.OS === 'web') {
-      // 🌐 Web Browser ke liye Alert
-      const confirmDelete = window.confirm("Are you sure you want to permanently delete this post?");
+      const confirmDelete = window.confirm("Are you sure you want to delete this post?");
       if (confirmDelete) {
-        try {
-          await deleteDoc(doc(db, 'posts', item.id));
-        } catch (error) {
-          console.log(error);
-          alert("Could not delete the post.");
-        }
+        try { await deleteDoc(doc(db, 'posts', item.id)); } catch (error) { alert("Could not delete."); }
       }
     } else {
-      // 📱 Mobile App ke liye Alert
-      Alert.alert(
-        "Delete Post?",
-        "Are you sure you want to permanently delete this post?",
-        [
-          { text: "Cancel", style: "cancel" },
-          { 
-            text: "Delete", 
-            style: "destructive", 
-            onPress: async () => {
-              try {
-                await deleteDoc(doc(db, 'posts', item.id));
-              } catch (error) {
-                Alert.alert("Error", "Could not delete the post.");
-              }
-            }
+      Alert.alert("Delete Post?", "Are you sure?", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: async () => {
+            try { await deleteDoc(doc(db, 'posts', item.id)); } catch (error) { Alert.alert("Error", "Could not delete."); }
           }
-        ]
-      );
+        }
+      ]);
     }
   };
 
@@ -152,7 +248,6 @@ const PostCard = ({ item, currentUid }: any) => {
         </View>
       )}
 
-      {/* 👤 AUTHOR HEADER */}
       <View style={styles.postHeader}>
         <TouchableOpacity onPress={() => router.push(`/user/${item.authorId}`)}>
           <Image source={{ uri: item.authorAvatar || DEFAULT_AVATAR }} style={styles.avatar} />
@@ -166,6 +261,7 @@ const PostCard = ({ item, currentUid }: any) => {
                 {item.type === 'code' && <Ionicons name="code-slash" size={10} color="#fff" style={{ marginRight: 4 }} />}
                 {item.pollMode === 'quiz' && <Ionicons name="school" size={10} color="#fff" style={{ marginRight: 4 }} />}
                 {item.type === 'resource' && <Ionicons name="book" size={10} color="#fff" style={{ marginRight: 4 }} />}
+                {item.type === 'flashcard' && <Ionicons name="layers" size={10} color="#fff" style={{ marginRight: 4 }} />}
                 <Text style={styles.categoryBadgeText}>{item.category}</Text>
               </View>
             )}
@@ -173,7 +269,6 @@ const PostCard = ({ item, currentUid }: any) => {
           </View>
         </View>
 
-        {/* ⚙️ CONDITIONAL DELETE / MORE BUTTON */}
         <View style={styles.headerRightActions}>
           {item.authorId === currentUid ? (
             <TouchableOpacity style={styles.deleteBtn} onPress={handleDeletePost}>
@@ -188,6 +283,11 @@ const PostCard = ({ item, currentUid }: any) => {
       </View>
 
       {item.text ? <Text style={styles.postText}>{item.text}</Text> : null}
+
+      {/* 🃏 RENDER INLINE FLASHCARD IF TYPE IS FLASHCARD */}
+      {item.type === 'flashcard' && item.cardsData && (
+        <InlineFlashcardPlayer cardsData={item.cardsData} title={item.title} />
+      )}
 
       {item.tags && item.tags.length > 0 && (
         <View style={styles.tagsContainer}>
@@ -276,18 +376,9 @@ const PostCard = ({ item, currentUid }: any) => {
             <View style={styles.pdfPreviewBox}>
               {Platform.OS === 'web' ? (
                 // @ts-ignore
-                <iframe 
-                  src={item.fileUrl.replace(/\/view.*$/, '/preview')} 
-                  style={{ width: '100%', height: '100%', border: 'none' }} 
-                  title="PDF Preview"
-                />
+                <iframe src={item.fileUrl.replace(/\/view.*$/, '/preview')} style={{ width: '100%', height: '100%', border: 'none' }} title="PDF Preview" />
               ) : (
-                <WebView 
-                  source={{ uri: item.fileUrl.replace(/\/view.*$/, '/preview') }} 
-                  style={{ flex: 1 }}
-                  startInLoadingState={true}
-                  renderLoading={() => <View style={styles.loaderCenter}><ActivityIndicator size="small" color="#4f46e5" /></View>}
-                />
+                <WebView source={{ uri: item.fileUrl.replace(/\/view.*$/, '/preview') }} style={{ flex: 1 }} startInLoadingState={true} renderLoading={() => <View style={styles.loaderCenter}><ActivityIndicator size="small" color="#4f46e5" /></View>} />
               )}
             </View>
           ) : item.structuredText ? (
@@ -299,7 +390,6 @@ const PostCard = ({ item, currentUid }: any) => {
         </View>
       )}
 
-      {/* 💬 ACTION BAR */}
       <View style={styles.actionBar}>
         <View style={styles.actionLeft}>
           <TouchableOpacity style={styles.actionBtn} onPress={handleLike} activeOpacity={0.7}>
@@ -338,6 +428,20 @@ export default function FeedScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!currentUid) return;
+    const q = query(
+      collection(db, 'notifications'), 
+      where('recipientId', '==', currentUid),
+      where('isRead', '==', false)
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      setUnreadCount(snapshot.docs.length);
+    });
+    return () => unsub();
+  }, [currentUid]);
 
   useEffect(() => {
     if (currentUid) registerForPushNotificationsAsync(currentUid);
@@ -434,7 +538,7 @@ export default function FeedScreen() {
         <View style={styles.createInputRow}>
           <Image source={{ uri: auth.currentUser?.photoURL || DEFAULT_AVATAR }} style={styles.createAvatar} />
           <TouchableOpacity style={styles.fakeInput} onPress={() => router.push('/create-post')} activeOpacity={0.9}>
-            <Text style={styles.fakeInputText}>What&apos;s on your mind?{"\n"}Share a doubt, tip, or achievement...</Text>
+            <Text style={styles.fakeInputText}>What's on your mind?{"\n"}Share a doubt, tip, or achievement...</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.createActionsRow}>
@@ -446,9 +550,9 @@ export default function FeedScreen() {
             <Ionicons name="stats-chart" size={18} color="#3b82f6" />
             <Text style={styles.createActionText}>Poll</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.createActionBtn} onPress={() => router.push({ pathname: '/create-post', params: { type: 'resource' } })}>
-            <Ionicons name="book" size={18} color="#f59e0b" />
-            <Text style={styles.createActionText}>Notes</Text>
+          <TouchableOpacity style={styles.createActionBtn} onPress={() => router.push({ pathname: '/create-post', params: { type: 'flashcard' } })}>
+            <Ionicons name="layers" size={18} color="#ec4899" />
+            <Text style={styles.createActionText}>Deck</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -459,7 +563,6 @@ export default function FeedScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       
-      {/* 🔝 MAIN APP HEADER */}
       <View style={styles.mainHeader}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View style={styles.logoBox}><Ionicons name="school" size={22} color="#fff" /></View>
@@ -469,14 +572,17 @@ export default function FeedScreen() {
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/search-users')}>
             <Ionicons name="search" size={24} color="#0f172a" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/notifications')}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/notification')}>
              <Ionicons name="notifications-outline" size={24} color="#0f172a" />
-            <View style={styles.notificationBadge}><Text style={styles.badgeText}>1</Text></View>
+             {unreadCount > 0 && (
+               <Animated.View style={styles.notificationBadge}>
+                 <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+               </Animated.View>
+             )}
          </TouchableOpacity>
         </View>
       </View>
 
-      {/* 🏷️ STICKY CATEGORY FILTER BAR */}
       <View style={styles.categoryFilterContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15, paddingVertical: 12 }}>
           {CATEGORIES.map((cat, index) => (
@@ -519,9 +625,6 @@ export default function FeedScreen() {
   );
 }
 
-// ==========================================
-// 🎨 ULTRA-PREMIUM STYLES
-// ==========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f1f5f9' }, 
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -557,7 +660,6 @@ const styles = StyleSheet.create({
   createActionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12 },
   createActionText: { marginLeft: 8, fontSize: 13, fontWeight: '700', color: '#334155' },
   
-  // 🌟 POST CARD
   postCard: { backgroundColor: '#fff', marginHorizontal: 10, marginTop: 10, marginBottom: 5, borderRadius: 16, overflow: 'hidden', elevation: 2, shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' },
   algoReasonBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef2ff', paddingHorizontal: 15, paddingVertical: 8 },
   algoReasonText: { fontSize: 11, fontWeight: '800', color: '#4f46e5', marginLeft: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -570,7 +672,6 @@ const styles = StyleSheet.create({
   categoryBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff', textTransform: 'uppercase' },
   timeText: { fontSize: 12, color: '#94a3b8', marginLeft: 6, fontWeight: '600' },
   
-  // ⚙️ DELETE / MORE BUTTON WRAPPER
   headerRightActions: { flexDirection: 'row', alignItems: 'center' },
   moreBtn: { padding: 5 },
   deleteBtn: { padding: 6, backgroundColor: '#fef2f2', borderRadius: 20, marginLeft: 5 },
@@ -614,6 +715,30 @@ const styles = StyleSheet.create({
   smartNotePreview: { height: 140, backgroundColor: '#fdf2f8', justifyContent: 'center', alignItems: 'center' },
   smartNoteText: { marginTop: 10, color: '#be185d', fontWeight: '800', fontSize: 15 },
   
+  // 🃏 INLINE FLASHCARD STYLES
+  inlineFlashcardContainer: { marginHorizontal: 15, marginBottom: 15, backgroundColor: '#020617', borderRadius: 20, overflow: 'hidden', elevation: 5, shadowColor: '#4f46e5', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.3, shadowRadius: 10 },
+  inlineFlashcardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, backgroundColor: '#0f172a', borderBottomWidth: 1, borderColor: '#1e293b' },
+  inlineFlashcardTitle: { color: '#f8fafc', fontSize: 15, fontWeight: '800', flex: 1, marginRight: 10 },
+  inlineFlashcardCount: { color: '#818cf8', fontSize: 12, fontWeight: '900', backgroundColor: '#1e1b4b', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  inlineCardArea: { height: 240, position: 'relative', padding: 20, justifyContent: 'center', alignItems: 'center' },
+  inlineCard: { width: '100%', height: '100%', backgroundColor: '#1e293b', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center' },
+  inlineCardFront: { backgroundColor: '#1e293b' },
+  inlineCardBack: { backgroundColor: '#312e81', borderColor: '#4338ca' },
+  inlineCardCategory: { position: 'absolute', top: 15, color: '#94a3b8', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
+  inlineScrollCenter: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
+  inlineCardQuestion: { color: '#f8fafc', fontSize: 20, fontWeight: '800', textAlign: 'center', lineHeight: 28 },
+  inlineCardAnswer: { color: '#c7d2fe', fontSize: 18, fontWeight: '700', textAlign: 'center', lineHeight: 26 },
+  inlineFlipBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#334155', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginTop: 15 },
+  inlineFlipText: { color: '#cbd5e1', fontSize: 11, fontWeight: '700' },
+  inlineCardActions: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginTop: 15, gap: 10 },
+  inlineActionBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center' },
+  inlineActionText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  flashcardFinish: { height: 240, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  finishDeckTitle: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 10 },
+  finishDeckSub: { color: '#94a3b8', fontSize: 13, fontWeight: '600', marginTop: 4, marginBottom: 20 },
+  restartDeckBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#4f46e5', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
+  restartDeckText: { color: '#fff', fontSize: 13, fontWeight: '800', marginLeft: 6 },
+
   actionBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 12, borderTopWidth: 1, borderColor: '#f1f5f9', backgroundColor: '#fafaf9' },
   actionLeft: { flexDirection: 'row', alignItems: 'center', gap: 24 },
   actionBtn: { flexDirection: 'row', alignItems: 'center' },
@@ -624,5 +749,5 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 16, fontWeight: '800', color: '#0f172a', textAlign: 'center', marginTop: 15 },
   
   fab: { position: 'absolute', bottom: Platform.OS === 'ios' ? 100 : 90, right: 20, zIndex: 100 },
-  fabInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#4f46e5', justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#4f46e5', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8 }
+  fabInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#4f46e5', justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#4f46e5', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8 },
 });

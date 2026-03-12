@@ -49,8 +49,9 @@ const uploadToImgBB = async (base64Image: string) => {
 // 🌟 COMPONENT 1: ADVANCED SMART CHAT BUBBLE
 // ==========================================
 const ChatBubble = ({ message, isMe, groupId, onOpenTest, openDashboard }: any) => {
+  const router = useRouter(); // 👈 Added for navigation
   const [subjectiveAnswer, setSubjectiveAnswer] = useState('');
-  const [uploadingHomework, setUploadingHomework] = useState(false); // 👈 Moved inside Bubble!
+  const [uploadingHomework, setUploadingHomework] = useState(false); 
   const currentUid = auth.currentUser?.uid;
   
   const responsesMap = message.responses || {};
@@ -70,7 +71,7 @@ const ChatBubble = ({ message, isMe, groupId, onOpenTest, openDashboard }: any) 
       // 🚀 GAMIFICATION TRIGGER FOR MCQ
       if (message.type === 'mcq') {
         const isCorrect = message.correctOption === answerValue;
-        const xpToGive = isCorrect ? 20 : 5; // Sahi pe 20 XP, galat try karne pe at least 5 XP
+        const xpToGive = isCorrect ? 20 : 5; 
         
         const reward = await awardXP(currentUid, xpToGive, "MCQ Answer");
         if (reward?.leveledUp) {
@@ -85,11 +86,11 @@ const ChatBubble = ({ message, isMe, groupId, onOpenTest, openDashboard }: any) 
     if (!currentUid) return;
     try {
       let result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images, // 👈 Native Format
+        mediaTypes: ImagePicker.MediaTypeOptions.Images, 
         allowsMultipleSelection: true,
-        selectionLimit: 10, // Max 10 pages
-        quality: 0.2, // 👈 SMART COMPRESSION! Phone hang nahi hoga.
-        base64: true, // 👈 FILE PERMISSION BYPASS!
+        selectionLimit: 10, 
+        quality: 0.2, 
+        base64: true, 
       });
 
       if (result.canceled || !result.assets) return;
@@ -97,10 +98,8 @@ const ChatBubble = ({ message, isMe, groupId, onOpenTest, openDashboard }: any) 
       setUploadingHomework(true);
       Alert.alert("Uploading", "Compressing and sending pages...");
       
-      // Send base64 strings to ImgBB
       const uploadPromises = result.assets.map(asset => {
         let base64Data = asset.base64;
-        // Web Fallback
         if (!base64Data && Platform.OS === 'web' && asset.uri.startsWith('data:image')) {
           base64Data = asset.uri.split(',')[1];
         }
@@ -124,8 +123,7 @@ const ChatBubble = ({ message, isMe, groupId, onOpenTest, openDashboard }: any) 
           }
         };
         await updateDoc(doc(db, 'groups', groupId, 'messages', message.id), { submissions: updatedSubmissions });
-            // Bacche ke profile me 50 XP jod do
-          await updateDoc(doc(db, 'users', currentUid), { 
+            await updateDoc(doc(db, 'users', currentUid), { 
             xp: increment(50) 
           });
         Alert.alert("Success! 🎉", `${validLinks.length} pages submitted successfully.`);
@@ -136,7 +134,6 @@ const ChatBubble = ({ message, isMe, groupId, onOpenTest, openDashboard }: any) 
         if (reward?.leveledUp) {
           Alert.alert("⭐ LEVEL UP! ⭐", `Congratulations! You've reached Level ${reward.newLevel}!`);
         }
-      // Note: Error alert pehle hi uploadToImgBB mein dikh jayega, toh yahan alert hata diya.
       
     } catch (e) { 
       Alert.alert("Error", "Something went wrong."); 
@@ -145,6 +142,53 @@ const ChatBubble = ({ message, isMe, groupId, onOpenTest, openDashboard }: any) 
       setUploadingHomework(false); 
     }
   };
+
+  // 🎧 TYPE 0: LIVE STUDY SESSION (THE NEW ZEN MODE BUBBLE)
+  if (message.type === 'study_session') {
+    // Check if absolute time is still remaining
+    const isLive = message.endTime > Date.now();
+    const activeCount = Object.keys(message.activeParticipants || {}).length;
+    
+    return (
+      <Animated.View entering={FadeInUp.duration(400).springify()} layout={Layout.springify()} style={[styles.messageWrapper, isMe ? styles.messageWrapperMe : styles.messageWrapperOther]}>
+        {!isMe ? <Image source={{ uri: message.senderAvatar || `https://ui-avatars.com/api/?name=${message.senderName}` }} style={styles.senderAvatar} /> : null}
+        <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleOther, { width: '85%', padding: 0, overflow: 'hidden' }]}>
+          
+          <LinearGradient colors={isLive ? ['#0f172a', '#1e1b4b'] : ['#64748b', '#475569']} style={{ padding: 15, alignItems: 'center' }}>
+            <Ionicons name="headset" size={32} color={isLive ? "#a78bfa" : "#cbd5e1"} style={{ marginBottom: 5 }} />
+            <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900' }}>{message.title}</Text>
+            <Text style={{ color: '#cbd5e1', fontSize: 12, fontWeight: '600', marginTop: 2 }}>Duration: {message.duration} Minutes</Text>
+            {isLive && (
+              <View style={{ backgroundColor: '#ef4444', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginTop: 10 }}>
+                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900', letterSpacing: 1 }}>🔴 LIVE NOW</Text>
+              </View>
+            )}
+          </LinearGradient>
+          
+          <View style={{ padding: 15, backgroundColor: isMe ? '#2563eb' : '#fff' }}>
+            <Text style={{ textAlign: 'center', marginBottom: 15, color: isMe ? '#bfdbfe' : '#64748b', fontWeight: '600' }}>
+              {isLive ? `🔥 ${activeCount} students are currently studying in this room.` : "This focus session has ended."}
+            </Text>
+            
+            {isLive && (
+              <TouchableOpacity 
+                style={{ backgroundColor: '#10b981', paddingVertical: 12, borderRadius: 12, alignItems: 'center', elevation: 2 }} 
+                onPress={() => router.push(`/study-room/${groupId}?sessionId=${message.id}`)}
+              >
+                <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>Join Session 🎧</Text>
+              </TouchableOpacity>
+            )}
+            
+            <Text style={[styles.timeText, isMe ? styles.timeTextMe : styles.timeTextOther, {marginTop: 10, textAlign: 'center'}]}>
+              Started by {message.senderName} at {timeString}
+            </Text>
+          </View>
+
+        </View>
+      </Animated.View>
+    );
+  }
+
   // 🚀 TYPE 1: TEST BUBBLE
   if (message.type === 'test') {
     const hasTakenTest = message.responses && currentUid && message.responses[currentUid] !== undefined;
@@ -267,7 +311,7 @@ const ChatBubble = ({ message, isMe, groupId, onOpenTest, openDashboard }: any) 
     );
   }
 
-  // 🚀 TYPE 4: HOMEWORK BUCKET BUBBLE (The New Universal Feature)
+  // 🚀 TYPE 4: HOMEWORK BUCKET BUBBLE 
   if (message.type === 'homework_bucket') {
     const mySubmission = message.submissions?.[currentUid || ''];
     const totalSubmitted = Object.keys(message.submissions || {}).length;
@@ -291,7 +335,6 @@ const ChatBubble = ({ message, isMe, groupId, onOpenTest, openDashboard }: any) 
           ) : null}
 
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            {/* Upload Button */}
             <TouchableOpacity 
               style={{ flex: 1, flexDirection: 'row', backgroundColor: '#2563eb', paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }} 
               onPress={handleUploadHomework}
@@ -305,10 +348,9 @@ const ChatBubble = ({ message, isMe, groupId, onOpenTest, openDashboard }: any) 
               )}
             </TouchableOpacity>
 
-            {/* Dashboard Button */}
             <TouchableOpacity 
               style={{ flex: 1, flexDirection: 'row', backgroundColor: '#0f172a', paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }} 
-              onPress={() => openDashboard(message)} // 👈 ALERT HATA KAR YE LAGA DO
+              onPress={() => openDashboard(message)}
             >
               <Ionicons name="stats-chart" size={16} color="#fff" />
               <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12, marginLeft: 5 }}>Dashboard</Text>
@@ -368,15 +410,16 @@ export default function ChatScreen() {
   const [testAnswers, setTestAnswers] = useState<number[]>([]);
   const [timeLeft, setTimeLeft] = useState(0);
 
-  // 🪣 BUCKET CREATION STATES
   const [bucketModalVisible, setBucketModalVisible] = useState(false);
   const [bucketTitle, setBucketTitle] = useState('');
-  // 📊 DASHBOARD STATES
   const [dashboardVisible, setDashboardVisible] = useState(false);
   const [activeDashboardMessage, setActiveDashboardMessage] = useState<any>(null);
-  const [expandedUser, setExpandedUser] = useState<string | null>(null); // For Arrow click ke liye
-  const [viewerImage, setViewerImage] = useState<string | null>(null);   // For Image Image Zoom
+  const [expandedUser, setExpandedUser] = useState<string | null>(null);
+  const [viewerImage, setViewerImage] = useState<string | null>(null); 
 
+  // 🎧 NEW: STUDY ROOM STATES
+  const [showStudyModal, setShowStudyModal] = useState(false);
+  const [studyDuration, setStudyDuration] = useState('25');
 
   const flatListRef = useRef<FlatList>(null);
   const agoraEngineRef = useRef<any>(null);
@@ -506,8 +549,7 @@ export default function ChatScreen() {
     const msgRef = doc(db, 'groups', id as string, 'messages', activeTest.id);
     await updateDoc(msgRef, { [`responses.${auth.currentUser.uid}`]: { score, answers: testAnswers } });
     
-    // 🚀 GAMIFICATION TRIGGER FOR TESTS
-    const earnedXP = score * 15; // Har sahi jawab ka 15 XP!
+    const earnedXP = score * 15;
     const reward = await awardXP(auth.currentUser.uid, earnedXP, "Test Submitted");
     
     if (reward?.leveledUp) {
@@ -534,11 +576,34 @@ export default function ChatScreen() {
     setBucketTitle('');
   };
 
-// ==========================================
+  // 🚀 CREATE LIVE STUDY ROOM SYSTEM
+  const handleCreateStudyRoom = async () => {
+    if (!auth.currentUser) return;
+    const durationNum = parseInt(studyDuration) || 25;
+    const endTime = Date.now() + (durationNum * 60000); // Create absolute timestamp
+    
+    setShowStudyModal(false);
+    
+    const docRef = await addDoc(collection(db, 'groups', id as string, 'messages'), {
+      type: 'study_session',
+      title: 'Deep Focus Session',
+      duration: durationNum,
+      endTime: endTime,
+      senderId: auth.currentUser.uid,
+      senderName: auth.currentUser.displayName,
+      senderAvatar: auth.currentUser.photoURL,
+      activeParticipants: {}, 
+      logs: [`🟢 Session started by ${auth.currentUser.displayName?.split(' ')[0]} for ${durationNum} mins.`],
+      createdAt: serverTimestamp(),
+    });
+
+    // Auto navigate the host into the newly created room
+    router.push(`/study-room/${id}?sessionId=${docRef.id}`);
+  };
+
+  // ==========================================
   // 🎙️ THE REAL-TIME AGORA VOICE ENGINE
   // ==========================================
-  
-  // Initialize Agora when entering the lounge
   const setupAgoraEngine = async () => {
     try {
       if (!AGORA_APP_ID) {
@@ -550,24 +615,18 @@ export default function ChatScreen() {
       
       engine.initialize({ appId: AGORA_APP_ID });
       
-      // 🚨 AGORA ERROR TRACKER (Ye exact problem batayega)
       engine.addListener('onError', (errCode, msg) => {
         console.log("❌ AGORA ERROR FATAL:", errCode, msg);
-        if (errCode === 101) console.log("👉 Reason: App ID galat hai!");
-        if (errCode === 109) console.log("👉 Reason: Token galat hai ya expire ho gaya!");
       });
 
-      // Join Success Listener
       engine.addListener('onJoinChannelSuccess', (connection, elapsed) => {
         console.log("✅ AGORA JOIN SUCCESS! Channel:", connection.channelId, "UID:", connection.localUid);
       });
 
-      // User Joined Listener
       engine.addListener('onUserJoined', (connection, remoteUid, elapsed) => {
         console.log("🗣️ KOI AUR BHI AAYA! Remote UID:", remoteUid);
       });
 
-      // User Offline Listener
       engine.addListener('onUserOffline', (connection, remoteUid, reason) => {
         console.log("👋 KOI GAYA! Remote UID:", remoteUid, "Reason:", reason);
       });
@@ -580,63 +639,54 @@ export default function ChatScreen() {
   };
 
   const toggleVoiceLounge = async () => {
-    // 🚨 Web Browser Check
     if (Platform.OS === 'web') {
       Alert.alert("Mobile Only", "Voice Lounge is currently available only on the Android & iOS app! 📱");
       return;
     }
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
-    // We use a simple hash of the user ID to pass to Agora (it expects a number)
     const agoraUid = Math.abs(uid.split('').reduce((a,b)=>{a=((a<<5)-a)+b.charCodeAt(0);return a&a},0));
 
     try {
       if (isInLounge) {
-        // 🔴 LEAVE LOUNGE
         agoraEngineRef.current?.leaveChannel();
-        agoraEngineRef.current?.release(); // Free up memory
+        agoraEngineRef.current?.release(); 
         
         const updatedUsers = activeVoiceUsers.filter((u: any) => u.uid !== uid);
         await updateDoc(doc(db, 'groups', id as string), { activeVoice: updatedUsers });
         setIsInLounge(false);
       } else {
-        // 🟢 JOIN LOUNGE
         const permissionResponse = await Audio.requestPermissionsAsync();
         if (permissionResponse.granted) {
           
-         // 1. Setup Agora Hardware
-          const isSetup = await setupAgoraEngine();
-          if (!isSetup) return;
+         const isSetup = await setupAgoraEngine();
+         if (!isSetup) return;
 
-          // 🚨 THE AGGRESSIVE AUDIO SETUP (Puraana hata kar ye daalo)
-          const engine = agoraEngineRef.current;
-          
-          engine?.enableAudio();
-          engine?.setChannelProfile(ChannelProfileType.ChannelProfileLiveBroadcasting); // Communication ki jagah LiveBroadcasting better hai
-          engine?.setClientRole(ClientRoleType.ClientRoleBroadcaster);
-          
-          // Forcefully unmute local audio and route to speaker
-          engine?.muteLocalAudioStream(false);
-          engine?.setEnableSpeakerphone(true);
-          engine?.adjustRecordingSignalVolume(100); // Mic volume full
-          engine?.adjustPlaybackSignalVolume(100);  // Speaker volume full
+         const engine = agoraEngineRef.current;
+         
+         engine?.enableAudio();
+         engine?.setChannelProfile(ChannelProfileType.ChannelProfileLiveBroadcasting);
+         engine?.setClientRole(ClientRoleType.ClientRoleBroadcaster);
+         
+         engine?.muteLocalAudioStream(false);
+         engine?.setEnableSpeakerphone(true);
+         engine?.adjustRecordingSignalVolume(100); 
+         engine?.adjustPlaybackSignalVolume(100);  
 
-          // Join Channel
-          engine?.joinChannel('', String(id), agoraUid, {
-            clientRoleType: ClientRoleType.ClientRoleBroadcaster,
-            publishMicrophoneTrack: true, // Force publish
-            autoSubscribeAudio: true,     // Force subscribe
-          });
+         engine?.joinChannel('', String(id), agoraUid, {
+           clientRoleType: ClientRoleType.ClientRoleBroadcaster,
+           publishMicrophoneTrack: true, 
+           autoSubscribeAudio: true,     
+         });
 
-          // 3. Update Firebase UI State
-          const newUser = { 
-            uid, 
-            name: auth.currentUser.displayName?.split(' ')[0] || 'User', 
-            avatar: auth.currentUser.photoURL || `https://ui-avatars.com/api/?name=${auth.currentUser.displayName}`, 
-            isMuted: isMicMuted 
-          };
-          await updateDoc(doc(db, 'groups', id as string), { activeVoice: [...activeVoiceUsers, newUser] });
-          setIsInLounge(true);
+         const newUser = { 
+           uid, 
+           name: auth.currentUser.displayName?.split(' ')[0] || 'User', 
+           avatar: auth.currentUser.photoURL || `https://ui-avatars.com/api/?name=${auth.currentUser.displayName}`, 
+           isMuted: isMicMuted 
+         };
+         await updateDoc(doc(db, 'groups', id as string), { activeVoice: [...activeVoiceUsers, newUser] });
+         setIsInLounge(true);
         } else { 
           Alert.alert("Permission Denied", "Mic ki permission zaroori hai!"); 
         }
@@ -649,10 +699,8 @@ export default function ChatScreen() {
     const newMutedState = !isMicMuted;
     setIsMicMuted(newMutedState);
     
-    // 🎙️ Mute/Unmute Real Audio in Agora
     agoraEngineRef.current?.muteLocalAudioStream(newMutedState);
 
-    // 🎨 Update Firebase UI for others to see the muted icon
     const updatedUsers = activeVoiceUsers.map((u: any) => u.uid === auth.currentUser?.uid ? { ...u, isMuted: newMutedState } : u);
     await updateDoc(doc(db, 'groups', id as string), { activeVoice: updatedUsers });
   };
@@ -683,14 +731,23 @@ export default function ChatScreen() {
             </View>
           </TouchableOpacity>
 
-       {/* 🏆 THE LEADERBOARD TROPHY BUTTON */}
+          {/* 🎧 THE NEW STUDY ROOM / ZEN MODE BUTTON */}
+          <TouchableOpacity 
+            onPress={() => setShowStudyModal(true)} 
+            style={{ padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, marginLeft: 'auto' }}
+          >
+            <Ionicons name="headset" size={22} color="#a78bfa" />
+          </TouchableOpacity>
+
+          {/* 🏆 LEADERBOARD TROPHY BUTTON */}
           <TouchableOpacity 
             onPress={() => router.push(`/chat/leaderboard/${id}`)} 
-            style={{ padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, marginLeft: 'auto' }}
+            style={{ padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, marginLeft: 10 }}
           >
             <Ionicons name="trophy" size={22} color="#fde047" />
           </TouchableOpacity>
 
+          {/* 🎙️ VOICE LOUNGE BUTTON */}
           {!isInLounge ? (
             <TouchableOpacity onPress={toggleVoiceLounge} style={{ padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, marginLeft: 10 }}>
               <Ionicons name="call" size={22} color="#fff" />
@@ -898,7 +955,7 @@ export default function ChatScreen() {
         </SafeAreaView>
       </Modal>
 
-{/* 📊 THE NEXT-GEN ANALYTICS DASHBOARD MODAL */}
+      {/* 📊 THE NEXT-GEN ANALYTICS DASHBOARD MODAL */}
       <Modal visible={dashboardVisible} animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView style={{ flex: 1, backgroundColor: '#f1f5f9' }}>
           
@@ -920,22 +977,18 @@ export default function ChatScreen() {
             {/* 📈 ANALYTICS ENGINE */}
             {(() => {
               const submissions = activeDashboardMessage?.submissions || {};
-              // Assuming groupInfo.members is an array of user IDs. If not, we fallback to total submissions + 5 (dummy data for view)
               const totalMembersInGroup = groupInfo?.members?.length || Object.keys(submissions).length + 5; 
               const submittedCount = Object.keys(submissions).length;
               const pendingCount = totalMembersInGroup - submittedCount;
               const submittedPercent = Math.round((submittedCount / totalMembersInGroup) * 100) || 0;
               const pendingPercent = 100 - submittedPercent;
 
-              // Page wise analytics
               let pageAnalytics: any = {};
               Object.values(submissions).forEach((sub: any) => {
                 const p = sub.pages.length;
                 pageAnalytics[p] = (pageAnalytics[p] || 0) + 1;
               });
 
-              // Combine all members (Submitters + Non-submitters)
-              // Note: If actual member details aren't stored, we show UIDs for non-submitters
               const allMembersList = groupInfo?.members?.map((uid: string) => {
                 const sub = submissions[uid];
                 return { uid, name: sub ? sub.name : 'Unknown Student', hasSubmitted: !!sub, data: sub };
@@ -978,7 +1031,6 @@ export default function ChatScreen() {
                   {allMembersList.map((member: any, index: number) => (
                     <View key={member.uid} style={{ backgroundColor: '#fff', borderRadius: 16, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: '#e2e8f0' }}>
                       
-                      {/* Accordion Header */}
                       <TouchableOpacity 
                         style={{ flexDirection: 'row', alignItems: 'center', padding: 15 }} 
                         activeOpacity={0.7}
@@ -997,25 +1049,21 @@ export default function ChatScreen() {
                           )}
                         </View>
 
-                        {/* Badges */}
                         <View style={{ backgroundColor: member.hasSubmitted ? '#10b981' : '#f1f5f9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginRight: 10 }}>
                           <Text style={{ color: member.hasSubmitted ? '#fff' : '#94a3b8', fontWeight: '800', fontSize: 10 }}>
                             {member.hasSubmitted ? 'COMPLETED' : 'NOT DONE'}
                           </Text>
                         </View>
 
-                        {/* Arrow */}
                         {member.hasSubmitted && (
                           <Ionicons name={expandedUser === member.uid ? "chevron-up" : "chevron-down"} size={20} color="#64748b" />
                         )}
                       </TouchableOpacity>
 
-                      {/* Accordion Content (Images) */}
                       {expandedUser === member.uid && member.hasSubmitted && (
                         <View style={{ backgroundColor: '#f8fafc', padding: 15, borderTopWidth: 1, borderColor: '#f1f5f9' }}>
                           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row' }}>
                             {member.data.pages.map((imgUrl: string, imgIndex: number) => {
-                                // ⏳ Expiry Check (Frontend Fallback)
                                 const isExpired = (Date.now() - new Date(member.data.submittedAt).getTime()) > 86400000;
                                 
                                 return (
@@ -1023,7 +1071,7 @@ export default function ChatScreen() {
                                     key={imgIndex} 
                                     style={{ marginRight: 12 }} 
                                     activeOpacity={0.8} 
-                                    onPress={() => !isExpired && setViewerImage(imgUrl)} // 👈 ZOOM CLICK
+                                    onPress={() => !isExpired && setViewerImage(imgUrl)} 
                                   >
                                     {isExpired ? (
                                       <View style={{ width: 100, height: 140, borderRadius: 10, backgroundColor: '#e2e8f0', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1' }}>
@@ -1064,6 +1112,29 @@ export default function ChatScreen() {
             <Image source={{ uri: viewerImage }} style={{ width: '100%', height: '80%' }} resizeMode="contain" />
           )}
         </View>
+      </Modal>
+
+      {/* 🎧 STUDY ROOM CONFIG MODAL (THE NEW ADDITION) */}
+      <Modal visible={showStudyModal} animationType="slide" transparent>
+        <TouchableOpacity style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end'}} onPress={() => setShowStudyModal(false)}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ backgroundColor: '#fff', padding: 25, borderTopLeftRadius: 30, borderTopRightRadius: 30 }}>
+            <View style={{ alignItems: 'center', marginBottom: 20 }}>
+              <Ionicons name="headset" size={50} color="#4f46e5" />
+              <Text style={{ fontSize: 22, fontWeight: '900', color: '#0f172a', marginTop: 10 }}>Start Zen Mode</Text>
+              <Text style={{ fontSize: 13, color: '#64748b', textAlign: 'center', marginTop: 5 }}>Create a synchronized Pomodoro session. Everyone in the group can join and focus together.</Text>
+            </View>
+            <Text style={{ fontWeight: '800', color: '#1e293b', marginBottom: 10 }}>Focus Duration (Minutes)</Text>
+            <TextInput 
+              style={{ backgroundColor: '#f1f5f9', borderRadius: 15, padding: 15, fontSize: 18, fontWeight: 'bold', color: '#4f46e5', textAlign: 'center', marginBottom: 20 }} 
+              keyboardType="numeric" 
+              value={studyDuration} 
+              onChangeText={setStudyDuration} 
+            />
+            <TouchableOpacity style={{ backgroundColor: '#10b981', paddingVertical: 16, borderRadius: 16, alignItems: 'center' }} onPress={handleCreateStudyRoom}>
+              <Text style={{ color: '#fff', fontWeight: '900', fontSize: 16 }}>Launch Session 🚀</Text>
+            </TouchableOpacity>
+          </KeyboardAvoidingView>
+        </TouchableOpacity>
       </Modal>
 
     </SafeAreaView>

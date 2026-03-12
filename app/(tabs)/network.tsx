@@ -21,7 +21,7 @@ export default function NetworkScreen() {
   
   // 🚨 Strict Auth State
   const [activeUid, setActiveUid] = useState<string | null>(null);
-  const [currentUserData, setCurrentUserData] = useState<any>(null); // 👈 Asli user data for matching
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
 
   // 🗂️ Core States
   const [activeTab, setActiveTab] = useState<'recommended' | 'requests' | 'friends'>('recommended');
@@ -39,7 +39,6 @@ export default function NetworkScreen() {
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setActiveUid(user.uid);
-        // Fetch Current User's detailed Profile (Role, Interests, etc.)
         try {
           const myDoc = await getDoc(doc(db, 'users', user.uid));
           if (myDoc.exists()) {
@@ -65,27 +64,20 @@ export default function NetworkScreen() {
     if (!activeUid) return;
     setLoading(true);
 
-    // A. Fetch All Users (Khud ko chhod kar)
     const usersRef = collection(db, 'users');
     const unsubUsers = onSnapshot(usersRef, (snap) => {
       const users = snap.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter((u: any) => u.uid !== activeUid); // Exclude self
+        .filter((u: any) => u.uid !== activeUid); 
       setAllUsers(users);
     });
 
-    // B. Fetch My Connections (Sent and Received)
     const connRef = collection(db, 'connections');
-    
-    // Listen to requests I SENT
     const unsubSent = onSnapshot(query(connRef, where('senderId', '==', activeUid)), (sentSnap) => {
       const sentData = sentSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       
-      // Listen to requests I RECEIVED
       const unsubRec = onSnapshot(query(connRef, where('receiverId', '==', activeUid)), (recSnap) => {
         const recData = recSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        
-        // Merge them safely
         setMyConnections([...sentData, ...recData]);
         setLoading(false);
       });
@@ -103,23 +95,20 @@ export default function NetworkScreen() {
     let score = 0;
     if (!me) return 0;
 
-    // 1. Same Role / Class (+50 Points)
     if (user.roleDetail && me.roleDetail && user.roleDetail === me.roleDetail) {
       score += 50;
     }
 
-    // 2. Same City or State (+20 Points)
     if (user.city && me.city && user.city.toLowerCase() === me.city.toLowerCase()) {
       score += 20;
     } else if (user.state && me.state && user.state === me.state) {
       score += 10;
     }
 
-    // 3. Shared Interests (+10 Points per interest)
     if (user.interests && me.interests) {
       const sharedInterests = user.interests.filter((i: string) => me.interests.includes(i));
       score += (sharedInterests.length * 10);
-      user.sharedInterestCount = sharedInterests.length; // Save for UI badge
+      user.sharedInterestCount = sharedInterests.length; 
     }
 
     return score;
@@ -128,31 +117,25 @@ export default function NetworkScreen() {
   // ============================================================================
   // 🧠 4. SMART FILTERING & SORTING LOGIC
   // ============================================================================
-  
-  // 1. Recommended: Remove already connected/requested users
   let recommendedUsers = allUsers.filter(user => {
     const hasConnection = myConnections.some(conn => conn.senderId === user.uid || conn.receiverId === user.uid);
     return !hasConnection;
   });
 
-  // 🔥 Apply Sorting Algorithm!
   if (currentUserData) {
     recommendedUsers.sort((a, b) => {
       const scoreA = calculateMatchScore(a, currentUserData);
       const scoreB = calculateMatchScore(b, currentUserData);
-      return scoreB - scoreA; // Descending order (Highest score first)
+      return scoreB - scoreA; 
     });
   }
 
-  // 2. Incoming Requests:
   let incomingRequests = myConnections.filter(conn => 
     conn.receiverId === activeUid && conn.status === 'pending'
   );
 
-  // 3. Friends:
   let acceptedFriends = myConnections.filter(conn => conn.status === 'accepted');
 
-  // Search Filter (Overwrites sorting if user is searching manually)
   if (searchQuery.trim() !== '') {
     const q = searchQuery.toLowerCase();
     recommendedUsers = recommendedUsers.filter(u => u.displayName?.toLowerCase().includes(q) || u.name?.toLowerCase().includes(q));
@@ -166,7 +149,6 @@ export default function NetworkScreen() {
   // ============================================================================
   // ⚡ 5. REAL FIREBASE ACTIONS
   // ============================================================================
-  
   const handleSendRequest = async (receiver: any) => {
     if (!activeUid) return;
     try {
@@ -206,21 +188,44 @@ export default function NetworkScreen() {
   // 🎨 6. UI RENDER COMPONENTS
   // ============================================================================
   
+  // 🌟 NEW: THE MATCHMAKING BANNER COMPONENT
+  const renderMatchmakingBanner = () => (
+    <TouchableOpacity 
+      activeOpacity={0.9} 
+      onPress={() => router.push('/matchmaking')} 
+      style={styles.matchBannerContainer}
+    >
+      <LinearGradient 
+        colors={['#ec4899', '#8b5cf6']} 
+        start={{x: 0, y: 0}} end={{x: 1, y: 1}} 
+        style={styles.matchBannerGradient}
+      >
+        <View style={styles.matchBannerTextContainer}>
+          <Text style={styles.matchBannerTitle}>🤝 Find a Study Partner</Text>
+          <Text style={styles.matchBannerSub}>Swipe & connect with serious aspirants</Text>
+        </View>
+        <View style={styles.matchBannerAction}>
+          <Text style={styles.matchBannerActionText}>Swipe Now</Text>
+          <Ionicons name="flash" size={16} color="#ec4899" />
+        </View>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+
   const renderRecommendedCard = ({ item, index }: any) => {
-    // Determine the smart badge logic based on algorithm
     let badgeText = "";
-    let badgeColor = "#64748b"; // Default Grey
+    let badgeColor = "#64748b"; 
     
     if (currentUserData) {
       if (item.roleDetail && item.roleDetail === currentUserData.roleDetail) {
         badgeText = "Same Class";
-        badgeColor = "#10b981"; // Emerald Green
+        badgeColor = "#10b981"; 
       } else if (item.city && item.city === currentUserData.city) {
         badgeText = "From your City";
-        badgeColor = "#3b82f6"; // Blue
+        badgeColor = "#3b82f6"; 
       } else if (item.sharedInterestCount > 0) {
         badgeText = `${item.sharedInterestCount} Shared Interests`;
-        badgeColor = "#f59e0b"; // Orange
+        badgeColor = "#f59e0b"; 
       }
     }
 
@@ -236,13 +241,11 @@ export default function NetworkScreen() {
           <Text style={styles.userNameLarge} numberOfLines={1}>{item.displayName || item.name || 'User'}</Text>
           <Text style={styles.userSubtitle} numberOfLines={1}>{item.roleDetail || item.role || 'Scholar'}</Text>
 
-          {/* 🧠 ALGORITHM BADGE */}
           {badgeText !== "" && (
             <View style={[styles.algoBadge, { backgroundColor: badgeColor + '20' }]}>
               <Text style={[styles.algoBadgeText, { color: badgeColor }]}>{badgeText}</Text>
             </View>
           )}
-
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionBtnFull} onPress={() => handleSendRequest(item)} activeOpacity={0.8}>
@@ -370,6 +373,7 @@ export default function NetworkScreen() {
               columnWrapperStyle={{ justifyContent: 'space-between', paddingHorizontal: 15 }}
               contentContainerStyle={styles.listArea}
               showsVerticalScrollIndicator={false}
+              ListHeaderComponent={renderMatchmakingBanner} // 👈 BANNER ADDED HERE
               renderItem={renderRecommendedCard}
               ListEmptyComponent={<Text style={styles.emptyText}>No new scholars found.</Text>}
             />
@@ -403,7 +407,7 @@ export default function NetworkScreen() {
 }
 
 // ============================================================================
-// 🎨 STYLES (Crash-Free, Clean, and Premium)
+// 🎨 STYLES
 // ============================================================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
@@ -422,9 +426,29 @@ const styles = StyleSheet.create({
   activeTabText: { color: '#0f172a', fontWeight: '900' },
   badgeDot: { position: 'absolute', top: 6, right: 10, width: 8, height: 8, backgroundColor: '#ef4444', borderRadius: 4 },
 
-  listArea: { paddingBottom: 120, paddingTop: 10 },
+  listArea: { paddingBottom: 120, paddingTop: 5 },
   listAreaVertical: { paddingHorizontal: 15, paddingBottom: 120, paddingTop: 10 },
   emptyText: { textAlign: 'center', marginTop: 50, color: '#94a3b8', fontSize: 15, fontWeight: '600' },
+
+  // 🤝 Matchmaking Banner Styles
+  matchBannerContainer: { 
+    marginHorizontal: 15, 
+    marginBottom: 20, 
+    marginTop: 5,
+    borderRadius: 16, 
+    overflow: 'hidden', 
+    elevation: 5, 
+    shadowColor: '#ec4899', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.3, 
+    shadowRadius: 8 
+  },
+  matchBannerGradient: { flexDirection: 'row', alignItems: 'center', padding: 20 },
+  matchBannerTextContainer: { flex: 1, paddingRight: 10 },
+  matchBannerTitle: { color: '#fff', fontSize: 17, fontWeight: '900', marginBottom: 4 },
+  matchBannerSub: { color: '#fdf2f8', fontSize: 13, fontWeight: '600', opacity: 0.9 },
+  matchBannerAction: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, elevation: 2 },
+  matchBannerActionText: { color: '#ec4899', fontWeight: '900', fontSize: 12, marginRight: 4 },
 
   cardPremium: { width: '48%', backgroundColor: '#fff', borderRadius: 20, padding: 15, marginBottom: 15, alignItems: 'center', elevation: 2, shadowColor: '#0f172a', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.05, shadowRadius: 10, borderWidth: 1, borderColor: '#f1f5f9' },
   cardInfoCenter: { alignItems: 'center', marginBottom: 15, width: '100%' },

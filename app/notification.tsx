@@ -1,132 +1,209 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, FlatList, TouchableOpacity, Image, 
-  SafeAreaView, ActivityIndicator, Platform
+  SafeAreaView, Platform, Dimensions, ScrollView 
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { auth, db } from '../firebaseConfig';
-import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { auth, db } from '../firebaseConfig'; // path check kar lena (agar folder ke andar hai toh ../../firebaseConfig)
+import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, writeBatch, deleteDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
+import Animated, { FadeInDown, Layout, SlideOutRight, useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
+const { width } = Dimensions.get('window');
 const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
+
+// ==========================================
+// ✨ BREATHING SKELETON LOADER
+// ==========================================
+const BreathingSkeleton = () => {
+  const opacity = useSharedValue(0.4);
+  useEffect(() => { opacity.value = withRepeat(withSequence(withTiming(1, { duration: 800 }), withTiming(0.4, { duration: 800 })), -1, true); }, []);
+  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
+  return (
+    <Animated.View style={[styles.skeletonCard, animStyle]}>
+      <View style={styles.skeletonAvatar} />
+      <View style={styles.skeletonTextContainer}>
+        <View style={styles.skeletonTextLine1} />
+        <View style={styles.skeletonTextLine2} />
+      </View>
+    </Animated.View>
+  );
+};
 
 export default function NotificationScreen() {
   const router = useRouter();
   const currentUid = auth.currentUser?.uid;
+  
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeFilter, setActiveFilter] = useState<'All' | 'Unread' | 'Mentions' | 'Doubts'>('All');
 
+  // ==========================================
+  // 📡 FETCH REAL-TIME NOTIFICATIONS (FIXED)
+  // ==========================================
   useEffect(() => {
-    if (!currentUid) return;
+    if (!currentUid) {
+      setLoading(false);
+      return;
+    }
 
-    // 📡 FETCH REAL-TIME NOTIFICATIONS
     const q = query(
-      collection(db, 'notifications'),
-      where('recipientId', '==', currentUid),
+      collection(db, 'notifications'), 
+      where('recipientId', '==', currentUid), 
       orderBy('createdAt', 'desc')
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const notifsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setNotifications(notifsData);
-      setLoading(false);
-    });
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const notifsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setNotifications(notifsData);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Firebase Query Error:", error.message);
+        setLoading(false); // Error aane par bhi loader band karo
+        alert("Firestore Index Error! Check your computer terminal.");
+      }
+    );
 
     return () => unsubscribe();
   }, [currentUid]);
 
-  // 🖱️ MARK AS READ & NAVIGATE
+  // ==========================================
+  // 🖱️ ACTIONS
+  // ==========================================
   const handleNotificationPress = async (item: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    // Mark as read in Firebase
     if (!item.isRead) {
-      try {
-        await updateDoc(doc(db, 'notifications', item.id), { isRead: true });
-      } catch (error) { console.log("Error marking read:", error); }
+      try { await updateDoc(doc(db, 'notifications', item.id), { isRead: true }); } 
+      catch (error) { console.log(error); }
     }
-
-    // Navigation Logic
-    if (item.postId) {
-      router.push(`/post/${item.postId}`);
-    } else if (item.senderId) {
-      router.push(`/user/${item.senderId}`);
-    }
+    // Smart Navigation
+    if (item.type === 'doubt_solved') router.push('/doubts');
+    else if (item.postId) router.push(`/post/${item.postId}`);
+    else if (item.senderId) router.push(`/user/${item.senderId}`);
   };
 
-  // ✅ MARK ALL AS READ
+  const deleteNotification = async (id: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try { await deleteDoc(doc(db, 'notifications', id)); } catch (error) { console.log(error); }
+  };
+
   const markAllAsRead = async () => {
-    if (notifications.length === 0) return;
+    const unreadNotifs = notifications.filter(n => !n.isRead);
+    if (unreadNotifs.length === 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    
     try {
       const batch = writeBatch(db);
-      notifications.forEach((notif) => {
-        if (!notif.isRead) {
-          const notifRef = doc(db, 'notifications', notif.id);
-          batch.update(notifRef, { isRead: true });
-        }
+      unreadNotifs.forEach((notif) => {
+        const notifRef = doc(db, 'notifications', notif.id);
+        batch.update(notifRef, { isRead: true });
       });
       await batch.commit();
     } catch (error) { console.log(error); }
   };
 
-  // 🕒 TIME FORMATTER
+  // ==========================================
+  // 🕒 FORMATTERS & HELPERS
+  // ==========================================
   const timeAgo = (timestamp: any) => {
     if (!timestamp) return 'Just now';
     const seconds = Math.floor((Date.now() - timestamp.toMillis()) / 1000);
     if (seconds < 60) return 'Just now';
     const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
+    if (minutes < 60) return `${minutes}m`;
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
+    if (hours < 24) return `${hours}h`;
+    return `${Math.floor(hours / 24)}d`;
   };
 
-  const getNotificationIcon = (type: string) => {
+  const getNotificationMeta = (type: string) => {
     switch(type) {
-      case 'like': return { name: 'heart', color: '#ef4444', bg: '#fef2f2' };
-      case 'comment': return { name: 'chatbubble', color: '#3b82f6', bg: '#eff6ff' };
-      case 'follow': return { name: 'person-add', color: '#10b981', bg: '#ecfdf5' };
-      case 'mention': return { name: 'at', color: '#8b5cf6', bg: '#f5f3ff' };
-      default: return { name: 'notifications', color: '#f59e0b', bg: '#fffbeb' };
+      case 'like': return { name: 'heart', color: '#ef4444', bg: '#fef2f2', border: '#ef4444' };
+      case 'comment': return { name: 'chatbubble', color: '#3b82f6', bg: '#eff6ff', border: '#3b82f6' };
+      case 'follow': return { name: 'person-add', color: '#10b981', bg: '#ecfdf5', border: '#10b981' };
+      case 'mention': return { name: 'at', color: '#8b5cf6', bg: '#f5f3ff', border: '#8b5cf6' };
+      case 'doubt_solved': return { name: 'bulb', color: '#f59e0b', bg: '#fffbeb', border: '#f59e0b' };
+      default: return { name: 'notifications', color: '#64748b', bg: '#f8fafc', border: '#cbd5e1' };
     }
   };
 
+  // 🗂️ FILTER LOGIC
+  const filteredNotifications = notifications.filter(notif => {
+    if (activeFilter === 'All') return true;
+    if (activeFilter === 'Unread') return !notif.isRead;
+    if (activeFilter === 'Mentions') return notif.type === 'mention' || notif.type === 'comment';
+    if (activeFilter === 'Doubts') return notif.type === 'doubt_solved';
+    return true;
+  });
+
+  // ==========================================
+  // 🃏 RENDER CARD (ULTRA ADVANCED)
+  // ==========================================
   const renderNotification = ({ item, index }: { item: any, index: number }) => {
-    const iconData = getNotificationIcon(item.type);
+    const meta = getNotificationMeta(item.type);
     
     return (
-      <Animated.View entering={FadeInDown.delay(index * 50).springify()} layout={Layout.springify()}>
-        <TouchableOpacity 
-          style={[styles.notificationCard, !item.isRead && styles.unreadCard]} 
-          activeOpacity={0.7} 
-          onPress={() => handleNotificationPress(item)}
-        >
-          <View style={styles.avatarContainer}>
-            <Image source={{ uri: item.senderAvatar || DEFAULT_AVATAR }} style={styles.avatar} />
-            <View style={[styles.typeIconBadge, { backgroundColor: iconData.bg }]}>
-              <Ionicons name={iconData.name as any} size={10} color={iconData.color} />
-            </View>
-          </View>
+      <Animated.View entering={FadeInDown.delay(index * 40).springify()} layout={Layout.springify()} exiting={SlideOutRight.duration(300)}>
+        <View style={[styles.notificationCard, { borderLeftColor: meta.border }, !item.isRead && styles.unreadCardBg]}>
           
-          <View style={styles.textContainer}>
-            <Text style={styles.notificationText}>
-              <Text style={styles.boldText}>{item.senderName}</Text> 
-              {item.type === 'like' && ' liked your post.'}
-              {item.type === 'comment' && ' commented on your post.'}
-              {item.type === 'follow' && ' started following you.'}
-              {item.type === 'mention' && ' mentioned you in a comment.'}
-            </Text>
-            <Text style={styles.timeText}>{timeAgo(item.createdAt)}</Text>
-          </View>
+          <TouchableOpacity style={styles.cardClickArea} activeOpacity={0.7} onPress={() => handleNotificationPress(item)}>
+            {/* Avatar & Icon Badge */}
+            <View style={styles.avatarContainer}>
+              <Image source={{ uri: item.senderAvatar || DEFAULT_AVATAR }} style={styles.avatar} />
+              <View style={[styles.typeIconBadge, { backgroundColor: meta.color }]}>
+                <Ionicons name={meta.name as any} size={12} color="#fff" />
+              </View>
+            </View>
+            
+            {/* Content Area */}
+            <View style={styles.textContainer}>
+              <View style={styles.textHeaderRow}>
+                <Text style={styles.boldText} numberOfLines={1}>{item.senderName}</Text>
+                <Text style={styles.timeText}>{timeAgo(item.createdAt)}</Text>
+              </View>
 
-          {!item.isRead && <View style={styles.unreadDot} />}
-        </TouchableOpacity>
+              <Text style={styles.notificationText} numberOfLines={2}>
+                {item.type === 'like' && 'Liked your recent post. Keep it up!'}
+                {item.type === 'comment' && `Commented: "${item.text || 'Awesome post!'}"`}
+                {item.type === 'follow' && 'Started following your journey.'}
+                {item.type === 'mention' && 'Mentioned you in a discussion.'}
+                {item.type === 'doubt_solved' && `Solved your ${item.text || 'doubt'}. Check it out!`}
+              </Text>
+
+              {/* ⚡ INLINE QUICK ACTIONS */}
+              {item.type === 'follow' && (
+                <View style={styles.quickActionRow}>
+                  <TouchableOpacity style={styles.quickActionBtn} onPress={() => router.push(`/user/${item.senderId}`)}>
+                    <Text style={styles.quickActionText}>View Profile</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {item.type === 'doubt_solved' && (
+                <View style={styles.quickActionRow}>
+                  <TouchableOpacity style={[styles.quickActionBtn, {backgroundColor: '#fefce8', borderColor: '#fef08a'}]} onPress={() => router.push('/doubts')}>
+                    <Ionicons name="bulb" size={12} color="#ca8a04" style={{marginRight: 4}}/>
+                    <Text style={[styles.quickActionText, {color: '#ca8a04'}]}>View Solution</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+
+            {/* Unread Indicator */}
+            {!item.isRead && <View style={[styles.unreadDot, {backgroundColor: meta.color}]} />}
+          </TouchableOpacity>
+
+          {/* Delete Swipe Area */}
+          <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteNotification(item.id)}>
+            <Ionicons name="trash-outline" size={18} color="#ef4444" />
+          </TouchableOpacity>
+        </View>
       </Animated.View>
     );
   };
@@ -137,33 +214,58 @@ export default function NotificationScreen() {
       
       {/* 🔝 HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={26} color="#0f172a" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Notifications</Text>
+        <View style={{flexDirection: 'row', alignItems: 'center'}}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color="#0f172a" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Activity</Text>
+        </View>
         <TouchableOpacity onPress={markAllAsRead} style={styles.markReadBtn}>
-          <Ionicons name="checkmark-done-circle-outline" size={24} color="#4f46e5" />
+          <Ionicons name="checkmark-done-circle" size={24} color="#4f46e5" />
+          <Text style={styles.markReadText}>Mark All</Text>
         </TouchableOpacity>
       </View>
 
-      {/* 📜 LIST */}
+      {/* 🗂️ SMART FILTERS */}
+      <View style={styles.filterContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal: 15, paddingVertical: 10}}>
+          {['All', 'Unread', 'Mentions', 'Doubts'].map((filter) => (
+            <TouchableOpacity 
+              key={filter} 
+              style={[styles.filterPill, activeFilter === filter && styles.activeFilterPill]} 
+              onPress={() => { Haptics.selectionAsync(); setActiveFilter(filter as any); }}
+            >
+              <Text style={[styles.filterText, activeFilter === filter && styles.activeFilterText]}>{filter}</Text>
+              {filter === 'Unread' && notifications.some(n => !n.isRead) && (
+                <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>{notifications.filter(n => !n.isRead).length}</Text></View>
+              )}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* 📜 LIST OR SKELETONS */}
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color="#4f46e5" /></View>
+        <View style={styles.listContent}>
+          {[1,2,3,4,5].map(i => <BreathingSkeleton key={i} />)}
+        </View>
       ) : (
         <FlatList
-          data={notifications}
+          data={filteredNotifications}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           renderItem={renderNotification}
           ListEmptyComponent={
-            <View style={styles.emptyState}>
+            <Animated.View entering={FadeInDown} style={styles.emptyState}>
               <View style={styles.emptyIconBg}>
-                <Ionicons name="notifications-off-outline" size={50} color="#94a3b8" />
+                <Ionicons name={activeFilter === 'All' ? "notifications-off" : "checkmark-done"} size={60} color="#94a3b8" />
               </View>
-              <Text style={styles.emptyText}>No notifications yet</Text>
-              <Text style={styles.emptySubText}>When someone interacts with you, it will show up here.</Text>
-            </View>
+              <Text style={styles.emptyText}>{activeFilter === 'Unread' ? "You're all caught up!" : "No activity yet"}</Text>
+              <Text style={styles.emptySubText}>
+                {activeFilter === 'Unread' ? "You have read all your notifications." : "When someone interacts with you, it will magically appear right here."}
+              </Text>
+            </Animated.View>
           }
         />
       )}
@@ -171,33 +273,62 @@ export default function NotificationScreen() {
   );
 }
 
+// ==========================================
+// 🎨 ULTRA PREMIUM STYLES
+// ==========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 15, paddingTop: Platform.OS === 'ios' ? 10 : 20, paddingBottom: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
-  backBtn: { padding: 5, backgroundColor: '#f1f5f9', borderRadius: 12 },
-  headerTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a', letterSpacing: 0.5 },
-  markReadBtn: { padding: 5 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 10 : 20, paddingBottom: 15, backgroundColor: '#fff' },
+  backBtn: { padding: 6, backgroundColor: '#f1f5f9', borderRadius: 20, marginRight: 15 },
+  headerTitle: { fontSize: 24, fontWeight: '900', color: '#0f172a', letterSpacing: -0.5 },
+  markReadBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef2ff', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  markReadText: { color: '#4f46e5', fontSize: 12, fontWeight: '800', marginLeft: 4 },
 
-  listContent: { padding: 15, paddingBottom: 40 },
+  filterContainer: { backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
+  filterPill: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#f1f5f9', marginRight: 10, borderWidth: 1, borderColor: '#e2e8f0' },
+  activeFilterPill: { backgroundColor: '#0f172a', borderColor: '#0f172a' },
+  filterText: { fontSize: 13, fontWeight: '700', color: '#64748b' },
+  activeFilterText: { color: '#fff' },
+  filterBadge: { backgroundColor: '#ef4444', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2, marginLeft: 6 },
+  filterBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900' },
+
+  listContent: { padding: 15, paddingBottom: 100 },
   
-  notificationCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 15, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 2 },
-  unreadCard: { backgroundColor: '#eef2ff', borderColor: '#c7d2fe' }, // Light indigo for unread
+  notificationCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#e2e8f0', borderLeftWidth: 5, shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, overflow: 'hidden' },
+  unreadCardBg: { backgroundColor: '#f4f6ff' }, // Very subtle blue tint for unread
   
-  avatarContainer: { position: 'relative', marginRight: 15 },
-  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#e2e8f0' },
-  typeIconBadge: { position: 'absolute', bottom: -2, right: -2, width: 20, height: 20, borderRadius: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
+  cardClickArea: { flex: 1, flexDirection: 'row', padding: 15 },
+  
+  avatarContainer: { position: 'relative', marginRight: 15, alignSelf: 'flex-start' },
+  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#e2e8f0', borderWidth: 1, borderColor: '#e2e8f0' },
+  typeIconBadge: { position: 'absolute', bottom: -4, right: -4, width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff', elevation: 2 },
   
   textContainer: { flex: 1 },
-  notificationText: { fontSize: 14, color: '#1e293b', lineHeight: 20 },
-  boldText: { fontWeight: '800', color: '#0f172a' },
-  timeText: { fontSize: 12, color: '#64748b', marginTop: 4, fontWeight: '600' },
+  textHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
+  boldText: { fontSize: 15, fontWeight: '800', color: '#0f172a', flex: 1, marginRight: 10 },
+  timeText: { fontSize: 11, color: '#94a3b8', fontWeight: '700' },
   
-  unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#4f46e5', marginLeft: 10 },
+  notificationText: { fontSize: 13, color: '#475569', lineHeight: 18, fontWeight: '500' },
   
+  quickActionRow: { flexDirection: 'row', marginTop: 10 },
+  quickActionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' },
+  quickActionText: { fontSize: 11, fontWeight: '800', color: '#334155' },
+
+  unreadDot: { width: 10, height: 10, borderRadius: 5, alignSelf: 'center', marginLeft: 10 },
+  
+  deleteBtn: { paddingHorizontal: 15, height: '100%', justifyContent: 'center', alignItems: 'center', borderLeftWidth: 1, borderColor: '#f1f5f9', backgroundColor: '#fef2f2' },
+
+  // 💀 SKELETON STYLES
+  skeletonCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 15, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#e2e8f0' },
+  skeletonAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#e2e8f0', marginRight: 15 },
+  skeletonTextContainer: { flex: 1 },
+  skeletonTextLine1: { width: '60%', height: 14, backgroundColor: '#e2e8f0', borderRadius: 4, marginBottom: 8 },
+  skeletonTextLine2: { width: '90%', height: 12, backgroundColor: '#f1f5f9', borderRadius: 4 },
+
+  // 📭 EMPTY STATE
   emptyState: { alignItems: 'center', marginTop: 80, paddingHorizontal: 40 },
   emptyIconBg: { backgroundColor: '#f1f5f9', padding: 25, borderRadius: 50, marginBottom: 20 },
-  emptyText: { fontSize: 18, fontWeight: '800', color: '#0f172a', marginBottom: 8 },
-  emptySubText: { fontSize: 14, color: '#64748b', textAlign: 'center', lineHeight: 22 }
+  emptyText: { fontSize: 20, fontWeight: '900', color: '#0f172a', marginBottom: 8, textAlign: 'center' },
+  emptySubText: { fontSize: 14, color: '#64748b', textAlign: 'center', lineHeight: 22, fontWeight: '500' }
 });

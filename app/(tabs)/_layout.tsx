@@ -1,60 +1,76 @@
 import React, { useEffect } from 'react';
-import { View, TouchableOpacity, StyleSheet, Dimensions, Platform } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-// 🚨 BlurView ka import hata diya hai
+import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics'; 
 import Animated, { 
   useSharedValue, useAnimatedStyle, withSpring, withTiming 
 } from 'react-native-reanimated';
 
-const { width } = Dimensions.get('window');
-
 // ==========================================
-// 🌟 1. INDIVIDUAL ANIMATED TAB BUTTON
+// 🌟 1. MINIMAL & ELEGANT TAB BUTTON
 // ==========================================
 const TabButton = ({ item, onPress, accessibilityState }: any) => {
   const focused = accessibilityState.selected;
   
-  const scale = useSharedValue(focused ? 1.1 : 0.9);
-  const translateY = useSharedValue(focused ? -8 : 0);
-  const opacity = useSharedValue(focused ? 1 : 0);
+  // Minimal Animation Values
+  const scale = useSharedValue(1);
+  const indicatorScale = useSharedValue(0);
+  const opacity = useSharedValue(0);
 
   useEffect(() => {
-    scale.value = withSpring(focused ? 1.1 : 0.9, { damping: 12, stiffness: 100 });
-    translateY.value = withSpring(focused ? -8 : 0, { damping: 12, stiffness: 100 });
-    opacity.value = withTiming(focused ? 1 : 0, { duration: 250 });
+    // Subtle scale up for the icon
+    scale.value = withSpring(focused ? 1.1 : 1, { damping: 15, stiffness: 150 });
+    
+    // Smooth indicator dot animation
+    indicatorScale.value = withSpring(focused ? 1 : 0, { damping: 15, stiffness: 150 });
+    opacity.value = withTiming(focused ? 1 : 0, { duration: 150 });
   }, [focused]);
 
   const animatedIconStyle = useAnimatedStyle(() => {
-    return { transform: [{ scale: scale.value }, { translateY: translateY.value }] };
+    return { transform: [{ scale: scale.value }] };
   });
 
-  const animatedDotStyle = useAnimatedStyle(() => {
-    return { opacity: opacity.value, transform: [{ scale: opacity.value }] };
+  const animatedIndicatorStyle = useAnimatedStyle(() => {
+    return {
+      opacity: opacity.value,
+      transform: [{ scale: indicatorScale.value }],
+    };
   });
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={styles.tabButton}>
-      <Animated.View style={[styles.iconContainer, animatedIconStyle]}>
+    <TouchableOpacity 
+      onPress={(e) => {
+        // Apple style soft haptic feedback
+        Haptics.selectionAsync(); 
+        onPress(e);
+      }} 
+      activeOpacity={0.6} 
+      style={styles.tabButton}
+    >
+      <Animated.View style={animatedIconStyle}>
         <Ionicons 
           name={focused ? item.activeIcon : item.inactiveIcon} 
           size={24} 
-          color={focused ? '#2563eb' : '#64748b'} 
+          color={focused ? '#4f46e5' : '#64748b'} // Indigo when active, Slate when inactive
         />
       </Animated.View>
-      <Animated.View style={[styles.activeDot, animatedDotStyle]} />
+      
+      {/* Subtle bottom dot instead of a big bubble */}
+      <Animated.View style={[styles.indicatorDot, animatedIndicatorStyle]} />
     </TouchableOpacity>
   );
 };
 
 // ==========================================
-// 🌟 2. THE FLOATING DOCK (Without Native Blur)
+// 🍏 2. APPLE-STYLE GLASSY DOCK
 // ==========================================
 const CustomTabBar = ({ state, descriptors, navigation }: any) => {
   return (
     <View style={styles.floatingWrapper}>
-      {/* 🚨 BlurView ko ek normal View se replace kar diya */}
-      <View style={styles.glassContainer}>
+      {/* 🍏 Apple Glass Effect using BlurView */}
+      <BlurView intensity={80} tint="light" style={styles.glassContainer}>
         {state.routes.map((route: any, index: number) => {
           const isFocused = state.index === index;
 
@@ -63,27 +79,32 @@ const CustomTabBar = ({ state, descriptors, navigation }: any) => {
             if (!isFocused && !event.defaultPrevented) { navigation.navigate(route.name); }
           };
 
+          // Perfect Icon Mapping
           let activeIcon = 'alert-circle';
           let inactiveIcon = 'alert-circle-outline';
-
           const routeName = route.name.toLowerCase();
           
-          if (routeName === 'index' || routeName === 'feed') {
-            activeIcon = 'home';
-            inactiveIcon = 'home-outline';
-          } else if (routeName === 'network') {
-            activeIcon = 'people';
-            inactiveIcon = 'people-outline';
-          } else if (routeName === 'profile') {
-            activeIcon = 'person';
-            inactiveIcon = 'person-outline';
-          } else if (routeName === 'settings') {
-            activeIcon = 'settings';
-            inactiveIcon = 'settings-outline';
-          } else if (routeName === 'chat') {
-            activeIcon = 'chatbubbles';
-            inactiveIcon = 'chatbubbles-outline';
-         }
+          switch(routeName) {
+            case 'index':
+            case 'feed':
+              activeIcon = 'home';
+              inactiveIcon = 'home-outline';
+              break;
+            case 'network':
+              activeIcon = 'people';
+              inactiveIcon = 'people-outline';
+              break;
+            case 'explore': 
+            case 'chat':
+            case 'messages':
+              activeIcon = 'chatbubbles';
+              inactiveIcon = 'chatbubbles-outline';
+              break;
+            case 'profile':
+              activeIcon = 'person';
+              inactiveIcon = 'person-outline';
+              break;
+          }
 
           return (
             <TabButton 
@@ -94,11 +115,14 @@ const CustomTabBar = ({ state, descriptors, navigation }: any) => {
             />
           );
         })}
-      </View>
+      </BlurView>
     </View>
   );
 };
 
+// ==========================================
+// 🌟 3. LAYOUT CONFIGURATION
+// ==========================================
 export default function TabLayout() {
   return (
     <Tabs
@@ -107,12 +131,15 @@ export default function TabLayout() {
     >
       <Tabs.Screen name="index" options={{ title: 'Home' }} />
       <Tabs.Screen name="network" options={{ title: 'Network' }} />
-      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
       <Tabs.Screen name="explore" options={{ title: 'Chat' }} />
+      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
     </Tabs>
   );
 }
 
+// ==========================================
+// 🎨 MINIMALIST STYLES
+// ==========================================
 const styles = StyleSheet.create({
   floatingWrapper: {
     position: 'absolute',
@@ -120,27 +147,40 @@ const styles = StyleSheet.create({
     left: 20,
     right: 20,
     borderRadius: 35,
-    elevation: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
+    elevation: 10, // Shadow for Android
+    shadowColor: '#000', // Shadow for iOS
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
     shadowRadius: 20,
-    overflow: 'hidden',
+    overflow: 'hidden', // REQUIRED for BlurView to respect border radius
   },
   glassContainer: {
     flexDirection: 'row',
     height: 70,
-    // 🚨 Yahan humne ek semi-transparent white color de diya hai blur ki jagah
-    backgroundColor: 'rgba(255, 255, 255, 0.95)', 
+    backgroundColor: 'rgba(255, 255, 255, 0.3)', // Slight white tint over the blur
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 15,
+    // A subtle inner border to make it look like real glass
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)', 
   },
-  tabButton: { flex: 1, justifyContent: 'center', alignItems: 'center', height: '100%' },
-  iconContainer: { justifyContent: 'center', alignItems: 'center', backgroundColor: 'transparent' },
-  activeDot: {
-    width: 6, height: 6, borderRadius: 3, backgroundColor: '#2563eb',
-    position: 'absolute', bottom: 8, shadowColor: '#2563eb',
-    shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.5, shadowRadius: 4,
+  tabButton: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    height: '100%',
+  },
+  indicatorDot: {
+    position: 'absolute',
+    bottom: 12,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#4f46e5', // Theme color dot
+    shadowColor: '#4f46e5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
   }
 });

@@ -1,334 +1,199 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity, SafeAreaView, 
-  Dimensions, Image, ActivityIndicator, Alert, Platform 
+  ScrollView, Dimensions, Platform, TextInput, KeyboardAvoidingView 
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { 
-  useSharedValue, useAnimatedStyle, withSpring, withTiming, 
-  interpolate, Extrapolation, runOnJS 
-} from 'react-native-reanimated';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { auth, db } from '../../firebaseConfig';
-import { collection, getDocs, query, where, addDoc, serverTimestamp } from 'firebase/firestore';
+import * as Haptics from 'expo-haptics';
 
-const { width, height } = Dimensions.get('window');
-const SWIPE_THRESHOLD = width * 0.25;
+const { width } = Dimensions.get('window');
 
-export default function MatchmakingScreen() {
+// 🔥 EXPANDED CLASSES (Class 6 to PG + "Any Class" Option)
+const CLASSES = ['Any Class', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12', 'Dropper (13th)', 'UG (College)', 'PG (Masters)'];
+
+const TARGET_EXAMS = [
+  'Any Exam', 'JEE Advanced', 'JEE Mains', 'NEET UG', 'BITSAT', 'CUET', 
+  'NDA', 'UPSC', 'CAT', 'GATE', 'CLAT', 'CA Foundation', 
+  'CBSE Boards', 'State Boards', 'NTSE', 'Olympiads', 'None (Just Learning)'
+];
+
+const ALL_TOPICS_AND_SKILLS = [
+  'General Mentorship', 'Physics', 'Chemistry', 'Mathematics', 'Biology', 'English', 
+  'Web Development', 'Coding', 'DSA', 'Next.js', 'React', 'Python', 'Java',
+  'Organic Chemistry', 'Calculus', 'Mechanics', 'Business', 'Startup'
+];
+
+export default function MatchmakingFilterScreen() {
   const router = useRouter();
-  const currentUid = auth.currentUser?.uid;
 
-  // 🧠 STATES
-  const [profiles, setProfiles] = useState<any[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [loading, setLoading] = useState(true);
+  // 🧠 DEFAULTS SET TO "ANY" FOR WIDER MATCHING
+  const [selectedClass, setSelectedClass] = useState('Any Class');
+  const [selectedTarget, setSelectedTarget] = useState('Any Exam');
+  const [needHelpIn, setNeedHelpIn] = useState('');
+  const [canTeach, setCanTeach] = useState('');
 
-  // 🌀 REANIMATED VALUES
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const rotate = useSharedValue(0);
-  const scale = useSharedValue(1);
+  const [helpSearch, setHelpSearch] = useState('');
+  const [teachSearch, setTeachSearch] = useState('');
 
-  // ==========================================
-  // 📡 FETCH POTENTIAL STUDY PARTNERS
-  // ==========================================
-  useEffect(() => {
-    const fetchUsers = async () => {
-      if (!currentUid) return;
-      try {
-        // Asli app mein hum yahan complex query lagayenge (e.g., target match, location)
-        // Abhi ke liye get all users except current user
-        const q = query(collection(db, 'users'), where('uid', '!=', currentUid));
-        const querySnapshot = await getDocs(q);
-        
-        const fetchedProfiles = querySnapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            name: data.displayName || 'IITian in Making',
-            avatar: data.photoURL || `https://ui-avatars.com/api/?name=${data.displayName}&background=random`,
-            target: data.targetExam || 'JEE Advanced 2026',
-            strong: data.strongSubject || 'Physics',
-            weak: data.weakSubject || 'Chemistry',
-            bio: data.bio || "Looking for a serious study partner to clear backlogs and give mock tests together!"
-          };
-        });
+  const filteredHelpTopics = useMemo(() => {
+    if (!helpSearch.trim()) return ALL_TOPICS_AND_SKILLS.slice(0, 15); 
+    return ALL_TOPICS_AND_SKILLS.filter(t => t.toLowerCase().includes(helpSearch.toLowerCase()));
+  }, [helpSearch]);
 
-        // Agar DB mein users nahi hain, toh UI test karne ke liye dummy data daal dete hain
-        if (fetchedProfiles.length === 0) {
-          setProfiles([
-            { id: '1', name: 'Ayaan Akhtar', avatar: 'https://randomuser.me/api/portraits/men/32.jpg', target: 'JEE Mains', strong: 'Maths', weak: 'Physics', bio: 'Night owl 🦉. Need someone to practice HC Verma with.' },
-            { id: '2', name: 'Mahira Khan', avatar: 'https://randomuser.me/api/portraits/women/44.jpg', target: 'NEET 2026', strong: 'Biology', weak: 'Physics', bio: 'Very disciplined. Let us keep each other accountable!' },
-            { id: '3', name: 'Tasya', avatar: 'https://randomuser.me/api/portraits/women/68.jpg', target: 'JEE Advanced', strong: 'Chemistry', weak: 'Maths', bio: 'Organic chemistry is love. I can teach you Chem if you help me in Calculus.' }
-          ]);
-        } else {
-          setProfiles(fetchedProfiles);
-        }
-      } catch (error) {
-        console.log("Error fetching profiles:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const filteredTeachTopics = useMemo(() => {
+    if (!teachSearch.trim()) return ALL_TOPICS_AND_SKILLS.slice(0, 15);
+    return ALL_TOPICS_AND_SKILLS.filter(t => t.toLowerCase().includes(teachSearch.toLowerCase()));
+  }, [teachSearch]);
 
-    fetchUsers();
-  }, [currentUid]);
-
-  const currentProfile = profiles[currentIndex];
-
-  // ==========================================
-  // 🤝 HANDLE CONNECTIONS
-  // ==========================================
-  const handleSwipeComplete = async (direction: 'right' | 'left') => {
-    if (direction === 'right' && currentProfile && currentUid) {
-      // Send Connection Request in Firebase
-      try {
-        await addDoc(collection(db, 'connections'), {
-          senderId: currentUid,
-          receiverId: currentProfile.id,
-          status: 'pending',
-          createdAt: serverTimestamp()
-        });
-        console.log("Connection Request Sent to:", currentProfile.name);
-      } catch (error) {
-        console.log("Failed to send request:", error);
-      }
+  const handleFindPartners = () => {
+    if (!needHelpIn || !canTeach) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      alert("Bhai, kam se kam 1 Help Topic aur 1 Teach Topic select kar lo!");
+      return;
     }
 
-    if (currentIndex < profiles.length - 1) {
-      setCurrentIndex(prev => prev + 1);
-      // Reset Card Position
-      translateX.value = 0;
-      translateY.value = 0;
-      rotate.value = 0;
-      scale.value = 1;
-    } else {
-      setCurrentIndex(profiles.length); // End of list
-    }
-  };
-
-  // ==========================================
-  // 👉 TINDER SWIPE GESTURE
-  // ==========================================
-  const panGesture = Gesture.Pan()
-    .onStart(() => {
-      scale.value = withTiming(1.02);
-    })
-    .onUpdate((event) => {
-      translateX.value = event.translationX;
-      translateY.value = event.translationY;
-      rotate.value = interpolate(event.translationX, [-width / 2, width / 2], [-10, 10], Extrapolation.CLAMP);
-    })
-    .onEnd(() => {
-      scale.value = withTiming(1);
-      if (translateX.value > SWIPE_THRESHOLD) {
-        // SWIPE RIGHT (CONNECT)
-        translateX.value = withSpring(width + 100, { velocity: 50 });
-        runOnJS(Haptics.notificationAsync)(Haptics.NotificationFeedbackType.Success);
-        runOnJS(handleSwipeComplete)('right');
-      } else if (translateX.value < -SWIPE_THRESHOLD) {
-        // SWIPE LEFT (SKIP)
-        translateX.value = withSpring(-width - 100, { velocity: 50 });
-        runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
-        runOnJS(handleSwipeComplete)('left');
-      } else {
-        // SNAP BACK TO CENTER
-        translateX.value = withSpring(0);
-        translateY.value = withSpring(0);
-        rotate.value = withSpring(0);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    router.push({
+      pathname: '/matchmaking/swipe',
+      params: { 
+        classLevel: selectedClass,
+        targetExam: selectedTarget, 
+        needHelpIn: needHelpIn, 
+        canTeach: canTeach 
       }
     });
-
-  const swipeAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { rotateZ: `${rotate.value}deg` },
-      { scale: scale.value }
-    ],
-  }));
-
-  const nopeOpacityStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(translateX.value, [0, -SWIPE_THRESHOLD], [0, 1], Extrapolation.CLAMP)
-  }));
-
-  const likeOpacityStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(translateX.value, [0, SWIPE_THRESHOLD], [0, 1], Extrapolation.CLAMP)
-  }));
-
-  // ==========================================
-  // 🎨 RENDER UI
-  // ==========================================
-  if (loading) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#4f46e5" />
-        <Text style={styles.loadingText}>Finding serious aspirants...</Text>
-      </View>
-    );
-  }
+  };
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={styles.container}>
-        <StatusBar style="light" />
-        
-        {/* 🔝 HEADER */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-            <Ionicons name="chevron-back" size={28} color="#f8fafc" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Study Partners</Text>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/connections')}>
-            <Ionicons name="people" size={24} color="#f8fafc" />
-          </TouchableOpacity>
-        </View>
+    <SafeAreaView style={styles.container}>
+      <StatusBar style="light" />
+      
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+          <Ionicons name="chevron-back" size={28} color="#f8fafc" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Partner Preferences</Text>
+        <View style={{width: 40}} /> 
+      </View>
 
-        {/* 🃏 SWIPE CARD AREA */}
-        <View style={styles.cardArea}>
-          {currentIndex >= profiles.length ? (
-            // EMPTY STATE
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIconBg}><Ionicons name="planet" size={60} color="#4f46e5" /></View>
-              <Text style={styles.emptyTitle}>You've seen them all!</Text>
-              <Text style={styles.emptySub}>Check back later for new aspirants looking for a partner.</Text>
-              <TouchableOpacity style={styles.refreshBtn} onPress={() => router.back()}>
-                <Text style={styles.refreshBtnText}>Go Back</Text>
-              </TouchableOpacity>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          
+          <View style={styles.heroSection}>
+            <View style={styles.iconCircle}>
+              <Ionicons name="options" size={28} color="#ec4899" />
             </View>
-          ) : (
-            // TINDER CARD
-            <GestureDetector gesture={panGesture}>
-              <Animated.View style={[styles.cardWrapper, swipeAnimatedStyle]}>
-                
-                {/* 🔴 NOPE BADGE */}
-                <Animated.View style={[styles.badge, styles.nopeBadge, nopeOpacityStyle]}>
-                  <Text style={styles.nopeText}>SKIP</Text>
-                </Animated.View>
-
-                {/* 🟢 LIKE BADGE */}
-                <Animated.View style={[styles.badge, styles.likeBadge, likeOpacityStyle]}>
-                  <Text style={styles.likeText}>CONNECT</Text>
-                </Animated.View>
-
-                <View style={styles.card}>
-                  <Image source={{ uri: currentProfile.avatar }} style={styles.profileImage} />
-                  
-                  <LinearGradient colors={['transparent', 'rgba(2, 6, 23, 0.95)', '#020617']} style={styles.cardGradient}>
-                    <View style={styles.cardContent}>
-                      <Text style={styles.profileName}>{currentProfile.name}</Text>
-                      
-                      <View style={styles.targetBadge}>
-                        <Ionicons name="flag" size={14} color="#fde047" style={{marginRight: 5}}/>
-                        <Text style={styles.targetText}>Target: {currentProfile.target}</Text>
-                      </View>
-
-                      <Text style={styles.bioText}>"{currentProfile.bio}"</Text>
-
-                      <View style={styles.statsRow}>
-                        <View style={styles.statBox}>
-                          <Text style={styles.statLabel}>💪 STRONG IN</Text>
-                          <Text style={[styles.statValue, {color: '#10b981'}]}>{currentProfile.strong}</Text>
-                        </View>
-                        <View style={styles.statDivider} />
-                        <View style={styles.statBox}>
-                          <Text style={styles.statLabel}>⚠️ WEAK IN</Text>
-                          <Text style={[styles.statValue, {color: '#ef4444'}]}>{currentProfile.weak}</Text>
-                        </View>
-                      </View>
-                    </View>
-                  </LinearGradient>
-                </View>
-              </Animated.View>
-            </GestureDetector>
-          )}
-        </View>
-
-        {/* 🎛️ BOTTOM CONTROLS */}
-        {currentIndex < profiles.length && (
-          <View style={styles.footerControls}>
-            <TouchableOpacity 
-              style={[styles.actionBtn, styles.skipBtn]} 
-              activeOpacity={0.8}
-              onPress={() => {
-                translateX.value = withSpring(-width - 100);
-                setTimeout(() => handleSwipeComplete('left'), 300);
-              }}
-            >
-              <Ionicons name="close" size={36} color="#ef4444" />
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.actionBtn, styles.connectBtn]} 
-              activeOpacity={0.8}
-              onPress={() => {
-                translateX.value = withSpring(width + 100);
-                setTimeout(() => handleSwipeComplete('right'), 300);
-              }}
-            >
-              <Ionicons name="flash" size={32} color="#fff" />
-            </TouchableOpacity>
+            <Text style={styles.heroTitle}>Broad Filters</Text>
+            <Text style={styles.heroSub}>Select 'Any' to connect with seniors or juniors!</Text>
           </View>
-        )}
 
-      </SafeAreaView>
-    </GestureHandlerRootView>
+          {/* 🎓 CLASS SECTION */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionLabel}>🎓 Target Class / Level</Text>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+            {CLASSES.map((cls) => (
+              <TouchableOpacity key={cls} style={[styles.pill, selectedClass === cls && styles.pillActive]} onPress={() => { Haptics.selectionAsync(); setSelectedClass(cls); }}>
+                <Text style={[styles.pillText, selectedClass === cls && styles.pillTextActive]}>{cls}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <View style={styles.divider} />
+
+          {/* 🎯 TARGET EXAM SECTION */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionLabel}>🎯 Target Exam</Text>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+            {TARGET_EXAMS.map((exam) => (
+              <TouchableOpacity key={exam} style={[styles.pill, selectedTarget === exam && styles.pillActive]} onPress={() => { Haptics.selectionAsync(); setSelectedTarget(exam); }}>
+                <Text style={[styles.pillText, selectedTarget === exam && styles.pillTextActive]}>{exam}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <View style={styles.divider} />
+
+          {/* 🆘 I NEED HELP WITH... */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionLabel}>🆘 I need help with...</Text>
+            {needHelpIn ? <Text style={[styles.selectedText, {color: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)'}]}>{needHelpIn}</Text> : null}
+          </View>
+          <View style={styles.searchBar}>
+            <Ionicons name="search" size={18} color="#64748b" />
+            <TextInput style={styles.searchInput} placeholder="Search topic (e.g., General Mentorship)..." placeholderTextColor="#64748b" value={helpSearch} onChangeText={setHelpSearch} />
+          </View>
+          <View style={styles.pillContainer}>
+            {filteredHelpTopics.map((sub) => (
+              <TouchableOpacity key={`help-${sub}`} style={[styles.pill, needHelpIn === sub && styles.pillActiveRed]} onPress={() => { Haptics.selectionAsync(); setNeedHelpIn(sub); setHelpSearch(''); }}>
+                <Text style={[styles.pillText, needHelpIn === sub && styles.pillTextActive]}>{sub}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* 💪 I CAN TEACH... */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionLabel}>💪 I am strong in (Can Teach)...</Text>
+            {canTeach ? <Text style={[styles.selectedText, {color: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)'}]}>{canTeach}</Text> : null}
+          </View>
+          <View style={styles.searchBar}>
+            <Ionicons name="search" size={18} color="#64748b" />
+            <TextInput style={styles.searchInput} placeholder="What are you good at?" placeholderTextColor="#64748b" value={teachSearch} onChangeText={setTeachSearch} />
+          </View>
+          <View style={styles.pillContainer}>
+            {filteredTeachTopics.map((sub) => (
+              <TouchableOpacity key={`teach-${sub}`} style={[styles.pill, canTeach === sub && styles.pillActiveGreen]} onPress={() => { Haptics.selectionAsync(); setCanTeach(sub); setTeachSearch(''); }}>
+                <Text style={[styles.pillText, canTeach === sub && styles.pillTextActive]}>{sub}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      <View style={styles.footer}>
+        <TouchableOpacity style={styles.searchBtn} activeOpacity={0.9} onPress={handleFindPartners}>
+          <LinearGradient colors={['#ec4899', '#8b5cf6']} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.btnGradient}>
+            <Text style={styles.btnText}>Find Study Mates 🚀</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 }
 
-// ==========================================
-// 🎨 ULTRA PREMIUM STYLES
-// ==========================================
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#020617' }, 
-  loadingText: { color: '#94a3b8', marginTop: 15, fontWeight: '700', fontSize: 16 },
-  
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 40 : 10, paddingBottom: 10 },
+  container: { flex: 1, backgroundColor: '#020617' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 40 : 10, paddingBottom: 10, backgroundColor: '#020617', zIndex: 10 },
   iconBtn: { padding: 8, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 20 },
-  headerTitle: { fontSize: 20, fontWeight: '900', color: '#f8fafc', letterSpacing: 0.5 },
-
-  cardArea: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  cardWrapper: { width: width * 0.9, height: height * 0.68, position: 'relative' },
-  
-  card: { width: '100%', height: '100%', backgroundColor: '#0f172a', borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: '#1e293b', elevation: 10, shadowColor: '#4f46e5', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20 },
-  profileImage: { width: '100%', height: '100%', position: 'absolute' },
-  cardGradient: { position: 'absolute', bottom: 0, width: '100%', height: '60%', justifyContent: 'flex-end', padding: 20 },
-  
-  cardContent: { width: '100%' },
-  profileName: { fontSize: 32, fontWeight: '900', color: '#fff', marginBottom: 8, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: {width: 1, height: 1}, textShadowRadius: 5 },
-  targetBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(253, 224, 71, 0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, alignSelf: 'flex-start', marginBottom: 15, borderWidth: 1, borderColor: 'rgba(253, 224, 71, 0.3)' },
-  targetText: { color: '#fde047', fontSize: 13, fontWeight: '800', letterSpacing: 0.5 },
-  bioText: { color: '#cbd5e1', fontSize: 15, fontWeight: '500', lineHeight: 22, marginBottom: 20, fontStyle: 'italic' },
-  
-  statsRow: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 16, padding: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  statBox: { flex: 1, alignItems: 'center' },
-  statDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.1)' },
-  statLabel: { fontSize: 10, color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 },
-  statValue: { fontSize: 16, fontWeight: '900' },
-
-  // Swipe Badges
-  badge: { position: 'absolute', top: 40, paddingHorizontal: 20, paddingVertical: 8, borderRadius: 12, borderWidth: 4, zIndex: 100, transform: [{rotate: '-15deg'}] },
-  nopeBadge: { right: 40, borderColor: '#ef4444', transform: [{rotate: '15deg'}] },
-  nopeText: { color: '#ef4444', fontSize: 32, fontWeight: '900', letterSpacing: 2 },
-  likeBadge: { left: 40, borderColor: '#10b981' },
-  likeText: { color: '#10b981', fontSize: 32, fontWeight: '900', letterSpacing: 2 },
-
-  // Bottom Controls
-  footerControls: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingBottom: Platform.OS === 'ios' ? 40 : 20, gap: 30, marginTop: 10 },
-  actionBtn: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 8 },
-  skipBtn: { backgroundColor: '#0f172a', borderWidth: 2, borderColor: '#ef4444', shadowColor: '#ef4444' },
-  connectBtn: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#4f46e5', shadowColor: '#4f46e5', borderWidth: 2, borderColor: '#818cf8' },
-
-  // Empty State
-  emptyState: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 },
-  emptyIconBg: { backgroundColor: 'rgba(79, 70, 229, 0.1)', padding: 30, borderRadius: 60, marginBottom: 20 },
-  emptyTitle: { fontSize: 24, fontWeight: '900', color: '#f8fafc', marginBottom: 10 },
-  emptySub: { fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 22, marginBottom: 30 },
-  refreshBtn: { backgroundColor: '#4f46e5', paddingHorizontal: 25, paddingVertical: 12, borderRadius: 20 },
-  refreshBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 }
+  headerTitle: { fontSize: 18, fontWeight: '900', color: '#f8fafc', letterSpacing: 0.5 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 140 },
+  heroSection: { alignItems: 'center', marginTop: 10, marginBottom: 20 },
+  iconCircle: { backgroundColor: 'rgba(236, 72, 153, 0.1)', padding: 15, borderRadius: 30, marginBottom: 10 },
+  heroTitle: { color: '#f8fafc', fontSize: 22, fontWeight: '900', marginBottom: 5 },
+  heroSub: { color: '#94a3b8', fontSize: 13, fontWeight: '500' },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 10 },
+  sectionLabel: { color: '#cbd5e1', fontSize: 15, fontWeight: '800' },
+  selectedText: { color: '#a78bfa', fontSize: 11, fontWeight: '800', backgroundColor: 'rgba(167, 139, 250, 0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0f172a', borderRadius: 12, paddingHorizontal: 15, height: 46, marginBottom: 15, borderWidth: 1, borderColor: '#1e293b' },
+  searchInput: { flex: 1, marginLeft: 10, color: '#f8fafc', fontSize: 14 },
+  horizontalScroll: { marginBottom: 10 },
+  pillContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  pill: { backgroundColor: '#0f172a', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#1e293b' },
+  pillActive: { backgroundColor: '#4f46e5', borderColor: '#4f46e5' },
+  pillActiveRed: { backgroundColor: '#ef4444', borderColor: '#ef4444' },
+  pillActiveGreen: { backgroundColor: '#10b981', borderColor: '#10b981' },
+  pillText: { color: '#94a3b8', fontSize: 13, fontWeight: '600' },
+  pillTextActive: { color: '#fff', fontWeight: '800' },
+  divider: { height: 1, backgroundColor: '#1e293b', marginVertical: 25 },
+  footer: { position: 'absolute', bottom: Platform.OS === 'ios' ? 30 : 20, left: 20, right: 20, backgroundColor: '#020617', paddingTop: 10 },
+  searchBtn: { borderRadius: 16, overflow: 'hidden', shadowColor: '#ec4899', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.4, shadowRadius: 10, elevation: 8 },
+  btnGradient: { paddingVertical: 18, alignItems: 'center' },
+  btnText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 1 }
 });

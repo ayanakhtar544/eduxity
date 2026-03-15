@@ -1,0 +1,235 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// 🧑‍💼 ROLE-BASED ACCESS CONTROL (RBAC)
+// ==========================================
+enum Role {
+  ADMIN
+  TEACHER
+  INSTITUTE
+  STUDENT
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  role      Role     @default(STUDENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  examsCreated Exam[]        @relation("ExamAuthor")
+  attempts     ExamAttempt[]
+}
+
+// ==========================================
+// 📝 EXAM LIFECYCLE & SCHEDULING
+// ==========================================
+enum ExamStatus {
+  DRAFT
+  REVIEW
+  SCHEDULED
+  LIVE
+  ENDED
+  EVALUATED
+  ARCHIVED
+}
+
+enum ExamType {
+  LIFETIME_PRACTICE
+  LIMITED_TIME_LIVE
+}
+
+model Exam {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  category    String     // e.g., JEE, NEET, Boards
+  status      ExamStatus @default(DRAFT)
+  type        ExamType   @default(LIMITED_TIME_LIVE)
+  
+  // Timing Logic (Server-side validation)
+  duration    Int        // Total minutes
+  startTime   DateTime?  // Portal opens
+  endTime     DateTime?  // Portal closes
+  resultTime  DateTime?  // When to show results (Null = Immediate)
+  
+  // Security & Settings
+  maxAttempts Int        @default(1)
+  isPublic    Boolean    @default(true)
+  antiCheat   Boolean    @default(true)
+  seedSalt    String     // LOOPHOLE FIX: Secret salt for deterministic randomization
+  
+  authorId    String
+  author      User       @relation("ExamAuthor", fields: [authorId], references: [id])
+  
+  sections    Section[]
+  attempts    ExamAttempt[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+// ==========================================
+// 📚 SECTIONS & PATTERN
+// ==========================================
+model Section {
+  id                 String  @id @default(uuid())
+  examId             String
+  exam               Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  name               String
+  totalQuestions     Int
+  mandatoryQuestions Int     // For internal choice (e.g. attempt 5 out of 10)
+  timeLimit          Int?    // Sectional timer (Optional)
+  positiveMarks      Float
+  negativeMarks      Float
+  orderIndex         Int     // To maintain sequence
+  
+  questions          Question[]
+}
+
+// ==========================================
+// 🧠 MASSIVE QUESTION BANK ENGINE
+// ==========================================
+enum QuestionType {
+  SINGLE_MCQ
+  MULTI_MCQ
+  NUMERICAL
+  ASSERTION_REASON
+  MATRIX_MATCH
+  PARAGRAPH
+  SUBJECTIVE
+}
+
+model Question {
+  id            String       @id @default(uuid())
+  sectionId     String
+  section       Section      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  type          QuestionType
+  
+  // Rich Content
+  text          String       // Rich Text / LaTeX
+  imageUrl      String?
+  
+  // JSONB allows flexible structures without breaking schema
+  options       Json?        // Array of options for MCQs
+  matrixLeft    Json?        // For matrix match
+  matrixRight   Json?        // For matrix match
+  
+  // SECRETS (Never sent to client during exam)
+  correctAnswer Json         // Array of indices, exact string, or matrix mapping
+  tolerance     Float?       // For numerical variations
+  explanation   String?      // Sent only after result declaration
+  
+  difficulty    String       @default("medium") // easy, medium, hard
+  topics        String[]     // Array of tags
+  orderIndex    Int
+  
+  answers       Answer[]
+}
+
+// ==========================================
+// 🚀 EXAM ATTEMPT & AUTOSAVE (The Engine)
+// ==========================================
+enum AttemptStatus {
+  IN_PROGRESS
+  SYNC_PENDING  // LOOPHOLE FIX: For offline mode session recovery
+  SUBMITTED
+  EVALUATED
+  SUSPENDED     // Kicked out by Anti-Cheat
+}
+
+model ExamAttempt {
+  id             String        @id @default(uuid())
+  examId         String
+  studentId      String
+  exam           Exam          @relation(fields: [examId], references: [id])
+  student        User          @relation(fields: [studentId], references: [id])
+  
+  // Strict Server Timers (LOOPHOLE FIX: Client Timer Hack)
+  startedAt      DateTime      @default(now())
+  forceSubmitAt  DateTime      // Server calculates: startedAt + duration
+  submittedAt    DateTime?
+  status         AttemptStatus @default(IN_PROGRESS)
+  
+  // Security tracking
+  warningsIssued Int           @default(0)
+  deviceFp       String?       // Fingerprint to prevent multiple logins
+  ipAddress      String?
+  
+  // Dynamic State
+  timeLeft       Int           // Stored in seconds from Redis sync
+  
+  // Post-Evaluation
+  totalScore     Float?
+  analytics      Json?         // Stores accuracy, percentiles, etc.
+  
+  answers        Answer[]
+  activityLogs   ActivityLog[]
+}
+
+// ==========================================
+// 📝 ANSWERS & RESPONSES
+// ==========================================
+model Answer {
+  id         String      @id @default(uuid())
+  attemptId  String
+  attempt    ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question    @relation(fields: [questionId], references: [id])
+  
+  response   Json?       // The student's answer
+  status     String      @default("not_answered") // answered, review, answered_review
+  timeSpent  Int         @default(0) // Seconds spent on this question
+  
+  isCorrect  Boolean?
+  marksAwarded Float?
+  
+  updatedAt  DateTime    @updatedAt // To track last sync
+  
+  @@unique([attemptId, questionId]) // A student can have only 1 active answer per question
+}
+
+// ==========================================
+// 🚨 ANTI-CHEAT & ACTIVITY LOGS
+// ==========================================
+model ActivityLog {
+  id        String      @id @default(uuid())
+  attemptId String
+  attempt   ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  eventType String      // TAB_SWITCH, FULLSCREEN_EXIT, RIGHT_CLICK, MULTIPLE_LOGIN
+  timestamp DateTime    @default(now())
+  severity  Int         // E.g., Tab switch = 2, Exit Fullscreen = 3
+  details   Json?       // Extra context
+}
+
+// lib/services/examService.ts
+export const getExamPayloadForClient = async (examId: string, studentId: string) => {
+  const exam = await prisma.exam.findUnique({
+    where: { id: examId },
+    include: {
+      sections: {
+        include: {
+          // Select strictly what is needed. NO CORRECT ANSWERS!
+          questions: {
+            select: {
+              id: true,
+              type: true,
+              text: true,
+              imageUrl: true,
+              options: true,
+              matrixLeft: true,
+              matrixRight: true,
+              // Notice: correctAnswer and explanation are missing here! 🚀
+            }
+          }
+        }
+      }
+    }
+  });

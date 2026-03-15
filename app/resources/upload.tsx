@@ -12,8 +12,8 @@ import { useRouter } from 'expo-router';
 import { awardXP } from '../../helpers/gamificationEngine';
 
 // 🛑 APNI KEYS YAHAN DAALNA 
-const GEMINI_API_KEY = 'AIzaSyDuJZyGaWiMPv1u2Rq6sTx9SZkXDOiQC-8'; // Apni Gemini API Key daal do
-const IMGBB_API_KEY = '6557a43a353f7cb7dca1be929717185a';
+const GEMINI_API_KEY = 'process.env.EXPO_PUBLIC_GEMINI_API_KEY'; // Apni Gemini API Key daal do
+const IMGBB_API_KEY = 'process.env.EXPO_PUBLIC_IMGBB_API_KEY';
 
 const RECOMMENDED_TAGS = ['Physics', 'Kinematics', 'JEE Advanced', 'Short Notes', 'Tricks', 'PYQs', 'Maths'];
 

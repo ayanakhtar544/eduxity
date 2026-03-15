@@ -383,7 +383,6 @@ const EquationBalancerGame = () => {
     const n2 = Math.floor(Math.random() * 10) + 1;
     const n3 = Math.floor(Math.random() * 10) + 1;
 
-    // Use JS eval safely since we control the string
     let result = eval(`${n1} ${op1} ${n2} ${op2} ${n3}`);
 
     setEquation(`${n1} _ ${n2} _ ${n3} = ${result}`);
@@ -461,10 +460,10 @@ const VectorDashGame = () => {
 // ==========================================
 const BIO_FACTS = [
   { q: "Mitochondria is the powerhouse of the cell.", ans: true },
-  { q: "Humans have 24 pairs of chromosomes.", ans: false }, // 23 pairs
-  { q: "DNA contains Uracil.", ans: false }, // RNA contains Uracil
-  { q: "Arteries carry oxygenated blood.", ans: true }, // Except pulmonary artery
-  { q: "Photosynthesis occurs in mitochondria.", ans: false }, // Chloroplast
+  { q: "Humans have 24 pairs of chromosomes.", ans: false }, 
+  { q: "DNA contains Uracil.", ans: false }, 
+  { q: "Arteries carry oxygenated blood.", ans: true }, 
+  { q: "Photosynthesis occurs in mitochondria.", ans: false }, 
   { q: "White blood cells fight infections.", ans: true }
 ];
 
@@ -609,6 +608,7 @@ const PostCard = ({ item, currentUid }: any) => {
                 {item.pollMode === 'quiz' && <Ionicons name="school" size={10} color="#fff" style={{ marginRight: 4 }} />}
                 {item.type === 'resource' && <Ionicons name="book" size={10} color="#fff" style={{ marginRight: 4 }} />}
                 {item.type === 'flashcard' && <Ionicons name="layers" size={10} color="#fff" style={{ marginRight: 4 }} />}
+                {item.type === 'live_test' && <Ionicons name="timer" size={10} color="#fff" style={{ marginRight: 4 }} />}
                 <Text style={styles.categoryBadgeText}>{item.category}</Text>
               </View>
             )}
@@ -625,6 +625,45 @@ const PostCard = ({ item, currentUid }: any) => {
       {item.tags && item.tags.length > 0 && (<View style={styles.tagsContainer}>{item.tags.map((tag: string, idx: number) => (<View key={idx} style={styles.tagPill}><Text style={styles.tagText}>#{tag}</Text></View>))}</View>)}
       {item.type === 'image' && item.imageUrl ? (<View style={styles.imageContainer}><Image source={{ uri: item.imageUrl }} style={styles.postImage} resizeMode="cover" /></View>) : null}
       {item.type === 'code' && item.codeSnippet ? (<View style={styles.codeBlockContainer}><View style={styles.macWindowHeader}><View style={styles.macDots}><View style={[styles.macDot, { backgroundColor: '#ff5f56' }]} /><View style={[styles.macDot, { backgroundColor: '#ffbd2e' }]} /><View style={[styles.macDot, { backgroundColor: '#27c93f' }]} /></View><Text style={styles.codeLanguage}>{item.language || 'Code'}</Text></View><Text style={styles.codeText}>{item.codeSnippet}</Text></View>) : null}
+
+      {item.type === 'live_test' && (
+        <View style={styles.liveTestContainer}>
+          <LinearGradient colors={['#312e81', '#4f46e5']} style={styles.liveTestBg}>
+            <View style={styles.testHeaderRow}>
+              <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                <Ionicons name="radio-button-on" size={16} color="#fde047" />
+                <Text style={styles.testLiveText}>{item.ntaFormat ? 'NTA MOCK TEST' : 'LIVE TEST'}</Text>
+              </View>
+            </View>
+            <Text style={styles.testTitle}>{item.title}</Text>
+            
+            <View style={styles.testInfoRow}>
+              <Ionicons name="help-circle-outline" size={14} color="#cbd5e1" />
+              <Text style={styles.testInfoText}>{item.questions?.length || 0} Questions</Text>
+              <Text style={styles.testInfoText}>•</Text>
+              <Ionicons name="time-outline" size={14} color="#cbd5e1" />
+              <Text style={styles.testInfoText}>
+                {item.settings?.isTimerEnabled ? `${item.settings.timerPerQuestion}s/Q` : `${item.settings?.totalDuration || 180} Mins`}
+              </Text>
+            </View>
+
+            <View style={styles.testFeaturesRow}>
+              {item.settings?.antiCheat && (
+                <View style={styles.featureTag}><Text style={styles.featureTagText}>🛡️ Anti-Cheat</Text></View>
+              )}
+              {item.settings?.negativeMarks > 0 && (
+                <View style={[styles.featureTag, {backgroundColor: 'rgba(239, 68, 68, 0.8)'}]}><Text style={styles.featureTagText}>📉 Negative Marking</Text></View>
+              )}
+            </View>
+
+            <TouchableOpacity style={styles.startTestBtn} activeOpacity={0.8} onPress={() => router.push(`/test/${item.id}`)}>
+              <Text style={styles.startTestBtnText}>Attempt Test Now</Text>
+              <Ionicons name="arrow-forward" size={18} color="#4f46e5" />
+            </TouchableOpacity>
+          </LinearGradient>
+          <Text style={styles.attemptsText}>👥 {item.totalAttempts || 0} students have attempted this test</Text>
+        </View>
+      )}
 
       {item.type === 'poll' && item.pollOptions ? (
         <View style={styles.pollContainer}>
@@ -679,7 +718,6 @@ export default function FeedScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [unreadCount, setUnreadCount] = useState(0);
-  
 
   useEffect(() => {
     if (!currentUid) return;
@@ -723,20 +761,53 @@ export default function FeedScreen() {
     return () => { unsubPosts(); unsubStories(); };
   }, [currentUid]);
 
+  // ========================================================
+  // 🧠 ADVANCED FEED RANKING ALGORITHM (HackerNews + Insta Logic)
+  // ========================================================
   useEffect(() => {
     if (!posts.length) return;
+    
     const calculateScoreAndReason = (post: any) => {
-      let score = 0; let reason = "";
-      if (myFriends.includes(post.authorId)) { score += 100; reason = "From your Network"; }
+      let score = 0; 
+      let reason = "";
+      
+      const createdAtMs = post.createdAt?.toMillis ? post.createdAt.toMillis() : Date.now();
+      const hoursOld = (Date.now() - createdAtMs) / (1000 * 60 * 60);
+      const agePenalty = Math.floor(hoursOld * 5);
+
+      if (post.type === 'live_test') {
+        score += 10000;
+        reason = post.ntaFormat ? "📝 NTA Mock Test Active" : "🔴 Active Live Test";
+      }
+
+      if (post.authorId === currentUid && hoursOld < 0.2) {
+        score += 5000; 
+      }
+
+      if (myFriends.includes(post.authorId)) { 
+        score += 200; 
+        if(!reason) reason = "From your Network"; 
+      }
+      
       const myInterests: string[] = currentUserData?.interests || [];
       const postCategory = post.category || "";
-      if (myInterests.some(i => i.toLowerCase().includes(postCategory.toLowerCase())) && !reason) { score += 50; reason = "Suggested for You"; }
+      if (myInterests.some((i: string) => i.toLowerCase().includes(postCategory.toLowerCase())) && !reason) { 
+        score += 100; 
+        reason = "Suggested for You"; 
+      }
+      
       const likesCount = post.likes?.length || 0;
       const commentsCount = post.commentsCount || 0;
-      score += (likesCount * 2) + (commentsCount * 5);
-      if (likesCount > 10 && !reason) reason = "Popular on Eduxity";
-      const hoursOld = (Date.now() - (post.createdAt?.toMillis() || Date.now())) / (1000 * 60 * 60);
-      if (hoursOld < 24) score += 20;
+      const engagementScore = (likesCount * 3) + (commentsCount * 8);
+      score += engagementScore;
+      
+      if (engagementScore > 50 && hoursOld < 24 && !reason) {
+        reason = "🔥 Trending on Eduxity";
+        score += 500; 
+      }
+
+      score -= agePenalty;
+
       return { score, reason };
     };
 
@@ -744,6 +815,7 @@ export default function FeedScreen() {
       const { score, reason } = calculateScoreAndReason(post);
       return { ...post, algoScore: score, algoReason: reason };
     });
+    
     smartPosts.sort((a, b) => b.algoScore - a.algoScore);
 
     // 🎮 INJECT ALL 10 RANDOM GAMES AT DIFFERENT POSITIONS
@@ -759,7 +831,7 @@ export default function FeedScreen() {
     if (smartPosts.length >= 29) smartPosts.splice(28, 0, { id: 'game_bug_hunter_1', type: 'game_bug_hunter' });
     
     setAlgoPosts(smartPosts);
-  }, [posts, currentUserData, myFriends]);
+  }, [posts, currentUserData, myFriends, currentUid]);
 
   const onRefresh = () => { setRefreshing(true); setTimeout(() => setRefreshing(false), 1000); };
   const filteredPosts = selectedCategory === 'All' ? algoPosts : algoPosts.filter(post => post.category === selectedCategory);
@@ -792,7 +864,7 @@ export default function FeedScreen() {
         <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(200)} style={styles.menuOverlay}>
           <TouchableOpacity style={styles.menuBackdrop} activeOpacity={1} onPress={() => setIsMenuOpen(false)} />
           
-          <Animated.View entering={SlideInLeft.springify().damping(15)} exiting={SlideOutLeft.duration(200)} style={styles.menuDrawer}>
+          <Animated.View entering={SlideInLeft.duration(250)} exiting={SlideOutLeft.duration(200)} style={styles.menuDrawer}>
             
             <View style={styles.menuDrawerHeader}>
               <Image source={{ uri: auth.currentUser?.photoURL || DEFAULT_AVATAR }} style={styles.menuAvatar} />
@@ -813,13 +885,16 @@ export default function FeedScreen() {
                 <Text style={styles.menuItemText}>Study Resources</Text>
               </TouchableOpacity>
 
-              {/* 👉 NEW: LIVE GRIND ROOM BUTTON */}
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/test-history'); }}>
+                <View style={[styles.menuIconBg, { backgroundColor: '#fef3c7' }]}><Ionicons name="stats-chart" size={20} color="#d97706" /></View>
+                <Text style={styles.menuItemText}>My Tests & History 📊</Text>
+              </TouchableOpacity>
+
               <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/grind'); }}>
                 <View style={[styles.menuIconBg, { backgroundColor: '#ecfdf5' }]}><Ionicons name="timer" size={20} color="#10b981" /></View>
                 <Text style={styles.menuItemText}>Live Grind Room 🔥</Text>
               </TouchableOpacity>
 
-              {/* 👉 NEW: DOUBT HUB BUTTON */}
               <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/doubts'); }}>
                 <View style={[styles.menuIconBg, { backgroundColor: '#e0e7ff' }]}><Ionicons name="help-buoy" size={20} color="#4f46e5" /></View>
                 <Text style={styles.menuItemText}>Doubt Hub ❓</Text>
@@ -840,7 +915,6 @@ export default function FeedScreen() {
                 <Text style={styles.menuItemText}>Mini Games (Feed)</Text>
               </TouchableOpacity>
 
-              {/* 👉 NEW: THE VOID (VENT WALL) BUTTON */}
               <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/vent'); }}>
                 <View style={[styles.menuIconBg, { backgroundColor: '#fef2f2' }]}><Ionicons name="mic-off" size={20} color="#ef4444" /></View>
                 <Text style={styles.menuItemText}>The Void (Vent Here) 🤫</Text>
@@ -858,10 +932,8 @@ export default function FeedScreen() {
         </Animated.View>
       )}
 
-      {/* 🔝 UPDATED MAIN HEADER (With Hamburger Icon) */}
       <View style={styles.mainHeader}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {/* 👉 HAMBURGER BUTTON ADDED HERE */}
           <TouchableOpacity onPress={() => setIsMenuOpen(true)} style={styles.hamburgerBtn}>
             <Ionicons name="menu" size={28} color="#0f172a" />
           </TouchableOpacity>
@@ -983,6 +1055,20 @@ const styles = StyleSheet.create({
   pollOptionText: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
   pollPercentage: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
   pollTotalVotes: { fontSize: 12, color: '#64748b', fontWeight: '600', marginTop: 5, textAlign: 'right' },
+
+  liveTestContainer: { marginHorizontal: 15, marginBottom: 15, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff', shadowColor: '#4f46e5', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 3 },
+  liveTestBg: { padding: 20 },
+  testHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  testLiveText: { color: '#fde047', fontWeight: '900', fontSize: 12, marginLeft: 4, letterSpacing: 1 },
+  testTitle: { color: '#fff', fontSize: 22, fontWeight: '900', marginBottom: 8 },
+  testInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, gap: 5 },
+  testInfoText: { color: '#cbd5e1', fontWeight: '700', fontSize: 13, marginRight: 10 },
+  testFeaturesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  featureTag: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  featureTagText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  startTestBtn: { backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 14, borderRadius: 12 },
+  startTestBtnText: { color: '#4f46e5', fontWeight: '900', fontSize: 15, marginRight: 8 },
+  attemptsText: { textAlign: 'center', color: '#64748b', fontSize: 12, fontWeight: '700', paddingVertical: 10, backgroundColor: '#f8fafc' },
 
   resourceContainer: { marginHorizontal: 15, marginBottom: 15, backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
   resourceHeader: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#fafaf9', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },

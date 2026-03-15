@@ -1,25 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, Image, TouchableOpacity, 
-  ScrollView, ActivityIndicator, SafeAreaView, StatusBar, FlatList
+  ScrollView, ActivityIndicator, SafeAreaView, StatusBar, FlatList, Alert
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { doc, getDoc, collection, getDocs, query, where, limit } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, arrayRemove } from 'firebase/firestore';
 import { db, auth } from '../../../firebaseConfig';
+import * as Haptics from 'expo-haptics';
 
 export default function GroupInfoScreen() {
   const { id } = useLocalSearchParams(); 
   const router = useRouter();
+  const currentUid = auth.currentUser?.uid;
   
   const [groupData, setGroupData] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('Members'); 
 
-  // 🚀 Fetch Group Info & Top Members
+  // ==========================================
+  // 🚀 FETCH GROUP INFO & REAL MEMBERS
+  // ==========================================
   useEffect(() => {
     const fetchGroupDetails = async () => {
       if (!id) return;
@@ -27,17 +31,23 @@ export default function GroupInfoScreen() {
         // 1. Fetch Group Data
         const groupDoc = await getDoc(doc(db, 'groups', id as string));
         if (groupDoc.exists()) {
-          setGroupData(groupDoc.data());
+          const data = groupDoc.data();
+          setGroupData(data);
+
+          // 2. Fetch REAL Members Data
+          const memberIds = data.members || data.participants || [];
+          if (memberIds.length > 0) {
+            // Hum sabhi members ki UID se unka data nikalenge
+            const memberPromises = memberIds.map((uid: string) => getDoc(doc(db, 'users', uid)));
+            const memberDocs = await Promise.all(memberPromises);
+            
+            const fetchedMembers = memberDocs
+              .filter(doc => doc.exists())
+              .map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            setMembers(fetchedMembers);
+          }
         }
-
-        // 2. Fetch Members (Dummy/Real logic: Fetching some users to show in list)
-        // Ek real app mein hum groupData.members array se fetch karenge. Abhi ke liye top users la rahe hain
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, limit(10)); 
-        const userSnap = await getDocs(q);
-        const fetchedMembers = userSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setMembers(fetchedMembers);
-
       } catch (error) {
         console.log("Error fetching group info:", error);
       } finally {
@@ -46,6 +56,37 @@ export default function GroupInfoScreen() {
     };
     fetchGroupDetails();
   }, [id]);
+
+  // ==========================================
+  // 🚪 LEAVE GROUP LOGIC
+  // ==========================================
+  const handleLeaveGroup = async () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    Alert.alert(
+      "Leave Group",
+      "Are you sure you want to leave this study group?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Leave", style: "destructive", onPress: async () => {
+            try {
+              if (!currentUid) return;
+              await updateDoc(doc(db, 'groups', id as string), {
+                members: arrayRemove(currentUid),
+                participants: arrayRemove(currentUid) // Fallback support
+              });
+              router.replace('/(tabs)/explore'); // Wapas chat list pe bhej do
+            } catch (e) {
+              Alert.alert("Error", "Could not leave the group.");
+            }
+        }}
+      ]
+    );
+  };
+
+  const handleShareLink = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert("Invite Link Generated! 🔗", `Share this Group ID with your friends to join:\n\n${id}`);
+  };
 
   // 🛑 SAFETY CHECK
   if (loading) {
@@ -70,9 +111,10 @@ export default function GroupInfoScreen() {
   }
 
   // Fallbacks for UI
-  const totalMembers = groupData.members?.length || members.length || 156;
-  const groupSubject = groupData.subject || 'General Study';
+  const totalMembers = groupData.members?.length || groupData.participants?.length || members.length || 0;
+  const groupSubject = groupData.subject || groupData.category || 'General Study';
   const groupIcon = groupData.icon || `https://ui-avatars.com/api/?name=${groupData.name}&background=1e293b&color=fff&size=200`;
+  const adminId = groupData.adminId || (groupData.admins ? groupData.admins[0] : null);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -118,12 +160,12 @@ export default function GroupInfoScreen() {
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statBox}>
-              <Text style={styles.statNumber}>{groupData.totalNotes || 42}</Text>
+              <Text style={styles.statNumber}>{groupData.totalNotes || 0}</Text>
               <Text style={styles.statLabel}>PDFs/Notes</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statBox}>
-              <Text style={styles.statNumber}>{groupData.totalTests || 15}</Text>
+              <Text style={styles.statNumber}>{groupData.totalTests || 0}</Text>
               <Text style={styles.statLabel}>Live Tests</Text>
             </View>
           </View>
@@ -138,7 +180,7 @@ export default function GroupInfoScreen() {
               <Text style={styles.primaryBtnText}>Leaderboard</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.secondaryBtn}>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={handleShareLink}>
               <Ionicons name="share-social" size={18} color="#1e293b" />
               <Text style={styles.secondaryBtnText}>Invite Link</Text>
             </TouchableOpacity>
@@ -152,7 +194,10 @@ export default function GroupInfoScreen() {
             <TouchableOpacity 
               key={tab} 
               style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive]}
-              onPress={() => setActiveTab(tab)}
+              onPress={() => {
+                Haptics.selectionAsync();
+                setActiveTab(tab);
+              }}
             >
               <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
             </TouchableOpacity>
@@ -165,34 +210,36 @@ export default function GroupInfoScreen() {
           {/* 👥 MEMBERS TAB */}
           {activeTab === 'Members' && (
             <View style={styles.membersList}>
-              {/* Admin Search Bar (Visual Only) */}
               <View style={styles.searchBar}>
                 <Ionicons name="search" size={18} color="#94a3b8" />
                 <Text style={{ color: '#94a3b8', marginLeft: 10 }}>Search members...</Text>
               </View>
 
-              {members.map((member, index) => (
-                <TouchableOpacity 
-                  key={index} 
-                  style={styles.memberItem}
-                  onPress={() => router.push(`/user/${member.id}`)}
-                >
-                  <Image source={{ uri: member.avatar || `https://ui-avatars.com/api/?name=${member.name}` }} style={styles.memberAvatar} />
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.memberName}>{member.name}</Text>
-                    <Text style={styles.memberLevel}>Lvl {member.gamification?.level || 1} • {member.gamification?.xp || 0} XP</Text>
-                  </View>
-                  
-                  {/* Admin Badge Logic (Make first user admin for demo) */}
-                  {index === 0 ? (
-                    <View style={styles.adminBadge}>
-                      <Text style={styles.adminText}>Admin</Text>
+              {members.map((member, index) => {
+                const isAdmin = member.id === adminId || groupData.admins?.includes(member.id);
+                return (
+                  <TouchableOpacity 
+                    key={index} 
+                    style={styles.memberItem}
+                    onPress={() => router.push(`/user/${member.id}`)}
+                  >
+                    <Image source={{ uri: member.photoURL || member.avatar || `https://ui-avatars.com/api/?name=${member.displayName || member.name || 'User'}` }} style={styles.memberAvatar} />
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.memberName}>{member.displayName || member.name || 'Scholar'}</Text>
+                      <Text style={styles.memberLevel}>Lvl {member.gamification?.level || 1} • {member.xp || member.gamification?.xp || 0} XP</Text>
                     </View>
-                  ) : (
-                    <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
-                  )}
-                </TouchableOpacity>
-              ))}
+                    
+                    {/* Admin Badge Logic (REAL) */}
+                    {isAdmin ? (
+                      <View style={styles.adminBadge}>
+                        <Text style={styles.adminText}>Admin</Text>
+                      </View>
+                    ) : (
+                      <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
 
@@ -238,7 +285,7 @@ export default function GroupInfoScreen() {
                 <Text style={styles.ruleText}>Respect everyone in the Voice Lounge.</Text>
               </View>
 
-              <TouchableOpacity style={styles.leaveGroupBtn}>
+              <TouchableOpacity style={styles.leaveGroupBtn} onPress={handleLeaveGroup}>
                 <Ionicons name="exit-outline" size={20} color="#ef4444" />
                 <Text style={{ color: '#ef4444', fontWeight: 'bold', marginLeft: 10 }}>Leave Group</Text>
               </TouchableOpacity>
@@ -296,7 +343,6 @@ const styles = StyleSheet.create({
 
   tabContent: { padding: 20 },
   
-  // Tab Specific Styles
   searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', padding: 12, borderRadius: 12, marginBottom: 15 },
   memberItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 12, borderRadius: 16, marginBottom: 10, borderWidth: 1, borderColor: '#f1f5f9' },
   memberAvatar: { width: 45, height: 45, borderRadius: 22.5 },

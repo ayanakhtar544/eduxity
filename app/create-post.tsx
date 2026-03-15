@@ -470,6 +470,11 @@ export default function CreatePostScreen() {
               <TouchableOpacity style={[styles.toolBtn, postType === 'flashcard' && { backgroundColor: '#fce7f3' }]} onPress={() => {setPostType('flashcard'); setCategory('Resources');}}>
                 <Ionicons name="layers" size={22} color={postType === 'flashcard' ? '#ec4899' : '#64748b'} />
               </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.optionBtn} // Tera jo bhi style class ho
+                onPress={() => router.push('/create-test')}>
+                <Ionicons name="timer" size={24} color="#f59e0b" />
+              </TouchableOpacity>
             </ScrollView>
           </View>
         )}

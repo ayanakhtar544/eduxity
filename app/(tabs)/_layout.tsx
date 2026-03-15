@@ -80,8 +80,8 @@ const CustomTabBar = ({ state, descriptors, navigation }: any) => {
           };
 
           // Perfect Icon Mapping
-          let activeIcon = 'alert-circle';
-          let inactiveIcon = 'alert-circle-outline';
+          let activeIcon = 'settings-outline';
+          let inactiveIcon = 'settings-outline';
           const routeName = route.name.toLowerCase();
           
           switch(routeName) {

@@ -1,15 +1,31 @@
-// lib/services/autosaveService.ts (Mental Model)
-import redis from './redisClient';
+// File: lib/services/autosaveService.ts
+import { Redis } from '@upstash/redis';
 
-export const saveResponseToRedis = async (attemptId: string, questionId: string, responseData: any) => {
-  const redisKey = `attempt:${attemptId}`;
+// Upstash Console se apni URL aur Token daal lena
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
+
+export const saveResponseToRedis = async (attemptId: string, payload: any) => {
+  const redisKey = `exam_attempt:${attemptId}`;
   
-  // Update the specific question inside the Hash map in Redis (Extremely Fast)
-  await redis.hset(redisKey, {
-    [questionId]: JSON.stringify(responseData),
-    "lastSync": Date.now()
-  });
+  try {
+    // HSET se specifically sirf attempt data update hoga, poori DB block nahi hogi
+    // Ye process < 5 milliseconds me ho jayega
+    await redis.hset(redisKey, {
+      answers: JSON.stringify(payload.answers),
+      status: JSON.stringify(payload.qStatus),
+      timeLeft: payload.timeLeft,
+      lastSync: Date.now()
+    });
 
-  // A background CRON job (e.g., using AWS SQS or Inngest) will run every 3 minutes.
-  // It will pull data from Redis and do a BATCH UPDATE to PostgreSQL `Answer` table.
+    return { success: true };
+  } catch (error) {
+    console.error("Redis Autosave Failed fallback to local:", error);
+    throw error;
+  }
 };
+
+// Ek separate cron job / API banani hogi jo har 5 minute me Redis se data utha kar 
+// Prisma ke through bulk me Postgres me dale. Isse database pe load ZERO ho jayega.

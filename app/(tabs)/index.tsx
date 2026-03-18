@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  View, Text, StyleSheet, FlatList, Image, TouchableOpacity, StatusBar, ActivityIndicator, RefreshControl, Platform, ScrollView, Linking, Alert 
+  View, Text, StyleSheet, FlatList, Image, TouchableOpacity, StatusBar, ActivityIndicator, RefreshControl, Platform, ScrollView, Linking, Alert, Modal, TextInput, KeyboardAvoidingView, Dimensions 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { WebView } from 'react-native-webview';
+
 import { auth, db } from '../../firebaseConfig';
 import { 
   collection, query, orderBy, onSnapshot, doc, updateDoc, 
@@ -15,8 +15,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { registerForPushNotificationsAsync } from '../../helpers/notificationEngine'; 
 import { processAction } from '../../helpers/gamificationEngine'; 
 import * as Haptics from 'expo-haptics'; 
-import Animated, { FadeInDown, Layout, useSharedValue, useAnimatedStyle, withSpring, withTiming, interpolate, Extrapolation, SlideInLeft, SlideOutLeft, FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, { FadeInDown, Layout, useSharedValue, useAnimatedStyle, withSpring, withTiming, interpolate, Extrapolation, SlideInLeft, SlideOutLeft, FadeIn, FadeOut, withRepeat } from 'react-native-reanimated';
 
+const { height } = Dimensions.get('window');
 const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 const CATEGORIES = ['All', 'General', 'JEE Warriors', 'Coding Group', 'Doubts', 'Resources'];
 
@@ -33,6 +34,29 @@ const timeAgo = (timestamp: number | undefined) => {
 };
 
 // ==========================================
+// 💀 PREMIUM SKELETON LOADER
+// ==========================================
+const SkeletonPost = () => {
+  const pulseAnim = useSharedValue(0.5);
+  useEffect(() => { pulseAnim.value = withRepeat(withTiming(1, { duration: 1000 }), -1, true); }, []);
+  const animStyle = useAnimatedStyle(() => ({ opacity: pulseAnim.value }));
+  return (
+    <Animated.View style={[styles.postCard, styles.skeletonCard, animStyle]}>
+      <View style={styles.postHeader}>
+        <View style={styles.skeletonAvatar} />
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <View style={styles.skeletonTextLine} />
+          <View style={[styles.skeletonTextLine, { width: '40%', marginTop: 6 }]} />
+        </View>
+      </View>
+      <View style={[styles.skeletonTextLine, { width: '90%', height: 14, marginHorizontal: 15, marginTop: 10 }]} />
+      <View style={[styles.skeletonTextLine, { width: '70%', height: 14, marginHorizontal: 15, marginTop: 8 }]} />
+      <View style={styles.skeletonBox} />
+    </Animated.View>
+  );
+};
+
+// ==========================================
 // 🃏 INLINE FLASHCARD PLAYER
 // ==========================================
 const InlineFlashcardPlayer = ({ cardsData, title }: { cardsData: any[], title: string }) => {
@@ -42,14 +66,12 @@ const InlineFlashcardPlayer = ({ cardsData, title }: { cardsData: any[], title: 
   const flipAnim = useSharedValue(0);
 
   if (!cardsData || cardsData.length === 0) return null;
-
   const currentCard = cardsData[currentIndex];
 
   const frontStyle = useAnimatedStyle(() => {
     const rotateY = interpolate(flipAnim.value, [0, 180], [0, 180], Extrapolation.CLAMP);
     return { transform: [{ perspective: 1000 }, { rotateY: `${rotateY}deg` }], backfaceVisibility: 'hidden', zIndex: flipAnim.value < 90 ? 1 : 0, opacity: flipAnim.value < 90 ? 1 : 0 };
   });
-
   const backStyle = useAnimatedStyle(() => {
     const rotateY = interpolate(flipAnim.value, [0, 180], [180, 360], Extrapolation.CLAMP);
     return { transform: [{ perspective: 1000 }, { rotateY: `${rotateY}deg` }], backfaceVisibility: 'hidden', zIndex: flipAnim.value > 90 ? 1 : 0, opacity: flipAnim.value > 90 ? 1 : 0, position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
@@ -84,15 +106,9 @@ const InlineFlashcardPlayer = ({ cardsData, title }: { cardsData: any[], title: 
 };
 
 // ==========================================
-// 🎮 GAME 1: BRAIN MATCH (DYNAMIC POOL)
+// 🎮 GAMES BUNDLE (ALL GAMES KEPT ALIVE)
 // ==========================================
-const MASTER_PAIRS = [
-  {pId: 'A', t1: "Force", t2: "M × A"}, {pId: 'B', t1: "Power", t2: "Work/Time"}, {pId: 'C', t1: "Ohm's Law", t2: "V = IR"},
-  {pId: 'D', t1: "Kinetic Energy", t2: "½mv²"}, {pId: 'E', t1: "Water", t2: "H2O"}, {pId: 'F', t1: "Gravity", t2: "9.8 m/s²"},
-  {pId: 'G', t1: "Speed of Light", t2: "3×10⁸ m/s"}, {pId: 'H', t1: "PI (π)", t2: "3.1415"}, {pId: 'I', t1: "Density", t2: "Mass/Vol"},
-  {pId: 'J', t1: "Benzene", t2: "C6H6"}, {pId: 'K', t1: "Newton's 3rd", t2: "Action=Reaction"}, {pId: 'L', t1: "Current", t2: "Ampere"}
-];
-
+const MASTER_PAIRS = [{pId: 'A', t1: "Force", t2: "M × A"}, {pId: 'B', t1: "Power", t2: "Work/Time"}, {pId: 'C', t1: "Ohm's Law", t2: "V = IR"}, {pId: 'D', t1: "Kinetic Energy", t2: "½mv²"}, {pId: 'E', t1: "Water", t2: "H2O"}, {pId: 'F', t1: "Gravity", t2: "9.8 m/s²"}, {pId: 'G', t1: "Speed of Light", t2: "3×10⁸ m/s"}, {pId: 'H', t1: "PI (π)", t2: "3.1415"}, {pId: 'I', t1: "Density", t2: "Mass/Vol"}, {pId: 'J', t1: "Benzene", t2: "C6H6"}, {pId: 'K', t1: "Newton's 3rd", t2: "Action=Reaction"}, {pId: 'L', t1: "Current", t2: "Ampere"}];
 const MemoryCard = ({ item, isFlipped, isMatched, onPress }: any) => {
   const flipAnim = useSharedValue(0);
   useEffect(() => { flipAnim.value = withTiming(isFlipped || isMatched ? 180 : 0, { duration: 300 }); }, [isFlipped, isMatched]);
@@ -105,435 +121,141 @@ const MemoryCard = ({ item, isFlipped, isMatched, onPress }: any) => {
     </TouchableOpacity>
   );
 };
-
 const BrainMatchGame = () => {
-  const [cards, setCards] = useState<any[]>([]);
-  const [flippedIndices, setFlippedIndices] = useState<number[]>([]);
-  const [matchedIds, setMatchedIds] = useState<string[]>([]);
-  const [won, setWon] = useState(false);
-
-  const initGame = () => {
-    const shuffledPairs = [...MASTER_PAIRS].sort(() => Math.random() - 0.5).slice(0, 3);
-    let newCards: any[] = [];
-    shuffledPairs.forEach((p, i) => {
-      newCards.push({ id: `f_${i}`, pairId: p.pId, text: p.t1 });
-      newCards.push({ id: `b_${i}`, pairId: p.pId, text: p.t2 });
-    });
-    setCards(newCards.sort(() => Math.random() - 0.5));
-    setFlippedIndices([]); setMatchedIds([]); setWon(false);
-  };
+  const [cards, setCards] = useState<any[]>([]); const [flippedIndices, setFlippedIndices] = useState<number[]>([]); const [matchedIds, setMatchedIds] = useState<string[]>([]); const [won, setWon] = useState(false);
+  const initGame = () => { const shuffledPairs = [...MASTER_PAIRS].sort(() => Math.random() - 0.5).slice(0, 3); let newCards: any[] = []; shuffledPairs.forEach((p, i) => { newCards.push({ id: `f_${i}`, pairId: p.pId, text: p.t1 }); newCards.push({ id: `b_${i}`, pairId: p.pId, text: p.t2 }); }); setCards(newCards.sort(() => Math.random() - 0.5)); setFlippedIndices([]); setMatchedIds([]); setWon(false); };
   useEffect(() => { initGame(); }, []);
-
   const handleTap = (index: number) => {
     if (flippedIndices.length === 2 || flippedIndices.includes(index) || matchedIds.includes(cards[index].pairId)) return;
-    const newFlipped = [...flippedIndices, index];
-    setFlippedIndices(newFlipped);
+    const newFlipped = [...flippedIndices, index]; setFlippedIndices(newFlipped);
     if (newFlipped.length === 2) {
-      if (cards[newFlipped[0]].pairId === cards[newFlipped[1]].pairId) {
-        setMatchedIds(prev => {
-          const newMatches = [...prev, cards[newFlipped[0]].pairId];
-          if (newMatches.length === 3) setTimeout(() => { setWon(true); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }, 500);
-          return newMatches;
-        });
-        setFlippedIndices([]); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      } else {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setTimeout(() => setFlippedIndices([]), 800);
-      }
+      if (cards[newFlipped[0]].pairId === cards[newFlipped[1]].pairId) { setMatchedIds(prev => { const newMatches = [...prev, cards[newFlipped[0]].pairId]; if (newMatches.length === 3) setTimeout(() => { setWon(true); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }, 500); return newMatches; }); setFlippedIndices([]); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); } else { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTimeout(() => setFlippedIndices([]), 800); }
     } else { Haptics.selectionAsync(); }
   };
-
   return (
     <Animated.View entering={FadeInDown.springify()} style={styles.gameCard}>
       <View style={styles.gameHeader}><View style={styles.gameTitleRow}><Ionicons name="game-controller" size={20} color="#ec4899" /><Text style={[styles.gameTitle, { color: '#ec4899' }]}>BRAIN MATCH</Text></View><Text style={styles.gameSubtitle}>Match the pairs! 🧠</Text></View>
-      {!won ? (
-        <View style={styles.memGrid}>{cards.map((card, index) => <MemoryCard key={index} item={card} isFlipped={flippedIndices.includes(index)} isMatched={matchedIds.includes(card.pairId)} onPress={() => handleTap(index)} />)}</View>
-      ) : (
-        <Animated.View entering={FadeInDown} style={styles.gameWinArea}><Ionicons name="trophy" size={60} color="#fde047" /><Text style={styles.gameWinTitle}>Mastermind! 🎓</Text><TouchableOpacity style={styles.claimBtnGame} onPress={initGame}><Text style={styles.claimBtnGameText}>Play Another Round</Text></TouchableOpacity></Animated.View>
-      )}
+      {!won ? (<View style={styles.memGrid}>{cards.map((card, index) => <MemoryCard key={index} item={card} isFlipped={flippedIndices.includes(index)} isMatched={matchedIds.includes(card.pairId)} onPress={() => handleTap(index)} />)}</View>) : (<Animated.View entering={FadeInDown} style={styles.gameWinArea}><Ionicons name="trophy" size={60} color="#fde047" /><Text style={styles.gameWinTitle}>Mastermind! 🎓</Text><TouchableOpacity style={styles.claimBtnGame} onPress={initGame}><Text style={styles.claimBtnGameText}>Play Another Round</Text></TouchableOpacity></Animated.View>)}
     </Animated.View>
   );
 };
 
-// ==========================================
-// 🧮 GAME 2: SPEED MATH (INFINITE DYNAMIC)
-// ==========================================
 const SpeedMathGame = () => {
-  const [question, setQuestion] = useState("");
-  const [options, setOptions] = useState<number[]>([]);
-  const [correctAnswer, setCorrectAnswer] = useState(0);
-  const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
-
+  const [question, setQuestion] = useState(""); const [options, setOptions] = useState<number[]>([]); const [correctAnswer, setCorrectAnswer] = useState(0); const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
   const generateMathProblem = () => {
-    const operators = ['+', '-', '*'];
-    const op = operators[Math.floor(Math.random() * operators.length)];
-    let num1 = Math.floor(Math.random() * 20) + 1;
-    let num2 = Math.floor(Math.random() * 15) + 1;
-    let ans = 0;
-    if (op === '+') ans = num1 + num2;
-    if (op === '-') { if (num2 > num1) { let temp = num1; num1 = num2; num2 = temp; } ans = num1 - num2; }
-    if (op === '*') { num1 = Math.floor(Math.random() * 12) + 2; num2 = Math.floor(Math.random() * 12) + 2; ans = num1 * num2; }
-    setQuestion(`${num1} ${op} ${num2} = ?`);
-    setCorrectAnswer(ans);
-    let opts = new Set<number>([ans]);
-    while (opts.size < 4) {
-      const offset = Math.floor(Math.random() * 10) - 5;
-      if (offset !== 0 && ans + offset > 0) opts.add(ans + offset);
-    }
-    setOptions(Array.from(opts).sort(() => Math.random() - 0.5));
-    setGameState('playing');
+    const operators = ['+', '-', '*']; const op = operators[Math.floor(Math.random() * operators.length)]; let num1 = Math.floor(Math.random() * 20) + 1; let num2 = Math.floor(Math.random() * 15) + 1; let ans = 0;
+    if (op === '+') ans = num1 + num2; if (op === '-') { if (num2 > num1) { let temp = num1; num1 = num2; num2 = temp; } ans = num1 - num2; } if (op === '*') { num1 = Math.floor(Math.random() * 12) + 2; num2 = Math.floor(Math.random() * 12) + 2; ans = num1 * num2; }
+    setQuestion(`${num1} ${op} ${num2} = ?`); setCorrectAnswer(ans);
+    let opts = new Set<number>([ans]); while (opts.size < 4) { const offset = Math.floor(Math.random() * 10) - 5; if (offset !== 0 && ans + offset > 0) opts.add(ans + offset); }
+    setOptions(Array.from(opts).sort(() => Math.random() - 0.5)); setGameState('playing');
   };
   useEffect(() => { generateMathProblem(); }, []);
-
   return (
     <Animated.View entering={FadeInDown.springify()} style={[styles.gameCard, { borderColor: '#38bdf8' }]}>
       <View style={styles.gameHeader}><View style={styles.gameTitleRow}><Ionicons name="calculator" size={20} color="#38bdf8" /><Text style={[styles.gameTitle, { color: '#38bdf8' }]}>SPEED MATH</Text></View><Text style={styles.gameSubtitle}>Solve it fast! ⚡</Text></View>
-      {gameState === 'playing' ? (
-        <View style={styles.mathArea}><Text style={styles.mathQuestion}>{question}</Text><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={styles.mathOptionBtn} onPress={() => { if(opt===correctAnswer){Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); setGameState('won');}else{Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); setGameState('lost');} }}><Text style={styles.mathOptionText}>{opt}</Text></TouchableOpacity>))}</View></View>
-      ) : (
-        <View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "checkmark-circle" : "close-circle"} size={60} color={gameState === 'won' ? "#10b981" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Quick Maffs! 🧠" : "Wrong Answer!"}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#38bdf8' }]} onPress={generateMathProblem}><Text style={styles.claimBtnGameText}>Next Question</Text></TouchableOpacity></View>
-      )}
+      {gameState === 'playing' ? (<View style={styles.mathArea}><Text style={styles.mathQuestion}>{question}</Text><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={styles.mathOptionBtn} onPress={() => { if(opt===correctAnswer){Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); setGameState('won');}else{Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); setGameState('lost');} }}><Text style={styles.mathOptionText}>{opt}</Text></TouchableOpacity>))}</View></View>) : (<View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "checkmark-circle" : "close-circle"} size={60} color={gameState === 'won' ? "#10b981" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Quick Maffs! 🧠" : "Wrong Answer!"}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#38bdf8' }]} onPress={generateMathProblem}><Text style={styles.claimBtnGameText}>Next Question</Text></TouchableOpacity></View>)}
     </Animated.View>
   );
 };
 
-// ==========================================
-// 🧪 GAME 3: GUESS THE ELEMENT 
-// ==========================================
-const PERIODIC_TABLE = [
-  { sym: 'H', name: 'Hydrogen' }, { sym: 'He', name: 'Helium' }, { sym: 'Li', name: 'Lithium' }, { sym: 'C', name: 'Carbon' },
-  { sym: 'N', name: 'Nitrogen' }, { sym: 'O', name: 'Oxygen' }, { sym: 'Na', name: 'Sodium' }, { sym: 'Mg', name: 'Magnesium' },
-  { sym: 'Fe', name: 'Iron' }, { sym: 'Cu', name: 'Copper' }, { sym: 'Zn', name: 'Zinc' }, { sym: 'Ag', name: 'Silver' },
-  { sym: 'Au', name: 'Gold' }, { sym: 'Hg', name: 'Mercury' }, { sym: 'Pb', name: 'Lead' }, { sym: 'K', name: 'Potassium' }
-];
-
+const PERIODIC_TABLE = [{ sym: 'H', name: 'Hydrogen' }, { sym: 'He', name: 'Helium' }, { sym: 'Li', name: 'Lithium' }, { sym: 'C', name: 'Carbon' }, { sym: 'N', name: 'Nitrogen' }, { sym: 'O', name: 'Oxygen' }, { sym: 'Na', name: 'Sodium' }, { sym: 'Mg', name: 'Magnesium' }, { sym: 'Fe', name: 'Iron' }, { sym: 'Cu', name: 'Copper' }, { sym: 'Zn', name: 'Zinc' }, { sym: 'Ag', name: 'Silver' }, { sym: 'Au', name: 'Gold' }, { sym: 'Hg', name: 'Mercury' }, { sym: 'Pb', name: 'Lead' }, { sym: 'K', name: 'Potassium' }];
 const GuessElementGame = () => {
-  const [element, setElement] = useState(PERIODIC_TABLE[0]);
-  const [options, setOptions] = useState<string[]>([]);
-  const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
-
-  const generateQuestion = () => {
-    const correctObj = PERIODIC_TABLE[Math.floor(Math.random() * PERIODIC_TABLE.length)];
-    setElement(correctObj);
-    let opts = new Set<string>([correctObj.name]);
-    while(opts.size < 4) { opts.add(PERIODIC_TABLE[Math.floor(Math.random() * PERIODIC_TABLE.length)].name); }
-    setOptions(Array.from(opts).sort(() => Math.random() - 0.5));
-    setGameState('playing');
-  };
+  const [element, setElement] = useState(PERIODIC_TABLE[0]); const [options, setOptions] = useState<string[]>([]); const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
+  const generateQuestion = () => { const correctObj = PERIODIC_TABLE[Math.floor(Math.random() * PERIODIC_TABLE.length)]; setElement(correctObj); let opts = new Set<string>([correctObj.name]); while(opts.size < 4) { opts.add(PERIODIC_TABLE[Math.floor(Math.random() * PERIODIC_TABLE.length)].name); } setOptions(Array.from(opts).sort(() => Math.random() - 0.5)); setGameState('playing'); };
   useEffect(() => { generateQuestion(); }, []);
-
   return (
     <Animated.View entering={FadeInDown.springify()} style={[styles.gameCard, { borderColor: '#10b981' }]}>
       <View style={styles.gameHeader}><View style={styles.gameTitleRow}><Ionicons name="flask" size={20} color="#10b981" /><Text style={[styles.gameTitle, { color: '#10b981' }]}>GUESS ELEMENT</Text></View><Text style={styles.gameSubtitle}>Identify the Symbol 🧪</Text></View>
-      {gameState === 'playing' ? (
-        <View style={styles.mathArea}><View style={styles.elementBox}><Text style={styles.elementSymbol}>{element.sym}</Text></View><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#10b981' }]} onPress={() => { if(opt === element.name) setGameState('won'); else setGameState('lost'); }}><Text style={styles.mathOptionText}>{opt}</Text></TouchableOpacity>))}</View></View>
-      ) : (
-        <View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "star" : "skull"} size={60} color={gameState === 'won' ? "#fde047" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Genius Chemist!" : "It was " + element.name}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#10b981' }]} onPress={generateQuestion}><Text style={styles.claimBtnGameText}>Play Again</Text></TouchableOpacity></View>
-      )}
+      {gameState === 'playing' ? (<View style={styles.mathArea}><View style={styles.elementBox}><Text style={styles.elementSymbol}>{element.sym}</Text></View><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#10b981' }]} onPress={() => { if(opt === element.name) setGameState('won'); else setGameState('lost'); }}><Text style={styles.mathOptionText}>{opt}</Text></TouchableOpacity>))}</View></View>) : (<View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "star" : "skull"} size={60} color={gameState === 'won' ? "#fde047" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Genius Chemist!" : "It was " + element.name}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#10b981' }]} onPress={generateQuestion}><Text style={styles.claimBtnGameText}>Play Again</Text></TouchableOpacity></View>)}
     </Animated.View>
   );
 };
 
-// ==========================================
-// 📏 GAME 4: UNIT MASTER 
-// ==========================================
-const SI_UNITS = [
-  { q: 'Force', u: 'Newton (N)' }, { q: 'Work / Energy', u: 'Joule (J)' }, { q: 'Power', u: 'Watt (W)' },
-  { q: 'Pressure', u: 'Pascal (Pa)' }, { q: 'Electric Current', u: 'Ampere (A)' }, { q: 'Resistance', u: 'Ohm (Ω)' },
-  { q: 'Capacitance', u: 'Farad (F)' }, { q: 'Inductance', u: 'Henry (H)' }, { q: 'Magnetic Flux', u: 'Weber (Wb)' },
-  { q: 'Magnetic Field', u: 'Tesla (T)' }, { q: 'Frequency', u: 'Hertz (Hz)' }, { q: 'Luminous Intensity', u: 'Candela (cd)' }
-];
-
+const SI_UNITS = [{ q: 'Force', u: 'Newton (N)' }, { q: 'Work / Energy', u: 'Joule (J)' }, { q: 'Power', u: 'Watt (W)' }, { q: 'Pressure', u: 'Pascal (Pa)' }, { q: 'Electric Current', u: 'Ampere (A)' }, { q: 'Resistance', u: 'Ohm (Ω)' }, { q: 'Capacitance', u: 'Farad (F)' }, { q: 'Inductance', u: 'Henry (H)' }, { q: 'Magnetic Flux', u: 'Weber (Wb)' }, { q: 'Magnetic Field', u: 'Tesla (T)' }, { q: 'Frequency', u: 'Hertz (Hz)' }, { q: 'Luminous Intensity', u: 'Candela (cd)' }];
 const UnitMasterGame = () => {
-  const [question, setQuestion] = useState(SI_UNITS[0]);
-  const [options, setOptions] = useState<string[]>([]);
-  const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
-
-  const generateQuestion = () => {
-    const correctObj = SI_UNITS[Math.floor(Math.random() * SI_UNITS.length)];
-    setQuestion(correctObj);
-    let opts = new Set<string>([correctObj.u]);
-    while(opts.size < 4) { opts.add(SI_UNITS[Math.floor(Math.random() * SI_UNITS.length)].u); }
-    setOptions(Array.from(opts).sort(() => Math.random() - 0.5));
-    setGameState('playing');
-  };
+  const [question, setQuestion] = useState(SI_UNITS[0]); const [options, setOptions] = useState<string[]>([]); const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
+  const generateQuestion = () => { const correctObj = SI_UNITS[Math.floor(Math.random() * SI_UNITS.length)]; setQuestion(correctObj); let opts = new Set<string>([correctObj.u]); while(opts.size < 4) { opts.add(SI_UNITS[Math.floor(Math.random() * SI_UNITS.length)].u); } setOptions(Array.from(opts).sort(() => Math.random() - 0.5)); setGameState('playing'); };
   useEffect(() => { generateQuestion(); }, []);
-
   return (
     <Animated.View entering={FadeInDown.springify()} style={[styles.gameCard, { borderColor: '#a855f7' }]}>
       <View style={styles.gameHeader}><View style={styles.gameTitleRow}><Ionicons name="speedometer" size={20} color="#a855f7" /><Text style={[styles.gameTitle, { color: '#a855f7' }]}>UNIT MASTER</Text></View><Text style={styles.gameSubtitle}>Find the SI Unit 📏</Text></View>
-      {gameState === 'playing' ? (
-        <View style={styles.mathArea}><Text style={styles.unitQuestion}>What is the SI unit of{"\n"}<Text style={{color: '#a855f7'}}>{question.q}</Text>?</Text><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#a855f7' }]} onPress={() => { if(opt === question.u) setGameState('won'); else setGameState('lost'); }}><Text style={styles.mathOptionText}>{opt}</Text></TouchableOpacity>))}</View></View>
-      ) : (
-        <View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "medal" : "close-circle"} size={60} color={gameState === 'won' ? "#a855f7" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Physics Pro!" : `Answer: ${question.u}`}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#a855f7' }]} onPress={generateQuestion}><Text style={styles.claimBtnGameText}>Next Question</Text></TouchableOpacity></View>
-      )}
+      {gameState === 'playing' ? (<View style={styles.mathArea}><Text style={styles.unitQuestion}>What is the SI unit of{"\n"}<Text style={{color: '#a855f7'}}>{question.q}</Text>?</Text><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#a855f7' }]} onPress={() => { if(opt === question.u) setGameState('won'); else setGameState('lost'); }}><Text style={styles.mathOptionText}>{opt}</Text></TouchableOpacity>))}</View></View>) : (<View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "medal" : "close-circle"} size={60} color={gameState === 'won' ? "#a855f7" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Physics Pro!" : `Answer: ${question.u}`}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#a855f7' }]} onPress={generateQuestion}><Text style={styles.claimBtnGameText}>Next Question</Text></TouchableOpacity></View>)}
     </Animated.View>
   );
 };
 
-// ==========================================
-// 🔢 GAME 5: SERIES SOLVER
-// ==========================================
 const SeriesSolverGame = () => {
-  const [series, setSeries] = useState("");
-  const [options, setOptions] = useState<number[]>([]);
-  const [correctAnswer, setCorrectAnswer] = useState(0);
-  const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
-
-  const generateSeries = () => {
-    const type = Math.random();
-    let arr = [];
-    let ans = 0;
-    
-    if (type < 0.4) { // AP
-      const start = Math.floor(Math.random() * 10) + 1;
-      const diff = Math.floor(Math.random() * 5) + 2;
-      arr = [start, start+diff, start+diff*2, start+diff*3];
-      ans = start+diff*4;
-    } else if (type < 0.8) { // Squares
-      const start = Math.floor(Math.random() * 5) + 2;
-      arr = [start*start, (start+1)*(start+1), (start+2)*(start+2), (start+3)*(start+3)];
-      ans = (start+4)*(start+4);
-    } else { // GP
-      const start = Math.floor(Math.random() * 3) + 2;
-      const ratio = 2;
-      arr = [start, start*ratio, start*ratio*ratio, start*ratio*ratio*ratio];
-      ans = start*ratio*ratio*ratio*ratio;
-    }
-
-    setSeries(`${arr.join(', ')}, ?`);
-    setCorrectAnswer(ans);
-
-    let opts = new Set<number>([ans]);
-    while(opts.size < 4) {
-      const fakeAns = ans + (Math.floor(Math.random() * 10) - 5);
-      if (fakeAns !== ans && fakeAns > 0) opts.add(fakeAns);
-    }
-    setOptions(Array.from(opts).sort(() => Math.random() - 0.5));
-    setGameState('playing');
-  };
+  const [series, setSeries] = useState(""); const [options, setOptions] = useState<number[]>([]); const [correctAnswer, setCorrectAnswer] = useState(0); const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
+  const generateSeries = () => { const type = Math.random(); let arr = []; let ans = 0; if (type < 0.4) { const start = Math.floor(Math.random() * 10) + 1; const diff = Math.floor(Math.random() * 5) + 2; arr = [start, start+diff, start+diff*2, start+diff*3]; ans = start+diff*4; } else if (type < 0.8) { const start = Math.floor(Math.random() * 5) + 2; arr = [start*start, (start+1)*(start+1), (start+2)*(start+2), (start+3)*(start+3)]; ans = (start+4)*(start+4); } else { const start = Math.floor(Math.random() * 3) + 2; const ratio = 2; arr = [start, start*ratio, start*ratio*ratio, start*ratio*ratio*ratio]; ans = start*ratio*ratio*ratio*ratio; } setSeries(`${arr.join(', ')}, ?`); setCorrectAnswer(ans); let opts = new Set<number>([ans]); while(opts.size < 4) { const fakeAns = ans + (Math.floor(Math.random() * 10) - 5); if (fakeAns !== ans && fakeAns > 0) opts.add(fakeAns); } setOptions(Array.from(opts).sort(() => Math.random() - 0.5)); setGameState('playing'); };
   useEffect(() => { generateSeries(); }, []);
-
   return (
     <Animated.View entering={FadeInDown.springify()} style={[styles.gameCard, { borderColor: '#f97316' }]}>
       <View style={styles.gameHeader}><View style={styles.gameTitleRow}><Ionicons name="analytics" size={20} color="#f97316" /><Text style={[styles.gameTitle, { color: '#f97316' }]}>SERIES SOLVER</Text></View><Text style={styles.gameSubtitle}>Find the next number 🔢</Text></View>
-      {gameState === 'playing' ? (
-        <View style={styles.mathArea}><Text style={[styles.mathQuestion, {color: '#f97316'}]}>{series}</Text><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#f97316' }]} onPress={() => { if(opt === correctAnswer) setGameState('won'); else setGameState('lost'); }}><Text style={styles.mathOptionText}>{opt}</Text></TouchableOpacity>))}</View></View>
-      ) : (
-        <View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "bulb" : "alert-circle"} size={60} color={gameState === 'won' ? "#fde047" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Big Brain!" : `Answer: ${correctAnswer}`}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#f97316' }]} onPress={generateSeries}><Text style={styles.claimBtnGameText}>Play Again</Text></TouchableOpacity></View>
-      )}
+      {gameState === 'playing' ? (<View style={styles.mathArea}><Text style={[styles.mathQuestion, {color: '#f97316'}]}>{series}</Text><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#f97316' }]} onPress={() => { if(opt === correctAnswer) setGameState('won'); else setGameState('lost'); }}><Text style={styles.mathOptionText}>{opt}</Text></TouchableOpacity>))}</View></View>) : (<View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "bulb" : "alert-circle"} size={60} color={gameState === 'won' ? "#fde047" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Big Brain!" : `Answer: ${correctAnswer}`}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#f97316' }]} onPress={generateSeries}><Text style={styles.claimBtnGameText}>Play Again</Text></TouchableOpacity></View>)}
     </Animated.View>
   );
 };
 
-// ==========================================
-// 🔠 GAME 6: SCIENCE SCRAMBLE
-// ==========================================
 const SCIENCE_WORDS = ["KINEMATICS", "GRAVITATION", "FRICTION", "MOMENTUM", "ELECTRON", "PROTON", "ISOTOPE", "TITRATION", "POLYGON", "CALCULUS", "ALGEBRA", "GENETICS", "BOTANY"];
-
 const WordScrambleGame = () => {
-  const [scrambled, setScrambled] = useState("");
-  const [options, setOptions] = useState<string[]>([]);
-  const [correctAnswer, setCorrectAnswer] = useState("");
-  const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
-
-  const generateScramble = () => {
-    const word = SCIENCE_WORDS[Math.floor(Math.random() * SCIENCE_WORDS.length)];
-    setCorrectAnswer(word);
-    let arr = word.split('');
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    setScrambled(arr.join(' '));
-
-    let opts = new Set<string>([word]);
-    while(opts.size < 4) { opts.add(SCIENCE_WORDS[Math.floor(Math.random() * SCIENCE_WORDS.length)]); }
-    setOptions(Array.from(opts).sort(() => Math.random() - 0.5));
-    setGameState('playing');
-  };
+  const [scrambled, setScrambled] = useState(""); const [options, setOptions] = useState<string[]>([]); const [correctAnswer, setCorrectAnswer] = useState(""); const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
+  const generateScramble = () => { const word = SCIENCE_WORDS[Math.floor(Math.random() * SCIENCE_WORDS.length)]; setCorrectAnswer(word); let arr = word.split(''); for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } setScrambled(arr.join(' ')); let opts = new Set<string>([word]); while(opts.size < 4) { opts.add(SCIENCE_WORDS[Math.floor(Math.random() * SCIENCE_WORDS.length)]); } setOptions(Array.from(opts).sort(() => Math.random() - 0.5)); setGameState('playing'); };
   useEffect(() => { generateScramble(); }, []);
-
   return (
     <Animated.View entering={FadeInDown.springify()} style={[styles.gameCard, { borderColor: '#f43f5e' }]}>
       <View style={styles.gameHeader}><View style={styles.gameTitleRow}><Ionicons name="text" size={20} color="#f43f5e" /><Text style={[styles.gameTitle, { color: '#f43f5e' }]}>SCIENCE SCRAMBLE</Text></View><Text style={styles.gameSubtitle}>Unjumble the word 🔠</Text></View>
-      {gameState === 'playing' ? (
-        <View style={styles.mathArea}><Text style={[styles.mathQuestion, {fontSize: 28, color: '#f43f5e'}]}>{scrambled}</Text><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#f43f5e', paddingVertical: 12 }]} onPress={() => { if(opt === correctAnswer) setGameState('won'); else setGameState('lost'); }}><Text style={[styles.mathOptionText, {fontSize: 14}]}>{opt}</Text></TouchableOpacity>))}</View></View>
-      ) : (
-        <View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "ribbon" : "close"} size={60} color={gameState === 'won' ? "#fde047" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Vocab King!" : `Answer: ${correctAnswer}`}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#f43f5e' }]} onPress={generateScramble}><Text style={styles.claimBtnGameText}>Next Word</Text></TouchableOpacity></View>
-      )}
+      {gameState === 'playing' ? (<View style={styles.mathArea}><Text style={[styles.mathQuestion, {fontSize: 28, color: '#f43f5e'}]}>{scrambled}</Text><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#f43f5e', paddingVertical: 12 }]} onPress={() => { if(opt === correctAnswer) setGameState('won'); else setGameState('lost'); }}><Text style={[styles.mathOptionText, {fontSize: 14}]}>{opt}</Text></TouchableOpacity>))}</View></View>) : (<View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "ribbon" : "close"} size={60} color={gameState === 'won' ? "#fde047" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Vocab King!" : `Answer: ${correctAnswer}`}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#f43f5e' }]} onPress={generateScramble}><Text style={styles.claimBtnGameText}>Next Word</Text></TouchableOpacity></View>)}
     </Animated.View>
   );
 };
 
-// ==========================================
-// ⚖️ GAME 7: EQUATION BALANCER (NEW)
-// ==========================================
 const EquationBalancerGame = () => {
-  const [equation, setEquation] = useState("");
-  const [options, setOptions] = useState<string[]>([]);
-  const [correctAnswer, setCorrectAnswer] = useState("");
-  const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
-
-  const generateEquation = () => {
-    const ops = ['+', '-', '*'];
-    const op1 = ops[Math.floor(Math.random() * ops.length)];
-    const op2 = ops[Math.floor(Math.random() * ops.length)];
-    const n1 = Math.floor(Math.random() * 10) + 1;
-    const n2 = Math.floor(Math.random() * 10) + 1;
-    const n3 = Math.floor(Math.random() * 10) + 1;
-
-    let result = eval(`${n1} ${op1} ${n2} ${op2} ${n3}`);
-
-    setEquation(`${n1} _ ${n2} _ ${n3} = ${result}`);
-    setCorrectAnswer(`${op1}, ${op2}`);
-
-    let opts = new Set<string>([`${op1}, ${op2}`]);
-    while(opts.size < 4) {
-      opts.add(`${ops[Math.floor(Math.random() * ops.length)]}, ${ops[Math.floor(Math.random() * ops.length)]}`);
-    }
-    setOptions(Array.from(opts).sort(() => Math.random() - 0.5));
-    setGameState('playing');
-  };
+  const [equation, setEquation] = useState(""); const [options, setOptions] = useState<string[]>([]); const [correctAnswer, setCorrectAnswer] = useState(""); const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
+  const generateEquation = () => { const ops = ['+', '-', '*']; const op1 = ops[Math.floor(Math.random() * ops.length)]; const op2 = ops[Math.floor(Math.random() * ops.length)]; const n1 = Math.floor(Math.random() * 10) + 1; const n2 = Math.floor(Math.random() * 10) + 1; const n3 = Math.floor(Math.random() * 10) + 1; let result = eval(`${n1} ${op1} ${n2} ${op2} ${n3}`); setEquation(`${n1} _ ${n2} _ ${n3} = ${result}`); setCorrectAnswer(`${op1}, ${op2}`); let opts = new Set<string>([`${op1}, ${op2}`]); while(opts.size < 4) { opts.add(`${ops[Math.floor(Math.random() * ops.length)]}, ${ops[Math.floor(Math.random() * ops.length)]}`); } setOptions(Array.from(opts).sort(() => Math.random() - 0.5)); setGameState('playing'); };
   useEffect(() => { generateEquation(); }, []);
-
   return (
     <Animated.View entering={FadeInDown.springify()} style={[styles.gameCard, { borderColor: '#8b5cf6' }]}>
       <View style={styles.gameHeader}><View style={styles.gameTitleRow}><Ionicons name="git-compare" size={20} color="#8b5cf6" /><Text style={[styles.gameTitle, { color: '#8b5cf6' }]}>EQUATION BALANCER</Text></View><Text style={styles.gameSubtitle}>Find the missing signs ⚖️</Text></View>
-      {gameState === 'playing' ? (
-        <View style={styles.mathArea}><Text style={[styles.mathQuestion, {color: '#8b5cf6', fontSize: 28}]}>{equation}</Text><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#8b5cf6' }]} onPress={() => { if(opt === correctAnswer) setGameState('won'); else setGameState('lost'); }}><Text style={styles.mathOptionText}>{opt}</Text></TouchableOpacity>))}</View></View>
-      ) : (
-        <View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "shield-checkmark" : "skull"} size={60} color={gameState === 'won' ? "#10b981" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Balanced!" : `Answer: ${correctAnswer}`}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#8b5cf6' }]} onPress={generateEquation}><Text style={styles.claimBtnGameText}>Play Again</Text></TouchableOpacity></View>
-      )}
+      {gameState === 'playing' ? (<View style={styles.mathArea}><Text style={[styles.mathQuestion, {color: '#8b5cf6', fontSize: 28}]}>{equation}</Text><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#8b5cf6' }]} onPress={() => { if(opt === correctAnswer) setGameState('won'); else setGameState('lost'); }}><Text style={styles.mathOptionText}>{opt}</Text></TouchableOpacity>))}</View></View>) : (<View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "shield-checkmark" : "skull"} size={60} color={gameState === 'won' ? "#10b981" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Balanced!" : `Answer: ${correctAnswer}`}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#8b5cf6' }]} onPress={generateEquation}><Text style={styles.claimBtnGameText}>Play Again</Text></TouchableOpacity></View>)}
     </Animated.View>
   );
 };
 
-// ==========================================
-// 🧭 GAME 8: PHYSICS VECTOR DASH (NEW)
-// ==========================================
 const VectorDashGame = () => {
-  const [question, setQuestion] = useState("");
-  const [options, setOptions] = useState<number[]>([]);
-  const [correctAnswer, setCorrectAnswer] = useState(0);
-  const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
-
-  const generateVector = () => {
-    const f1 = Math.floor(Math.random() * 20) + 5;
-    const f2 = Math.floor(Math.random() * 20) + 5;
-    const direction = Math.random() > 0.5 ? 'Same' : 'Opposite';
-    
-    let ans = 0;
-    if (direction === 'Same') {
-      setQuestion(`${f1}N Right & ${f2}N Right`);
-      ans = f1 + f2;
-    } else {
-      setQuestion(`${f1}N Right & ${f2}N Left`);
-      ans = Math.abs(f1 - f2);
-    }
-
-    setCorrectAnswer(ans);
-    let opts = new Set<number>([ans]);
-    while(opts.size < 4) {
-      let fake = ans + (Math.floor(Math.random() * 10) - 5);
-      if (fake !== ans && fake >= 0) opts.add(fake);
-    }
-    setOptions(Array.from(opts).sort(() => Math.random() - 0.5));
-    setGameState('playing');
-  };
+  const [question, setQuestion] = useState(""); const [options, setOptions] = useState<number[]>([]); const [correctAnswer, setCorrectAnswer] = useState(0); const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
+  const generateVector = () => { const f1 = Math.floor(Math.random() * 20) + 5; const f2 = Math.floor(Math.random() * 20) + 5; const direction = Math.random() > 0.5 ? 'Same' : 'Opposite'; let ans = 0; if (direction === 'Same') { setQuestion(`${f1}N Right & ${f2}N Right`); ans = f1 + f2; } else { setQuestion(`${f1}N Right & ${f2}N Left`); ans = Math.abs(f1 - f2); } setCorrectAnswer(ans); let opts = new Set<number>([ans]); while(opts.size < 4) { let fake = ans + (Math.floor(Math.random() * 10) - 5); if (fake !== ans && fake >= 0) opts.add(fake); } setOptions(Array.from(opts).sort(() => Math.random() - 0.5)); setGameState('playing'); };
   useEffect(() => { generateVector(); }, []);
-
   return (
     <Animated.View entering={FadeInDown.springify()} style={[styles.gameCard, { borderColor: '#14b8a6' }]}>
       <View style={styles.gameHeader}><View style={styles.gameTitleRow}><Ionicons name="compass" size={20} color="#14b8a6" /><Text style={[styles.gameTitle, { color: '#14b8a6' }]}>VECTOR DASH</Text></View><Text style={styles.gameSubtitle}>Net Force? 🧭</Text></View>
-      {gameState === 'playing' ? (
-        <View style={styles.mathArea}><Text style={[styles.mathQuestion, {color: '#14b8a6', fontSize: 24}]}>{question}</Text><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#14b8a6' }]} onPress={() => { if(opt === correctAnswer) setGameState('won'); else setGameState('lost'); }}><Text style={styles.mathOptionText}>{opt} N</Text></TouchableOpacity>))}</View></View>
-      ) : (
-        <View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "flash" : "close"} size={60} color={gameState === 'won' ? "#fde047" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Force Master!" : `Answer: ${correctAnswer}N`}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#14b8a6' }]} onPress={generateVector}><Text style={styles.claimBtnGameText}>Next Question</Text></TouchableOpacity></View>
-      )}
+      {gameState === 'playing' ? (<View style={styles.mathArea}><Text style={[styles.mathQuestion, {color: '#14b8a6', fontSize: 24}]}>{question}</Text><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#14b8a6' }]} onPress={() => { if(opt === correctAnswer) setGameState('won'); else setGameState('lost'); }}><Text style={styles.mathOptionText}>{opt} N</Text></TouchableOpacity>))}</View></View>) : (<View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "flash" : "close"} size={60} color={gameState === 'won' ? "#fde047" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Force Master!" : `Answer: ${correctAnswer}N`}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#14b8a6' }]} onPress={generateVector}><Text style={styles.claimBtnGameText}>Next Question</Text></TouchableOpacity></View>)}
     </Animated.View>
   );
 };
 
-// ==========================================
-// 🧬 GAME 9: BIOLOGY T/F (TIME ATTACK) (NEW)
-// ==========================================
-const BIO_FACTS = [
-  { q: "Mitochondria is the powerhouse of the cell.", ans: true },
-  { q: "Humans have 24 pairs of chromosomes.", ans: false }, 
-  { q: "DNA contains Uracil.", ans: false }, 
-  { q: "Arteries carry oxygenated blood.", ans: true }, 
-  { q: "Photosynthesis occurs in mitochondria.", ans: false }, 
-  { q: "White blood cells fight infections.", ans: true }
-];
-
+const BIO_FACTS = [{ q: "Mitochondria is the powerhouse of the cell.", ans: true }, { q: "Humans have 24 pairs of chromosomes.", ans: false }, { q: "DNA contains Uracil.", ans: false }, { q: "Arteries carry oxygenated blood.", ans: true }, { q: "Photosynthesis occurs in mitochondria.", ans: false }, { q: "White blood cells fight infections.", ans: true }];
 const BioTimeAttackGame = () => {
-  const [question, setQuestion] = useState(BIO_FACTS[0]);
-  const [timeLeft, setTimeLeft] = useState(5);
-  const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
-
-  const startGame = () => {
-    setQuestion(BIO_FACTS[Math.floor(Math.random() * BIO_FACTS.length)]);
-    setTimeLeft(5);
-    setGameState('playing');
-  };
+  const [question, setQuestion] = useState(BIO_FACTS[0]); const [timeLeft, setTimeLeft] = useState(5); const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
+  const startGame = () => { setQuestion(BIO_FACTS[Math.floor(Math.random() * BIO_FACTS.length)]); setTimeLeft(5); setGameState('playing'); };
   useEffect(() => { startGame(); }, []);
-
-  useEffect(() => {
-    if (gameState !== 'playing') return;
-    if (timeLeft <= 0) { setGameState('lost'); return; }
-    const timer = setInterval(() => setTimeLeft(p => p - 1), 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft, gameState]);
-
+  useEffect(() => { if (gameState !== 'playing') return; if (timeLeft <= 0) { setGameState('lost'); return; } const timer = setInterval(() => setTimeLeft(p => p - 1), 1000); return () => clearInterval(timer); }, [timeLeft, gameState]);
   return (
     <Animated.View entering={FadeInDown.springify()} style={[styles.gameCard, { borderColor: '#22c55e' }]}>
-      <View style={styles.gameHeader}>
-        <View style={styles.gameTitleRow}><Ionicons name="leaf" size={20} color="#22c55e" /><Text style={[styles.gameTitle, { color: '#22c55e' }]}>BIO TIME ATTACK</Text></View>
-        <Text style={[styles.gameSubtitle, {color: timeLeft <= 2 ? '#ef4444' : '#fff', fontWeight: '900'}]}>00:0{timeLeft}</Text>
-      </View>
-      {gameState === 'playing' ? (
-        <View style={styles.mathArea}><Text style={[styles.unitQuestion, {color: '#f8fafc', fontSize: 18}]}>"{question.q}"</Text><View style={[styles.mathGrid, {marginTop: 10}]}><TouchableOpacity style={[styles.mathOptionBtn, { borderColor: '#ef4444' }]} onPress={() => { if(false === question.ans) setGameState('won'); else setGameState('lost'); }}><Text style={[styles.mathOptionText, {color: '#ef4444'}]}>False</Text></TouchableOpacity><TouchableOpacity style={[styles.mathOptionBtn, { borderColor: '#10b981' }]} onPress={() => { if(true === question.ans) setGameState('won'); else setGameState('lost'); }}><Text style={[styles.mathOptionText, {color: '#10b981'}]}>True</Text></TouchableOpacity></View></View>
-      ) : (
-        <View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "happy" : "sad"} size={60} color={gameState === 'won' ? "#10b981" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Sharp Memory!" : "Too slow/Wrong!"}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#22c55e' }]} onPress={startGame}><Text style={styles.claimBtnGameText}>Play Again</Text></TouchableOpacity></View>
-      )}
+      <View style={styles.gameHeader}><View style={styles.gameTitleRow}><Ionicons name="leaf" size={20} color="#22c55e" /><Text style={[styles.gameTitle, { color: '#22c55e' }]}>BIO TIME ATTACK</Text></View><Text style={[styles.gameSubtitle, {color: timeLeft <= 2 ? '#ef4444' : '#fff', fontWeight: '900'}]}>00:0{timeLeft}</Text></View>
+      {gameState === 'playing' ? (<View style={styles.mathArea}><Text style={[styles.unitQuestion, {color: '#f8fafc', fontSize: 18}]}>"{question.q}"</Text><View style={[styles.mathGrid, {marginTop: 10}]}><TouchableOpacity style={[styles.mathOptionBtn, { borderColor: '#ef4444' }]} onPress={() => { if(false === question.ans) setGameState('won'); else setGameState('lost'); }}><Text style={[styles.mathOptionText, {color: '#ef4444'}]}>False</Text></TouchableOpacity><TouchableOpacity style={[styles.mathOptionBtn, { borderColor: '#10b981' }]} onPress={() => { if(true === question.ans) setGameState('won'); else setGameState('lost'); }}><Text style={[styles.mathOptionText, {color: '#10b981'}]}>True</Text></TouchableOpacity></View></View>) : (<View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "happy" : "sad"} size={60} color={gameState === 'won' ? "#10b981" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Sharp Memory!" : "Too slow/Wrong!"}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#22c55e' }]} onPress={startGame}><Text style={styles.claimBtnGameText}>Play Again</Text></TouchableOpacity></View>)}
     </Animated.View>
   );
 };
 
-// ==========================================
-// 💻 GAME 10: CODE BUG HUNTER (NEW)
-// ==========================================
-const CODE_SNIPPETS = [
-  { code: "const name = 'John'\nconsole.log(name)", bug: "Missing Semicolon", ans: "Missing Semicolon" },
-  { code: "if (x = 10) {\n  return true;\n}", bug: "Used = instead of ==", ans: "Assignment in IF" },
-  { code: "let arr = [1,2,3];\nconsole.log(arr[3]);", bug: "Out of bounds", ans: "Index Out of Bounds" },
-  { code: "const add = (a, b) => a + b;\nadd(5);", bug: "Missing Argument", ans: "Missing Argument" },
-];
-
+const CODE_SNIPPETS = [{ code: "const name = 'John'\nconsole.log(name)", bug: "Missing Semicolon", ans: "Missing Semicolon" }, { code: "if (x = 10) {\n  return true;\n}", bug: "Used = instead of ==", ans: "Assignment in IF" }, { code: "let arr = [1,2,3];\nconsole.log(arr[3]);", bug: "Out of bounds", ans: "Index Out of Bounds" }, { code: "const add = (a, b) => a + b;\nadd(5);", bug: "Missing Argument", ans: "Missing Argument" }];
 const BugHunterGame = () => {
-  const [question, setQuestion] = useState(CODE_SNIPPETS[0]);
-  const [options, setOptions] = useState<string[]>([]);
-  const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
-
-  const generateQuestion = () => {
-    const correctObj = CODE_SNIPPETS[Math.floor(Math.random() * CODE_SNIPPETS.length)];
-    setQuestion(correctObj);
-    let opts = new Set<string>([correctObj.ans]);
-    while(opts.size < 4) { opts.add(CODE_SNIPPETS[Math.floor(Math.random() * CODE_SNIPPETS.length)].ans); }
-    setOptions(Array.from(opts).sort(() => Math.random() - 0.5));
-    setGameState('playing');
-  };
+  const [question, setQuestion] = useState(CODE_SNIPPETS[0]); const [options, setOptions] = useState<string[]>([]); const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
+  const generateQuestion = () => { const correctObj = CODE_SNIPPETS[Math.floor(Math.random() * CODE_SNIPPETS.length)]; setQuestion(correctObj); let opts = new Set<string>([correctObj.ans]); while(opts.size < 4) { opts.add(CODE_SNIPPETS[Math.floor(Math.random() * CODE_SNIPPETS.length)].ans); } setOptions(Array.from(opts).sort(() => Math.random() - 0.5)); setGameState('playing'); };
   useEffect(() => { generateQuestion(); }, []);
-
   return (
     <Animated.View entering={FadeInDown.springify()} style={[styles.gameCard, { borderColor: '#6366f1' }]}>
       <View style={styles.gameHeader}><View style={styles.gameTitleRow}><Ionicons name="bug" size={20} color="#6366f1" /><Text style={[styles.gameTitle, { color: '#6366f1' }]}>BUG HUNTER</Text></View><Text style={styles.gameSubtitle}>Find the Error 💻</Text></View>
-      {gameState === 'playing' ? (
-        <View style={styles.mathArea}><View style={styles.codeBlockGame}><Text style={styles.codeBlockGameText}>{question.code}</Text></View><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#6366f1', paddingVertical: 10 }]} onPress={() => { if(opt === question.ans) setGameState('won'); else setGameState('lost'); }}><Text style={[styles.mathOptionText, {fontSize: 13}]}>{opt}</Text></TouchableOpacity>))}</View></View>
-      ) : (
-        <View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "terminal" : "skull"} size={60} color={gameState === 'won' ? "#10b981" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Senior Dev!" : `Bug: ${question.ans}`}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#6366f1' }]} onPress={generateQuestion}><Text style={styles.claimBtnGameText}>Next Bug</Text></TouchableOpacity></View>
-      )}
+      {gameState === 'playing' ? (<View style={styles.mathArea}><View style={styles.codeBlockGame}><Text style={styles.codeBlockGameText}>{question.code}</Text></View><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#6366f1', paddingVertical: 10 }]} onPress={() => { if(opt === question.ans) setGameState('won'); else setGameState('lost'); }}><Text style={[styles.mathOptionText, {fontSize: 13}]}>{opt}</Text></TouchableOpacity>))}</View></View>) : (<View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "terminal" : "skull"} size={60} color={gameState === 'won' ? "#10b981" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Senior Dev!" : `Bug: ${question.ans}`}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#6366f1' }]} onPress={generateQuestion}><Text style={styles.claimBtnGameText}>Next Bug</Text></TouchableOpacity></View>)}
     </Animated.View>
   );
 };
@@ -541,7 +263,7 @@ const BugHunterGame = () => {
 // ==========================================
 // 🔥 THE PREMIUM POST CARD 
 // ==========================================
-const PostCard = ({ item, currentUid }: any) => {
+const PostCard = ({ item, currentUid, onOpenComments }: any) => {
   const router = useRouter();
   const isLiked = item.likes?.includes(currentUid);
   const isSaved = item.savedBy?.includes(currentUid);
@@ -550,8 +272,11 @@ const PostCard = ({ item, currentUid }: any) => {
   const likeScale = useSharedValue(1);
   const saveScale = useSharedValue(1);
 
+  // Dynamic collection for likes and saves
+  const collectionName = item.type === 'live_test' ? 'exams_enterprise' : 'posts';
+
   const sendNotification = async () => {
-    if (item.authorId === currentUid) return;
+    if (item.authorId === currentUid || !item.authorId) return;
     try { await addDoc(collection(db, 'notifications'), { recipientId: item.authorId, senderId: currentUid, senderName: auth.currentUser?.displayName || 'User', senderAvatar: auth.currentUser?.photoURL || '', type: 'like', postId: item.id, isRead: false, createdAt: serverTimestamp() }); } catch (error) {}
   };
 
@@ -559,17 +284,21 @@ const PostCard = ({ item, currentUid }: any) => {
     if (!currentUid) return;
     likeScale.value = withSpring(0.7, {}, () => { likeScale.value = withSpring(1); });
     try {
-      const postRef = doc(db, 'posts', item.id);
+      const postRef = doc(db, collectionName, item.id);
       if (isLiked) { await updateDoc(postRef, { likes: arrayRemove(currentUid) }); } 
-      else { await updateDoc(postRef, { likes: arrayUnion(currentUid) }); await sendNotification(); if (item.authorId !== currentUid) { await processAction(item.authorId, 'RECEIVE_LIKE'); } }
-    } catch (error) {}
+      else { 
+        await updateDoc(postRef, { likes: arrayUnion(currentUid) }); 
+        await sendNotification(); 
+        if (item.authorId && item.authorId !== currentUid) { await processAction(item.authorId, 'RECEIVE_LIKE'); } 
+      }
+    } catch (error) { console.log(error); }
   };
 
   const handleSave = async () => {
     if (!currentUid) return;
     saveScale.value = withSpring(0.7, {}, () => { saveScale.value = withSpring(1); });
     try {
-      const postRef = doc(db, 'posts', item.id);
+      const postRef = doc(db, collectionName, item.id);
       if (isSaved) await updateDoc(postRef, { savedBy: arrayRemove(currentUid) });
       else await updateDoc(postRef, { savedBy: arrayUnion(currentUid) });
     } catch (error) {}
@@ -591,6 +320,10 @@ const PostCard = ({ item, currentUid }: any) => {
     } catch (error) {}
   };
 
+  const navigateToProfile = () => {
+    if(item.authorId && item.authorId !== 'admin') router.push(`/user/${item.authorId}`);
+  };
+
   const animatedLikeStyle = useAnimatedStyle(() => ({ transform: [{ scale: likeScale.value }] }));
   const animatedSaveStyle = useAnimatedStyle(() => ({ transform: [{ scale: saveScale.value }] }));
 
@@ -598,9 +331,13 @@ const PostCard = ({ item, currentUid }: any) => {
     <Animated.View entering={FadeInDown.duration(400).springify()} layout={Layout.springify()} style={styles.postCard}>
       {item.algoReason && (<View style={styles.algoReasonBar}><Ionicons name="sparkles" size={14} color="#6366f1" /><Text style={styles.algoReasonText}>{item.algoReason}</Text></View>)}
       <View style={styles.postHeader}>
-        <TouchableOpacity onPress={() => router.push(`/user/${item.authorId}`)}><Image source={{ uri: item.authorAvatar || DEFAULT_AVATAR }} style={styles.avatar} /></TouchableOpacity>
+        <TouchableOpacity onPress={navigateToProfile} activeOpacity={0.8}>
+          <Image source={{ uri: item.authorAvatar || DEFAULT_AVATAR }} style={styles.avatar} />
+        </TouchableOpacity>
         <View style={styles.authorInfo}>
-          <Text style={styles.authorName}>{item.authorName}</Text>
+          <TouchableOpacity onPress={navigateToProfile} activeOpacity={0.8}>
+            <Text style={styles.authorName}>{item.authorName || 'Scholar'}</Text>
+          </TouchableOpacity>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
             {item.category && (
               <View style={styles.categoryBadge}>
@@ -612,7 +349,7 @@ const PostCard = ({ item, currentUid }: any) => {
                 <Text style={styles.categoryBadgeText}>{item.category}</Text>
               </View>
             )}
-            <Text style={styles.timeText}>• {timeAgo(item.createdAt?.toMillis())}</Text>
+            <Text style={styles.timeText}>• {timeAgo(item.createdAt?.toMillis ? item.createdAt.toMillis() : Date.now())}</Text>
           </View>
         </View>
         <View style={styles.headerRightActions}>
@@ -684,14 +421,24 @@ const PostCard = ({ item, currentUid }: any) => {
       {item.type === 'resource' && (
         <View style={styles.resourceContainer}>
           <View style={styles.resourceHeader}><View style={styles.resourceIcon}><Ionicons name="document-text" size={22} color="#4f46e5" /></View><View style={{ flex: 1, marginLeft: 12 }}><Text style={styles.resourceTitle} numberOfLines={1}>{item.title || 'Study Material'}</Text><Text style={styles.resourceSub}>{item.fileUrl ? 'Drive Document' : 'AI Smart Notes'}</Text></View>{item.fileUrl && (<TouchableOpacity style={styles.downloadBtn} onPress={() => Linking.openURL(item.fileUrl)}><Ionicons name="cloud-download" size={16} color="#fff" /><Text style={styles.downloadText}>Save</Text></TouchableOpacity>)}</View>
-          {item.fileUrl && item.fileUrl.includes('drive.google.com') ? (<View style={styles.pdfPreviewBox}>{Platform.OS === 'web' ? ( <iframe src={item.fileUrl.replace(/\/view.*$/, '/preview')} style={{ width: '100%', height: '100%', border: 'none' }} title="PDF Preview" /> ) : ( <WebView source={{ uri: item.fileUrl.replace(/\/view.*$/, '/preview') }} style={{ flex: 1 }} startInLoadingState={true} renderLoading={() => <View style={styles.loaderCenter}><ActivityIndicator size="small" color="#4f46e5" /></View>} /> )}</View>) : item.structuredText ? (<TouchableOpacity style={styles.smartNotePreview} onPress={() => router.push(`/resources/view/${item.id}`)} activeOpacity={0.8}><Ionicons name="scan-circle" size={40} color="#ec4899" /><Text style={styles.smartNoteText}>Read AI Smart Notes</Text></TouchableOpacity>) : null}
+          {item.fileUrl && item.fileUrl.includes('drive.google.com') ? (
+            <View style={{ height: 200, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name="logo-youtube" size={40} color="#ef4444" />
+              <Text style={{ color: '#fff', marginTop: 10 }}>Video Link Here</Text>
+            </View>
+          ) : item.structuredText ? ( 
+            <TouchableOpacity style={styles.smartNotePreview} onPress={() => router.push(`/resources/view/${item.id}`)} activeOpacity={0.8}>
+              <Ionicons name="scan-circle" size={40} color="#ec4899" />
+              <Text style={styles.smartNoteText}>Read AI Smart Notes</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       )}
 
       <View style={styles.actionBar}>
         <View style={styles.actionLeft}>
           <TouchableOpacity style={styles.actionBtn} onPress={handleLike} activeOpacity={0.7}><Animated.View style={animatedLikeStyle}><Ionicons name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "#ef4444" : "#475569"} /></Animated.View><Text style={[styles.actionText, isLiked && { color: '#ef4444', fontWeight: '700' }]}>{item.likes?.length || 0}</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={() => router.push(`/post/${item.id}`)}><Ionicons name="chatbubble-outline" size={22} color="#475569" /><Text style={styles.actionText}>{item.commentsCount || 0}</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={() => onOpenComments(item)}><Ionicons name="chatbubble-outline" size={22} color="#475569" /><Text style={styles.actionText}>{item.commentsCount || 0}</Text></TouchableOpacity>
           <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}><Ionicons name="share-social-outline" size={22} color="#475569" /></TouchableOpacity>
         </View>
         <TouchableOpacity onPress={handleSave} activeOpacity={0.7} style={styles.saveBtn}><Animated.View style={animatedSaveStyle}><Ionicons name={isSaved ? "bookmark" : "bookmark-outline"} size={24} color={isSaved ? "#4f46e5" : "#475569"} /></Animated.View></TouchableOpacity>
@@ -701,31 +448,30 @@ const PostCard = ({ item, currentUid }: any) => {
 };
 
 // ==========================================
-// 🔥 MAIN FEED SCREEN 
+// 🔥 MAIN FEED SCREEN (v3.0)
 // ==========================================
 export default function FeedScreen() {
   const router = useRouter();
   const currentUid = auth.currentUser?.uid;
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [posts, setPosts] = useState<any[]>([]);
-  const [algoPosts, setAlgoPosts] = useState<any[]>([]); 
-  const [otherStories, setOtherStories] = useState<any[]>([]);
-  const [myStory, setMyStory] = useState<any>(null);
-  const [currentUserData, setCurrentUserData] = useState<any>(null);
+  const [feedType, setFeedType] = useState<'FOR_YOU' | 'FOLLOWING'>('FOR_YOU');
+  
+  const [allPosts, setAllPosts] = useState<any[]>([]);
+  const [algoPosts, setAlgoPosts] = useState<any[]>([]);
   const [myFriends, setMyFriends] = useState<string[]>([]);
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
+  
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [postLimit, setPostLimit] = useState(15); 
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [unreadCount, setUnreadCount] = useState(0);
 
-  useEffect(() => {
-    if (!currentUid) return;
-    const unsub = onSnapshot(query(collection(db, 'notifications'), where('recipientId', '==', currentUid), where('isRead', '==', false)), (snapshot) => { setUnreadCount(snapshot.docs.length); });
-    return () => unsub();
-  }, [currentUid]);
-
-  useEffect(() => { if (currentUid) registerForPushNotificationsAsync(currentUid); }, [currentUid]);
+  // Comments State
+  const [activeCommentPost, setActiveCommentPost] = useState<any>(null);
+  const [comments, setComments] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState("");
 
   useEffect(() => {
     if (!currentUid) return;
@@ -744,108 +490,122 @@ export default function FeedScreen() {
   }, [currentUid]);
 
   useEffect(() => {
-    const unsubPosts = onSnapshot(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100)), (snapshot) => {
-      setPosts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setLoading(false); setRefreshing(false);
-    });
-
-    const unsubStories = onSnapshot(query(collection(db, 'stories'), orderBy('createdAt', 'desc'), limit(30)), (snapshot) => {
-      const allStories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      const uniqueUsersMap = new Map();
-      allStories.forEach(story => { if (!uniqueUsersMap.has(story.authorId)) uniqueUsersMap.set(story.authorId, story); });
-      const groupedStories = Array.from(uniqueUsersMap.values());
-      setMyStory(groupedStories.find(s => s.authorId === currentUid) || null);
-      setOtherStories(groupedStories.filter(s => s.authorId !== currentUid));
-    });
-
-    return () => { unsubPosts(); unsubStories(); };
+    if (!currentUid) return;
+    const unsub = onSnapshot(query(collection(db, 'notifications'), where('recipientId', '==', currentUid), where('isRead', '==', false)), (snapshot) => setUnreadCount(snapshot.docs.length));
+    return () => unsub();
   }, [currentUid]);
 
-  // ========================================================
-  // 🧠 ADVANCED FEED RANKING ALGORITHM (HackerNews + Insta Logic)
-  // ========================================================
+  useEffect(() => { if (currentUid) registerForPushNotificationsAsync(currentUid); }, [currentUid]);
+
   useEffect(() => {
-    if (!posts.length) return;
-    
-    const calculateScoreAndReason = (post: any) => {
-      let score = 0; 
-      let reason = "";
-      
-      const createdAtMs = post.createdAt?.toMillis ? post.createdAt.toMillis() : Date.now();
-      const hoursOld = (Date.now() - createdAtMs) / (1000 * 60 * 60);
-      const agePenalty = Math.floor(hoursOld * 5);
+    let rawPosts: any[] = []; let rawExams: any[] = [];
 
-      if (post.type === 'live_test') {
-        score += 10000;
-        reason = post.ntaFormat ? "📝 NTA Mock Test Active" : "🔴 Active Live Test";
-      }
-
-      if (post.authorId === currentUid && hoursOld < 0.2) {
-        score += 5000; 
-      }
-
-      if (myFriends.includes(post.authorId)) { 
-        score += 200; 
-        if(!reason) reason = "From your Network"; 
-      }
-      
-      const myInterests: string[] = currentUserData?.interests || [];
-      const postCategory = post.category || "";
-      if (myInterests.some((i: string) => i.toLowerCase().includes(postCategory.toLowerCase())) && !reason) { 
-        score += 100; 
-        reason = "Suggested for You"; 
-      }
-      
-      const likesCount = post.likes?.length || 0;
-      const commentsCount = post.commentsCount || 0;
-      const engagementScore = (likesCount * 3) + (commentsCount * 8);
-      score += engagementScore;
-      
-      if (engagementScore > 50 && hoursOld < 24 && !reason) {
-        reason = "🔥 Trending on Eduxity";
-        score += 500; 
-      }
-
-      score -= agePenalty;
-
-      return { score, reason };
+    const combineAndSet = () => {
+      const combined = [...rawPosts, ...rawExams].sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+        return timeB - timeA;
+      });
+      setAllPosts(combined);
+      setLoading(false); setRefreshing(false);
     };
 
-    let smartPosts = posts.map(post => {
+    const unsubPosts = onSnapshot(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(postLimit)), (snapshot) => {
+      rawPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); combineAndSet();
+    });
+
+    const unsubExams = onSnapshot(query(collection(db, 'exams_enterprise'), orderBy('createdAt', 'desc'), limit(5)), (snapshot) => {
+      rawExams = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id, type: 'live_test', title: data.title, category: 'Test Series',
+          authorId: data.authorId, authorName: data.authorName || 'Scholar', authorAvatar: data.authorAvatar || DEFAULT_AVATAR,
+          createdAt: data.createdAt, ntaFormat: true, questions: data.questions || [],
+          settings: { totalDuration: data.rules?.globalDuration || 180, antiCheat: data.rules?.isStrict || false, negativeMarks: 1 },
+          likes: data.likes || [], commentsCount: data.commentsCount || 0
+        };
+      });
+      combineAndSet();
+    });
+
+    return () => { unsubPosts(); unsubExams(); };
+  }, [currentUid, postLimit]);
+
+  useEffect(() => {
+    if (!allPosts.length) return;
+    
+    if (feedType === 'FOLLOWING') {
+      const followingPosts = allPosts.filter(post => myFriends.includes(post.authorId) || post.authorId === currentUid);
+      setAlgoPosts(followingPosts);
+      return;
+    }
+
+    const calculateScoreAndReason = (post: any) => {
+      let score = 0; let reason = "";
+      const createdAtMs = post.createdAt?.toMillis ? post.createdAt.toMillis() : Date.now();
+      const hoursOld = (Date.now() - createdAtMs) / (1000 * 60 * 60);
+      
+      if (post.type === 'live_test') { score += 10000; reason = "📝 Recommended Mock Test"; }
+      if (myFriends.includes(post.authorId)) { score += 200; if(!reason) reason = "From your Network"; }
+      
+      const myInterests: string[] = currentUserData?.interests || [];
+      if (myInterests.some((i: string) => i.toLowerCase().includes((post.category || "").toLowerCase())) && !reason) { score += 100; reason = "Suggested for You"; }
+      
+      const engagement = ((post.likes?.length || 0) * 3) + ((post.commentsCount || 0) * 8);
+      score += engagement;
+      if (engagement > 50 && hoursOld < 48 && !reason) { reason = "🔥 Trending"; score += 500; }
+
+      return { score: score - (hoursOld * 2), reason };
+    };
+
+    let smartPosts = allPosts.map(post => {
       const { score, reason } = calculateScoreAndReason(post);
       return { ...post, algoScore: score, algoReason: reason };
-    });
-    
-    smartPosts.sort((a, b) => b.algoScore - a.algoScore);
+    }).sort((a, b) => b.algoScore - a.algoScore);
 
-    // 🎮 INJECT ALL 10 RANDOM GAMES AT DIFFERENT POSITIONS
-    if (smartPosts.length >= 2) smartPosts.splice(1, 0, { id: 'game_brain_match_1', type: 'game_brain_match' });
-    if (smartPosts.length >= 5) smartPosts.splice(4, 0, { id: 'game_speed_math_1', type: 'game_speed_math' });
-    if (smartPosts.length >= 8) smartPosts.splice(7, 0, { id: 'game_unit_master_1', type: 'game_unit_master' });
-    if (smartPosts.length >= 11) smartPosts.splice(10, 0, { id: 'game_guess_element_1', type: 'game_guess_element' });
-    if (smartPosts.length >= 14) smartPosts.splice(13, 0, { id: 'game_series_solver_1', type: 'game_series_solver' });
-    if (smartPosts.length >= 17) smartPosts.splice(16, 0, { id: 'game_word_scramble_1', type: 'game_word_scramble' });
-    if (smartPosts.length >= 20) smartPosts.splice(19, 0, { id: 'game_equation_balancer_1', type: 'game_equation_balancer' });
-    if (smartPosts.length >= 23) smartPosts.splice(22, 0, { id: 'game_vector_dash_1', type: 'game_vector_dash' });
-    if (smartPosts.length >= 26) smartPosts.splice(25, 0, { id: 'game_bio_time_1', type: 'game_bio_time' });
-    if (smartPosts.length >= 29) smartPosts.splice(28, 0, { id: 'game_bug_hunter_1', type: 'game_bug_hunter' });
+    if (smartPosts.length >= 3) smartPosts.splice(2, 0, { id: 'game_brain_match_1', type: 'game_brain_match' });
+    if (smartPosts.length >= 8) smartPosts.splice(7, 0, { id: 'game_speed_math_1', type: 'game_speed_math' });
+    if (smartPosts.length >= 12) smartPosts.splice(11, 0, { id: 'game_unit_master_1', type: 'game_unit_master' });
     
     setAlgoPosts(smartPosts);
-  }, [posts, currentUserData, myFriends, currentUid]);
+  }, [allPosts, feedType, myFriends, currentUserData]);
 
-  const onRefresh = () => { setRefreshing(true); setTimeout(() => setRefreshing(false), 1000); };
+  // Comments Fetching
+  useEffect(() => {
+    if (!activeCommentPost) { setComments([]); return; }
+    const collName = activeCommentPost.type === 'live_test' ? 'exams_enterprise' : 'posts';
+    const unsub = onSnapshot(query(collection(db, collName, activeCommentPost.id, 'comments'), orderBy('createdAt', 'asc')), (snapshot) => {
+      setComments(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, [activeCommentPost]);
+
+  const handlePostComment = async () => {
+    if (!newComment.trim() || !activeCommentPost || !currentUid) return;
+    const collName = activeCommentPost.type === 'live_test' ? 'exams_enterprise' : 'posts';
+    try {
+      await addDoc(collection(db, collName, activeCommentPost.id, 'comments'), {
+        text: newComment, authorId: currentUid, authorName: auth.currentUser?.displayName || 'User',
+        authorAvatar: auth.currentUser?.photoURL || DEFAULT_AVATAR, createdAt: serverTimestamp()
+      });
+      await updateDoc(doc(db, collName, activeCommentPost.id), { commentsCount: (activeCommentPost.commentsCount || 0) + 1 });
+      setNewComment("");
+    } catch (e) { console.log(e); }
+  };
+
+  const onRefresh = () => { setRefreshing(true); setPostLimit(15); }; 
+  const handleLoadMore = () => { if (!loading && algoPosts.length >= postLimit) setPostLimit(prev => prev + 10); };
   const filteredPosts = selectedCategory === 'All' ? algoPosts : algoPosts.filter(post => post.category === selectedCategory);
 
   const renderHeader = () => (
     <View style={styles.headerSection}>
-      <View style={styles.storiesContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }}>
-          <TouchableOpacity style={styles.storyWrapper} activeOpacity={0.8} onPress={() => !myStory && router.push('/create-story')}><View style={[styles.storyRing, { borderColor: myStory ? '#ec4899' : '#e2e8f0' }]}><Image source={{ uri: auth.currentUser?.photoURL || DEFAULT_AVATAR }} style={styles.storyAvatar} /></View>{!myStory && <View style={styles.addStoryBadge}><Ionicons name="add" size={14} color="#fff" /></View>}<Text style={styles.storyName}>Your Story</Text></TouchableOpacity>
-          {otherStories.map((story) => (<TouchableOpacity key={story.id} style={styles.storyWrapper} activeOpacity={0.8}><View style={[styles.storyRing, { borderColor: '#4f46e5' }]}><Image source={{ uri: story.authorAvatar || DEFAULT_AVATAR }} style={styles.storyAvatar} /></View><Text style={styles.storyName} numberOfLines={1}>{story.authorName}</Text></TouchableOpacity>))}
-        </ScrollView>
-      </View>
       <View style={styles.createPostContainer}>
-        <View style={styles.createInputRow}><Image source={{ uri: auth.currentUser?.photoURL || DEFAULT_AVATAR }} style={styles.createAvatar} /><TouchableOpacity style={styles.fakeInput} onPress={() => router.push('/create-post')} activeOpacity={0.9}><Text style={styles.fakeInputText}>What's on your mind?{"\n"}Share a doubt, tip, or achievement...</Text></TouchableOpacity></View>
+        <View style={styles.createInputRow}>
+          <Image source={{ uri: auth.currentUser?.photoURL || DEFAULT_AVATAR }} style={styles.createAvatar} />
+          <TouchableOpacity style={styles.fakeInput} onPress={() => router.push('/create-post')} activeOpacity={0.9}>
+            <Text style={styles.fakeInputText}>Post a doubt, share a resource, or start a poll...</Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.createActionsRow}>
           <TouchableOpacity style={styles.createActionBtn} onPress={() => router.push({ pathname: '/create-post', params: { type: 'image' } })}><Ionicons name="camera" size={20} color="#10b981" /><Text style={styles.createActionText}>Media</Text></TouchableOpacity>
           <TouchableOpacity style={styles.createActionBtn} onPress={() => router.push({ pathname: '/create-post', params: { type: 'poll' } })}><Ionicons name="stats-chart" size={18} color="#3b82f6" /><Text style={styles.createActionText}>Poll</Text></TouchableOpacity>
@@ -855,17 +615,15 @@ export default function FeedScreen() {
     </View>
   );
 
- return (
+  return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-      {/* 🍔 THE PREMIUM SLIDE-OUT MENU OVERLAY */}
+      {/* 🍔 MENU OVERLAY */}
       {isMenuOpen && (
         <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(200)} style={styles.menuOverlay}>
           <TouchableOpacity style={styles.menuBackdrop} activeOpacity={1} onPress={() => setIsMenuOpen(false)} />
-          
           <Animated.View entering={SlideInLeft.duration(250)} exiting={SlideOutLeft.duration(200)} style={styles.menuDrawer}>
-            
             <View style={styles.menuDrawerHeader}>
               <Image source={{ uri: auth.currentUser?.photoURL || DEFAULT_AVATAR }} style={styles.menuAvatar} />
               <View style={{flex: 1, marginLeft: 12}}>
@@ -876,68 +634,26 @@ export default function FeedScreen() {
                 <Ionicons name="close" size={24} color="#64748b" />
               </TouchableOpacity>
             </View>
-            
             <ScrollView contentContainerStyle={styles.menuScroll}>
               <Text style={styles.menuSectionTitle}>EXPLORE</Text>
-
-              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/resources'); }}>
-                <View style={[styles.menuIconBg, { backgroundColor: '#eef2ff' }]}><Ionicons name="book" size={20} color="#4f46e5" /></View>
-                <Text style={styles.menuItemText}>Study Resources</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/test-history'); }}>
-                <View style={[styles.menuIconBg, { backgroundColor: '#fef3c7' }]}><Ionicons name="stats-chart" size={20} color="#d97706" /></View>
-                <Text style={styles.menuItemText}>My Tests & History 📊</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/grind'); }}>
-                <View style={[styles.menuIconBg, { backgroundColor: '#ecfdf5' }]}><Ionicons name="timer" size={20} color="#10b981" /></View>
-                <Text style={styles.menuItemText}>Live Grind Room 🔥</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/doubts'); }}>
-                <View style={[styles.menuIconBg, { backgroundColor: '#e0e7ff' }]}><Ionicons name="help-buoy" size={20} color="#4f46e5" /></View>
-                <Text style={styles.menuItemText}>Doubt Hub ❓</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/network'); }}>
-                <View style={[styles.menuIconBg, { backgroundColor: '#f0fdf4' }]}><Ionicons name="people" size={20} color="#10b981" /></View>
-                <Text style={styles.menuItemText}>My Network</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/matchmaking'); }}>
-                 <View style={[styles.menuIconBg, { backgroundColor: '#fdf2f8' }]}><Ionicons name="heart" size={20} color="#ec4899" /></View>
-                <Text style={styles.menuItemText}>Find Study Partner</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); Alert.alert('Arcade Zone 🎮', 'Scroll through your feed to find and play randomly injected Brain Games!'); }}>
-                <View style={[styles.menuIconBg, { backgroundColor: '#fefce8' }]}><Ionicons name="game-controller" size={20} color="#eab308" /></View>
-                <Text style={styles.menuItemText}>Mini Games (Feed)</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/vent'); }}>
-                <View style={[styles.menuIconBg, { backgroundColor: '#fef2f2' }]}><Ionicons name="mic-off" size={20} color="#ef4444" /></View>
-                <Text style={styles.menuItemText}>The Void (Vent Here) 🤫</Text>
-              </TouchableOpacity>
-
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/resources'); }}><View style={[styles.menuIconBg, { backgroundColor: '#eef2ff' }]}><Ionicons name="book" size={20} color="#4f46e5" /></View><Text style={styles.menuItemText}>Study Resources</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/test-history'); }}><View style={[styles.menuIconBg, { backgroundColor: '#fef3c7' }]}><Ionicons name="stats-chart" size={20} color="#d97706" /></View><Text style={styles.menuItemText}>My Tests & History 📊</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/grind'); }}><View style={[styles.menuIconBg, { backgroundColor: '#ecfdf5' }]}><Ionicons name="timer" size={20} color="#10b981" /></View><Text style={styles.menuItemText}>Live Grind Room 🔥</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/doubts'); }}><View style={[styles.menuIconBg, { backgroundColor: '#e0e7ff' }]}><Ionicons name="help-buoy" size={20} color="#4f46e5" /></View><Text style={styles.menuItemText}>Doubt Hub ❓</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/network'); }}><View style={[styles.menuIconBg, { backgroundColor: '#f0fdf4' }]}><Ionicons name="people" size={20} color="#10b981" /></View><Text style={styles.menuItemText}>My Network</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push('/matchmaking'); }}><View style={[styles.menuIconBg, { backgroundColor: '#fdf2f8' }]}><Ionicons name="heart" size={20} color="#ec4899" /></View><Text style={styles.menuItemText}>Find Study Partner</Text></TouchableOpacity>
               <Text style={styles.menuSectionTitle}>ACCOUNT</Text>
-
-              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push(`/user/${currentUid}`); }}>
-                <View style={[styles.menuIconBg, { backgroundColor: '#f1f5f9' }]}><Ionicons name="person" size={20} color="#475569" /></View>
-                <Text style={styles.menuItemText}>My Profile</Text>
-              </TouchableOpacity>
-
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setIsMenuOpen(false); router.push(`/user/${currentUid}`); }}><View style={[styles.menuIconBg, { backgroundColor: '#f1f5f9' }]}><Ionicons name="person" size={20} color="#475569" /></View><Text style={styles.menuItemText}>My Profile</Text></TouchableOpacity>
             </ScrollView>
           </Animated.View>
         </Animated.View>
       )}
 
+      {/* TOP HEADER */}
       <View style={styles.mainHeader}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <TouchableOpacity onPress={() => setIsMenuOpen(true)} style={styles.hamburgerBtn}>
-            <Ionicons name="menu" size={28} color="#0f172a" />
-          </TouchableOpacity>
-          <View style={styles.logoBox}><Ionicons name="school" size={22} color="#fff" /></View>
+          <TouchableOpacity onPress={() => setIsMenuOpen(true)} style={styles.hamburgerBtn}><Ionicons name="menu" size={28} color="#0f172a" /></TouchableOpacity>
+          <View style={styles.logoBox}><Ionicons name="school" size={20} color="#fff" /></View>
           <Text style={styles.brandName}>Eduxity</Text>
         </View>
         <View style={styles.headerIcons}>
@@ -945,13 +661,30 @@ export default function FeedScreen() {
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/notification')}><Ionicons name="notifications-outline" size={24} color="#0f172a" />{unreadCount > 0 && (<Animated.View style={styles.notificationBadge}><Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text></Animated.View>)}</TouchableOpacity>
         </View>
       </View>
-      <View style={styles.categoryFilterContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15, paddingVertical: 12 }}>
-          {CATEGORIES.map((cat, index) => (<TouchableOpacity key={index} style={[styles.filterPill, selectedCategory === cat && styles.activeFilterPill]} onPress={() => setSelectedCategory(cat)} activeOpacity={0.8}><Text style={[styles.filterPillText, selectedCategory === cat && styles.activeFilterPillText]}>{cat}</Text></TouchableOpacity>))}
-        </ScrollView>
+
+      {/* TABS */}
+      <View style={styles.feedTabsContainer}>
+        <TouchableOpacity style={[styles.feedTab, feedType === 'FOR_YOU' && styles.feedTabActive]} onPress={() => { setFeedType('FOR_YOU'); Haptics.selectionAsync(); }}>
+          <Text style={[styles.feedTabText, feedType === 'FOR_YOU' && styles.feedTabTextActive]}>For You</Text>
+          {feedType === 'FOR_YOU' && <Animated.View layout={Layout.springify()} style={styles.activeTabIndicator} />}
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.feedTab, feedType === 'FOLLOWING' && styles.feedTabActive]} onPress={() => { setFeedType('FOLLOWING'); Haptics.selectionAsync(); }}>
+          <Text style={[styles.feedTabText, feedType === 'FOLLOWING' && styles.feedTabTextActive]}>Following</Text>
+          {feedType === 'FOLLOWING' && <Animated.View layout={Layout.springify()} style={styles.activeTabIndicator} />}
+        </TouchableOpacity>
       </View>
-      {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color="#4f46e5" /></View>
+
+      {feedType === 'FOR_YOU' && (
+        <View style={styles.categoryFilterContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15, paddingVertical: 10 }}>
+            {CATEGORIES.map((cat, index) => (<TouchableOpacity key={index} style={[styles.filterPill, selectedCategory === cat && styles.activeFilterPill]} onPress={() => { setSelectedCategory(cat); Haptics.selectionAsync(); }} activeOpacity={0.8}><Text style={[styles.filterPillText, selectedCategory === cat && styles.activeFilterPillText]}>{cat}</Text></TouchableOpacity>))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* MAIN LIST */}
+      {loading && allPosts.length === 0 ? (
+        <ScrollView style={{flex: 1}}><SkeletonPost /><SkeletonPost /></ScrollView>
       ) : (
         <FlatList
           data={filteredPosts} 
@@ -960,6 +693,9 @@ export default function FeedScreen() {
           contentContainerStyle={{ backgroundColor: '#f1f5f9', paddingBottom: 100 }}
           ListHeaderComponent={renderHeader}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#4f46e5"]} />}
+          onEndReached={handleLoadMore} 
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={algoPosts.length >= postLimit ? <ActivityIndicator size="small" color="#4f46e5" style={{marginVertical: 20}} /> : null}
           renderItem={({ item }) => {
             if (item.type === 'game_brain_match') return <BrainMatchGame />;
             if (item.type === 'game_speed_math') return <SpeedMathGame />;
@@ -971,16 +707,60 @@ export default function FeedScreen() {
             if (item.type === 'game_vector_dash') return <VectorDashGame />;
             if (item.type === 'game_bio_time') return <BioTimeAttackGame />;
             if (item.type === 'game_bug_hunter') return <BugHunterGame />;
-            return <PostCard item={item} currentUid={currentUid} />;
+            return <PostCard item={item} currentUid={currentUid} onOpenComments={setActiveCommentPost} />;
           }}
-          ListEmptyComponent={<View style={styles.emptyFilterState}><Ionicons name="funnel-outline" size={50} color="#cbd5e1" /><Text style={styles.emptyText}>No posts found in &quot;{selectedCategory}&quot;</Text></View>}
+          ListEmptyComponent={
+            <View style={styles.emptyFilterState}>
+              <Ionicons name={feedType === 'FOLLOWING' ? "people-outline" : "funnel-outline"} size={50} color="#cbd5e1" />
+              <Text style={styles.emptyText}>{feedType === 'FOLLOWING' ? "Your friends haven't posted yet!" : `No posts found in "${selectedCategory}"`}</Text>
+            </View>
+          }
         />
       )}
+
+      {/* 💬 INSTA STYLE COMMENTS BOTTOM SHEET */}
+      <Modal visible={!!activeCommentPost} animationType="slide" transparent={true} onRequestClose={() => setActiveCommentPost(null)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.commentModalBg}>
+          <TouchableOpacity style={{flex: 1}} activeOpacity={1} onPress={() => setActiveCommentPost(null)} />
+          <View style={styles.commentBottomSheet}>
+            <View style={styles.commentHeader}>
+              <Text style={styles.commentTitle}>Comments</Text>
+              <TouchableOpacity onPress={() => setActiveCommentPost(null)}><Ionicons name="close-circle" size={28} color="#94a3b8" /></TouchableOpacity>
+            </View>
+            <FlatList
+              data={comments}
+              keyExtractor={item => item.id}
+              contentContainerStyle={{paddingTop: 10, paddingBottom: 20}}
+              renderItem={({item}) => (
+                <View style={styles.commentItem}>
+                  <Image source={{uri: item.authorAvatar || DEFAULT_AVATAR}} style={styles.commentAvatar} />
+                  <View style={styles.commentBubble}>
+                    <Text style={styles.commentAuthor}>{item.authorName}</Text>
+                    <Text style={styles.commentText}>{item.text}</Text>
+                  </View>
+                </View>
+              )}
+              ListEmptyComponent={<Text style={styles.noCommentsText}>No comments yet. Start the conversation! 🚀</Text>}
+            />
+            <View style={styles.commentInputBox}>
+              <Image source={{uri: auth.currentUser?.photoURL || DEFAULT_AVATAR}} style={styles.commentInputAvatar} />
+              <TextInput style={styles.commentInput} placeholder="Add a comment..." value={newComment} onChangeText={setNewComment} placeholderTextColor="#94a3b8" />
+              <TouchableOpacity onPress={handlePostComment} disabled={!newComment.trim()}>
+                <Ionicons name="send" size={24} color={newComment.trim() ? "#4f46e5" : "#cbd5e1"} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       <TouchableOpacity style={styles.fab} activeOpacity={0.9} onPress={() => router.push('/create-post')}><View style={styles.fabInner}><Ionicons name="add" size={32} color="#fff" /></View></TouchableOpacity>
     </SafeAreaView>
   );
 }
 
+// ==========================================
+// 🎨 COMPLETE MASTER STYLES
+// ==========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f1f5f9' }, 
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -993,6 +773,13 @@ const styles = StyleSheet.create({
   notificationBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: '#ef4444', width: 16, height: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#fff' },
   badgeText: { color: '#fff', fontSize: 9, fontWeight: 'bold' },
 
+  feedTabsContainer: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', paddingHorizontal: 20 },
+  feedTab: { flex: 1, alignItems: 'center', paddingVertical: 14, position: 'relative' },
+  feedTabActive: { },
+  feedTabText: { fontSize: 15, fontWeight: '700', color: '#64748b' },
+  feedTabTextActive: { color: '#0f172a', fontWeight: '900' },
+  activeTabIndicator: { position: 'absolute', bottom: -1, width: 40, height: 4, backgroundColor: '#4f46e5', borderTopLeftRadius: 4, borderTopRightRadius: 4 },
+
   categoryFilterContainer: { backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
   filterPill: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#f1f5f9', borderRadius: 20, marginRight: 10, borderWidth: 1, borderColor: '#e2e8f0' },
   activeFilterPill: { backgroundColor: '#0f172a', borderColor: '#0f172a' },
@@ -1000,13 +787,6 @@ const styles = StyleSheet.create({
   activeFilterPillText: { color: '#fff' },
 
   headerSection: { paddingBottom: 10 },
-  storiesContainer: { backgroundColor: '#fff', paddingTop: 15, paddingBottom: 15, marginBottom: 10 },
-  storyWrapper: { alignItems: 'center', marginRight: 18, position: 'relative' },
-  storyRing: { padding: 3, borderRadius: 40, borderWidth: 2 },
-  storyAvatar: { width: 66, height: 66, borderRadius: 33 },
-  storyName: { fontSize: 12, fontWeight: '600', color: '#1e293b', marginTop: 6, maxWidth: 74, textAlign: 'center' },
-  addStoryBadge: { position: 'absolute', bottom: 22, right: 0, backgroundColor: '#4f46e5', borderRadius: 12, width: 24, height: 24, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
-  
   createPostContainer: { backgroundColor: '#fff', padding: 15, marginBottom: 10 },
   createInputRow: { flexDirection: 'row', alignItems: 'center' },
   createAvatar: { width: 44, height: 44, borderRadius: 22 },
@@ -1016,6 +796,11 @@ const styles = StyleSheet.create({
   createActionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12 },
   createActionText: { marginLeft: 8, fontSize: 13, fontWeight: '700', color: '#334155' },
   
+  skeletonCard: { backgroundColor: '#fff', padding: 0, paddingBottom: 20, marginTop: 10 },
+  skeletonAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#e2e8f0' },
+  skeletonTextLine: { height: 12, backgroundColor: '#e2e8f0', borderRadius: 6, width: '80%' },
+  skeletonBox: { height: 200, backgroundColor: '#f8fafc', marginHorizontal: 15, marginTop: 15, borderRadius: 12 },
+
   postCard: { backgroundColor: '#fff', marginHorizontal: 10, marginTop: 10, marginBottom: 5, borderRadius: 16, overflow: 'hidden', elevation: 2, shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' },
   algoReasonBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef2ff', paddingHorizontal: 15, paddingVertical: 8 },
   algoReasonText: { fontSize: 11, fontWeight: '800', color: '#4f46e5', marginLeft: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -1115,11 +900,10 @@ const styles = StyleSheet.create({
   fab: { position: 'absolute', bottom: Platform.OS === 'ios' ? 100 : 90, right: 20, zIndex: 100 },
   fabInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#4f46e5', justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#4f46e5', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8 },
 
-  // 🎮 GAME STYLES (Unified)
   gameCard: { marginHorizontal: 15, marginBottom: 15, backgroundColor: '#020617', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#1e293b', elevation: 5, shadowColor: '#000', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.3, shadowRadius: 10 },
   gameHeader: { marginBottom: 15, alignItems: 'center' },
   gameTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  gameTitle: { fontSize: 15, fontWeight: '900', marginLeft: 6, letterSpacing: 2 },
+  gameTitle: { fontSize: 15, fontWeight: '900', marginLeft: 6, letterSpacing: 2, color: '#fff' },
   gameSubtitle: { color: '#94a3b8', fontSize: 12, fontWeight: '600' },
   memGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10 },
   memCardContainer: { width: '48%', height: 80, position: 'relative' },
@@ -1139,12 +923,9 @@ const styles = StyleSheet.create({
   mathOptionText: { color: '#f8fafc', fontSize: 16, fontWeight: '800', textAlign: 'center' },
   elementBox: { backgroundColor: '#0f172a', width: 80, height: 80, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#10b981', marginBottom: 20 },
   elementSymbol: { color: '#10b981', fontSize: 36, fontWeight: '900' },
-  
-  // Code Block Game Styles
   codeBlockGame: { width: '100%', backgroundColor: '#0f172a', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#1e293b', marginBottom: 15 },
   codeBlockGameText: { color: '#e2e8f0', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 14, lineHeight: 22 },
 
-// 🍔 HAMBURGER & SIDEBAR MENU STYLES
   hamburgerBtn: { marginRight: 15, padding: 4 },
   menuOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999, elevation: 100 },
   menuBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
@@ -1160,4 +941,17 @@ const styles = StyleSheet.create({
   menuIconBg: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   menuItemText: { fontSize: 16, fontWeight: '700', color: '#334155' },
 
+  commentModalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  commentBottomSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, height: height * 0.6, paddingBottom: Platform.OS === 'ios' ? 20 : 0, shadowColor: '#000', shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 10 },
+  commentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderColor: '#f1f5f9' },
+  commentTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+  commentItem: { flexDirection: 'row', paddingHorizontal: 20, paddingVertical: 10 },
+  commentAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 12 },
+  commentBubble: { flex: 1, backgroundColor: '#f8fafc', padding: 12, borderRadius: 16, borderTopLeftRadius: 4 },
+  commentAuthor: { fontSize: 13, fontWeight: '800', color: '#0f172a', marginBottom: 4 },
+  commentText: { fontSize: 14, color: '#334155', lineHeight: 20 },
+  noCommentsText: { textAlign: 'center', color: '#94a3b8', marginTop: 40, fontSize: 15, fontWeight: '600' },
+  commentInputBox: { flexDirection: 'row', alignItems: 'center', padding: 15, borderTopWidth: 1, borderColor: '#f1f5f9', backgroundColor: '#fff' },
+  commentInputAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 10 },
+  commentInput: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, marginRight: 10, color: '#0f172a', fontSize: 15 }
 });

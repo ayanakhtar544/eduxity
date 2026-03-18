@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { 
-  View, Text, StyleSheet, TouchableOpacity, SafeAreaView, 
+  View, Text, StyleSheet, TouchableOpacity, 
   StatusBar, ScrollView, ActivityIndicator, Alert, TextInput, Platform, Modal, FlatList
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../firebaseConfig';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';

@@ -12,20 +12,20 @@
       "resizeMode": "contain",
       "backgroundColor": "#2563EB",
       "plugins": [
-           "expo-router",
-           "expo-image-picker",
-           "expo-av",
-           [
-             "react-native-agora",
-             {
-               "microphonePermission": "Allow Eduxity to access your microphone for Voice Lounge."
-             }
-           ]
-         ]
+        "expo-router",
+        "expo-image-picker",
+        "expo-av",
+        [
+          "react-native-agora",
+          {
+            "microphonePermission": "Allow Eduxity to access your microphone for Voice Lounge."
+          }
+        ]
+      ]
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/android-icon-foreground.png", 
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.abushahma.eduxity",
@@ -37,7 +37,9 @@
       }
     },
     "plugins": [
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "expo-audio",
+      "expo-video"
     ],
     "ios": {
       "bundleIdentifier": "com.abushahma.eduxity"

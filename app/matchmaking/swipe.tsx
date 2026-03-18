@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  View, Text, StyleSheet, TouchableOpacity, SafeAreaView, 
+  View, Text, StyleSheet, TouchableOpacity,
   Dimensions, Image, ActivityIndicator, Platform 
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';

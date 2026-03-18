@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, FlatList, 
-  StyleSheet, KeyboardAvoidingView, Platform, SafeAreaView, StatusBar, Image
+  StyleSheet, KeyboardAvoidingView, Platform, StatusBar, Image
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../firebaseConfig'; 

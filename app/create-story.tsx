@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity, Image, 
-  TextInput, ActivityIndicator, Alert, SafeAreaView, 
+  TextInput, ActivityIndicator, Alert, 
   KeyboardAvoidingView, Platform, StatusBar, Switch
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { auth, db, storage } from '../firebaseConfig';

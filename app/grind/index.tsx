@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, AppState, Dimensions, ScrollView, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, AppState, Dimensions, ScrollView, Alert, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { auth, db } from '../../firebaseConfig';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { collection, doc, setDoc, deleteDoc, addDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from 'firebase/firestore';
 import Animated, { FadeInDown, LinearTransition, Layout, useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence } from 'react-native-reanimated';
 

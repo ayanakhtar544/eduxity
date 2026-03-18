@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, Text, StyleSheet, TextInput, TouchableOpacity, 
-  FlatList, KeyboardAvoidingView, Platform, SafeAreaView, 
+  FlatList, KeyboardAvoidingView, Platform,
   Image, ActivityIndicator, StatusBar, Modal, Alert, ScrollView
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { createAgoraRtcEngine, ClientRoleType, ChannelProfileType } from '../../helpers/agoraHelper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker'; 

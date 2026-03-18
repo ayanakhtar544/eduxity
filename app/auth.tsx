@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, TextInput, TouchableOpacity, 
-  SafeAreaView, StatusBar,ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform
+ StatusBar,ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../firebaseConfig';
 import { 
@@ -291,6 +292,24 @@ export default function AuthScreen() {
     </SafeAreaView>
   );
 }
+
+// Firebase login success ke baad ye code chalana:
+const syncUserToPostgres = async (firebaseUser: any) => {
+  try {
+    await fetch('/api/auth/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        name: firebaseUser.displayName,
+      })
+    });
+    console.log("User successfully synced to PostgreSQL!");
+  } catch (error) {
+    console.error("Failed to sync user:", error);
+  }
+};
 
 // ==========================================
 // 🎨 PREMIUM AUTHENTICATION STYLES

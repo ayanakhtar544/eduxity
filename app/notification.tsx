@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, FlatList, TouchableOpacity, Image, 
-  SafeAreaView, Platform, Dimensions, ScrollView 
+   Platform, Dimensions, ScrollView 
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../firebaseConfig'; // path check kar lena (agar folder ke andar hai toh ../../firebaseConfig)
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, writeBatch, deleteDoc } from 'firebase/firestore';

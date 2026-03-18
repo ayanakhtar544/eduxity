@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, TextInput, TouchableOpacity, 
-  Image, ScrollView, SafeAreaView, StatusBar, ActivityIndicator, 
+  Image, ScrollView, StatusBar, ActivityIndicator, 
   Alert, KeyboardAvoidingView, Platform, Keyboard 
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { auth, db } from '../firebaseConfig'; // Removed storage import since we use ImgBB now
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';

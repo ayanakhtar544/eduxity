@@ -1,10 +1,9 @@
-// File: firebaseConfig.js
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getStorage } from "firebase/storage";
-import { getFirestore } from 'firebase/firestore';
+import { getAuth, initializeAuth, getReactNativePersistence } from 'firebase/auth'; 
+import { getFirestore } from 'firebase/firestore'; 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
-// Ab keys seedha .env file se aayengi, code mein nahi dikhengi
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -14,7 +13,22 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID
 };
 
+// 🔥 YE LINE MISSING THI TERE CODE MEIN
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const storage = getStorage(app);
+
+let auth;
+
+// Platform check logic (Web aur Mobile ke liye)
+if (Platform.OS === 'web') {
+  auth = getAuth(app); 
+} else {
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage)
+  });
+}
+
+// Database initialization
+const db = getFirestore(app);
+
+// Teeno zaroori cheezein export ho rahi hain
+export { app, auth, db };

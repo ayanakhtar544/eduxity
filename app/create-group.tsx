@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, TextInput, TouchableOpacity, 
-  Image, FlatList, SafeAreaView, StatusBar, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Switch 
+  Image, FlatList, StatusBar, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Switch 
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../firebaseConfig';
 import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';

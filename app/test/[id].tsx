@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, SafeAreaView, 
-  StatusBar, Modal, Alert, ScrollView, Platform, TextInput, KeyboardAvoidingView, Dimensions 
+  StatusBar, Modal, Alert, ScrollView, Platform, TextInput, KeyboardAvoidingView, Dimensions, AppState
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +18,9 @@ type QStatus = 'not_visited' | 'not_answered' | 'answered' | 'marked' | 'answere
 interface IQuestion { id: string; subjectId: string; type: QType; qText: string; options: string[]; correctIndices: number[]; numericalAnswer: string; marks: number; negMarks: number; }
 
 export default function AdvancedCBTEngine() {
+  const [cheatWarnings, setCheatWarnings] = useState(0);
+  const appState = useRef(AppState.currentState);
+
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const uid = auth.currentUser?.uid || "anonymous_student";
@@ -123,8 +126,45 @@ export default function AdvancedCBTEngine() {
     setAnswers(newAnswers); setQStatus(p => ({ ...p, [currentQ.id]: 'not_answered' }));
   };
 
-  const executeFinalSubmit = async (reason: string) => {
-    setPhase('SUBMITTING'); setShowSubmitConfirm(false); setIsPaletteOpen(false);
+// ==========================================
+  // 🚨 ANTI-CHEAT SYSTEM: App Background Monitor
+  // ==========================================
+  useEffect(() => {
+    if (phase !== 'PLAYING' || !examData?.settings?.antiCheat) return;
+
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      // Agar app active state se background (home screen ya doosri app) me chali gayi
+      if (appState.current.match(/active/) && nextAppState.match(/inactive|background/)) {
+        setCheatWarnings(prev => {
+          const newWarnings = prev + 1;
+          if (newWarnings >= 3) {
+            // 3rd Warning -> Seedha Submit
+            executeFinalSubmit("Auto-Submitted: Strict Anti-Cheat Violation.");
+          } else {
+            // 1st aur 2nd Warning
+            Alert.alert(
+              "⚠️ Anti-Cheat Warning", 
+              `You switched away from the test screen! Warning ${newWarnings}/3.\nYour exam will auto-submit on the 3rd warning.`
+            );
+          }
+          return newWarnings;
+        });
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [phase, examData]);
+
+
+const executeFinalSubmit = async (reason: string) => {
+    setPhase('SUBMITTING'); 
+    setShowSubmitConfirm(false); 
+    setIsPaletteOpen(false);
+
+    // 🔥 FREE VERSION: Marks phone me hi calculate honge (No backend needed)
     let rawScore = 0;
     examData?.questions.forEach((q: any) => {
       const uAns = answers[q.id];
@@ -133,19 +173,25 @@ export default function AdvancedCBTEngine() {
         if (q.type === 'single_mcq') isCorrect = uAns === q.correctIndices[0];
         else if (q.type === 'multi_mcq') isCorrect = JSON.stringify([...uAns].sort()) === JSON.stringify([...q.correctIndices].sort());
         else if (q.type === 'integer') isCorrect = String(uAns).trim() === String(q.numericalAnswer).trim();
+        
         if (isCorrect) rawScore += (q.marks || 4); else rawScore -= (q.negMarks || 1);
       }
     });
 
     try {
       await setDoc(doc(db, `attempts_enterprise/${id}_${uid}`), {
-        examId: id, uid, answers, qStatus, timeLeft: globalTimeLeft, rawScore,
-        status: 'EVALUATED', submittedAt: serverTimestamp(), isImmediateResult: examData?.rules.immediateResult ?? true
+        examId: id, uid, answers, qStatus, timeLeft: globalTimeLeft, 
+        rawScore, // Client-side score bhej rahe hain
+        status: 'EVALUATED', // Direct evaluated status
+        submittedAt: serverTimestamp(), isImmediateResult: examData?.rules.immediateResult ?? true
       });
       await AsyncStorage.removeItem(cacheKey);
       Alert.alert("Exam Submitted 🚀", reason);
-      router.replace(`/test-analytics/${id}`); // 🔥 Redirect directly to Analytics!
-    } catch (e) { Alert.alert("Error", "Saved offline."); router.replace('/(tabs)/explore'); }
+      router.replace(`/test-analytics/${id}`); 
+    } catch (e) { 
+      Alert.alert("Error", "Saved offline. Please check your connection."); 
+      router.replace('/(tabs)/explore'); 
+    }
   };
 
   // --- RENDERERS ---

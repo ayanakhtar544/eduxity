@@ -19,11 +19,10 @@ export default function FindGroupsScreen() {
   const [loading, setLoading] = useState(true);
   const [joiningId, setJoiningId] = useState<string | null>(null);
 
-  // 📡 1. STRICT PUBLIC GROUPS FETCHING
+// 📡 1. STRICT PUBLIC GROUPS FETCHING
   useEffect(() => {
     if (!currentUserUid) return;
     
-    // Sirf Public groups aayenge
     const q = query(collection(db, 'groups'), where('type', '==', 'public'));
 
     const unsubscribe = onSnapshot(q, (snap) => {
@@ -32,6 +31,10 @@ export default function FindGroupsScreen() {
         ...doc.data()
       }));
       setGroups(groupList);
+      setLoading(false);
+    }, (error) => {
+      // 🔥 YEH ADD KIYA HAI TAAKI FIREBASE BLOCK KARE TOH PATA CHALE
+      console.error("Firestore Error fetching groups:", error);
       setLoading(false);
     });
 
@@ -59,8 +62,8 @@ export default function FindGroupsScreen() {
     }
   };
 
-  const filteredGroups = groups.filter(g => 
-    g.name?.toLowerCase().includes(searchQuery.toLowerCase())
+const filteredGroups = groups.filter(g => 
+    (g.name || '').toLowerCase().includes((searchQuery || '').toLowerCase())
   );
 
   const renderGroupCard = ({ item, index }: any) => {

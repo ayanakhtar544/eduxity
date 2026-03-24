@@ -36,7 +36,7 @@ export const FormulaNinjaGame = () => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setScore(s => s + 10);
       setStreak(s => s + 1);
-      nextQuestion(); // Infinite Loop
+      nextQuestion(); 
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setStreak(0);
@@ -98,7 +98,7 @@ export const AlgebraSprintGame = () => {
     if (opt === correctAnswer) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setScore(s => s + 5);
-      generateEquation(); // Infinite Loop
+      generateEquation(); 
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setScore(0); 

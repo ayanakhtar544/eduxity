@@ -1,3 +1,4 @@
+import ResourcePreview from './ResourcePreview';
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Linking, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -224,10 +225,41 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
         </View>
       ) : null}
 
+      {/* 📘 RESOURCE SECTION UPDATED */}
       {item.type === 'resource' && (
         <View style={styles.resourceContainer}>
-          <View style={styles.resourceHeader}><View style={styles.resourceIcon}><Ionicons name="document-text" size={22} color="#4f46e5" /></View><View style={{ flex: 1, marginLeft: 12 }}><Text style={styles.resourceTitle} numberOfLines={1}>{item.title || 'Study Material'}</Text><Text style={styles.resourceSub}>{item.fileUrl ? 'Drive Document' : 'AI Smart Notes'}</Text></View>{item.fileUrl && (<TouchableOpacity style={styles.downloadBtn} onPress={() => Linking.openURL(item.fileUrl)}><Ionicons name="cloud-download" size={16} color="#fff" /><Text style={styles.downloadText}>Save</Text></TouchableOpacity>)}</View>
-          {item.fileUrl && item.fileUrl.includes('drive.google.com') ? ( <View style={{ height: 200, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}><Ionicons name="logo-youtube" size={40} color="#ef4444" /><Text style={{ color: '#fff', marginTop: 10 }}>Video Link Here</Text></View> ) : item.structuredText ? ( <TouchableOpacity style={styles.smartNotePreview} onPress={() => router.push(`/resources/view/${item.id}`)} activeOpacity={0.8}><Ionicons name="scan-circle" size={40} color="#ec4899" /><Text style={styles.smartNoteText}>Read AI Smart Notes</Text></TouchableOpacity> ) : null}
+          <View style={styles.resourceHeader}>
+            <View style={styles.resourceIcon}>
+              <Ionicons name={item.fileUrl?.includes('drive.google.com') ? "logo-google-drive" : "document-text"} size={22} color="#4f46e5" />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.resourceTitle} numberOfLines={1}>{item.title || 'Study Material'}</Text>
+              <Text style={styles.resourceSub}>
+                {item.fileUrl?.includes('drive.google.com') ? 'Google Drive Document' : 
+                 item.fileUrl?.includes('youtube.com') || item.fileUrl?.includes('youtu.be') ? 'Video Tutorial' : 'Learning Resource'}
+              </Text>
+            </View>
+            {item.fileUrl && (
+              <TouchableOpacity style={styles.downloadBtn} onPress={() => Linking.openURL(item.fileUrl)}>
+                <Ionicons name="open-outline" size={16} color="#fff" />
+                <Text style={styles.downloadText}>Open</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* 🔥 YAHAN AB MODULAR PREVIEW CHALEGA 🔥 */}
+          {item.fileUrl ? (
+            <ResourcePreview url={item.fileUrl} />
+          ) : item.structuredText ? (
+            <TouchableOpacity 
+              style={styles.smartNotePreview} 
+              onPress={() => router.push(`/resources/view/${item.id}`)} 
+              activeOpacity={0.8}
+            >
+              <Ionicons name="scan-circle" size={40} color="#ec4899" />
+              <Text style={styles.smartNoteText}>Read AI Smart Notes</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       )}
 
@@ -288,7 +320,18 @@ const styles = StyleSheet.create({
   testFeaturesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }, featureTag: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }, featureTagText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   startTestBtn: { backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 14, borderRadius: 12 }, startTestBtnText: { color: '#4f46e5', fontWeight: '900', fontSize: 15, marginRight: 8 },
   attemptsText: { textAlign: 'center', color: '#64748b', fontSize: 12, fontWeight: '700', paddingVertical: 10, backgroundColor: '#f8fafc' },
-  resourceContainer: { marginHorizontal: 15, marginBottom: 15, backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
+resourceContainer: { 
+    marginHorizontal: 15, 
+    marginBottom: 15, 
+    backgroundColor: '#fff', 
+    borderRadius: 16, 
+    borderWidth: 1, 
+    borderColor: '#e2e8f0', 
+    overflow: 'hidden', 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.05, 
+    shadowRadius: 4,},
   resourceHeader: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#fafaf9', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   resourceIcon: { backgroundColor: '#e0e7ff', padding: 10, borderRadius: 10 }, resourceTitle: { fontSize: 15, fontWeight: '800', color: '#0f172a' }, resourceSub: { fontSize: 12, color: '#64748b', marginTop: 2, fontWeight: '600' },
   downloadBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#4f46e5', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 }, downloadText: { color: '#fff', fontSize: 12, fontWeight: '800', marginLeft: 4 },

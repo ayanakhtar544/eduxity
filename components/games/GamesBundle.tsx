@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown, useSharedValue, useAnimatedStyle, withTiming, interpolate, Extrapolation } from 'react-native-reanimated';
@@ -113,7 +113,16 @@ export const WordScrambleGame = () => {
 
 export const EquationBalancerGame = () => {
   const [equation, setEquation] = useState(""); const [options, setOptions] = useState<string[]>([]); const [correctAnswer, setCorrectAnswer] = useState(""); const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
-  const generateEquation = () => { const ops = ['+', '-', '*']; const op1 = ops[Math.floor(Math.random() * ops.length)]; const op2 = ops[Math.floor(Math.random() * ops.length)]; const n1 = Math.floor(Math.random() * 10) + 1; const n2 = Math.floor(Math.random() * 10) + 1; const n3 = Math.floor(Math.random() * 10) + 1; let result = eval(`${n1} ${op1} ${n2} ${op2} ${n3}`); setEquation(`${n1} _ ${n2} _ ${n3} = ${result}`); setCorrectAnswer(`${op1}, ${op2}`); let opts = new Set<string>([`${op1}, ${op2}`]); while(opts.size < 4) { opts.add(`${ops[Math.floor(Math.random() * ops.length)]}, ${ops[Math.floor(Math.random() * ops.length)]}`); } setOptions(Array.from(opts).sort(() => Math.random() - 0.5)); setGameState('playing'); };
+  const generateEquation = () => { 
+    const ops = ['+', '-', '*']; const op1 = ops[Math.floor(Math.random() * ops.length)]; const op2 = ops[Math.floor(Math.random() * ops.length)]; const n1 = Math.floor(Math.random() * 10) + 1; const n2 = Math.floor(Math.random() * 10) + 1; const n3 = Math.floor(Math.random() * 10) + 1; 
+    
+    // Fixed Eval vulnerability
+    const calculate = (a: number, op: string, b: number) => op === '+' ? a + b : op === '-' ? a - b : a * b;
+    let tempResult = calculate(n1, op1, n2);
+    let result = calculate(tempResult, op2, n3);
+    
+    setEquation(`${n1} _ ${n2} _ ${n3} = ${result}`); setCorrectAnswer(`${op1}, ${op2}`); let opts = new Set<string>([`${op1}, ${op2}`]); while(opts.size < 4) { opts.add(`${ops[Math.floor(Math.random() * ops.length)]}, ${ops[Math.floor(Math.random() * ops.length)]}`); } setOptions(Array.from(opts).sort(() => Math.random() - 0.5)); setGameState('playing'); 
+  };
   useEffect(() => { generateEquation(); }, []);
   return (
     <Animated.View entering={FadeInDown.springify()} style={[styles.gameCard, { borderColor: '#8b5cf6' }]}>
@@ -186,5 +195,5 @@ const styles = StyleSheet.create({
   elementBox: { backgroundColor: '#0f172a', width: 80, height: 80, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#10b981', marginBottom: 20 },
   elementSymbol: { color: '#10b981', fontSize: 36, fontWeight: '900' },
   codeBlockGame: { width: '100%', backgroundColor: '#0f172a', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#1e293b', marginBottom: 15 },
-  codeBlockGameText: { color: '#e2e8f0', fontSize: 14, lineHeight: 22 },
+  codeBlockGameText: { color: '#e2e8f0', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 14, lineHeight: 22 },
 });

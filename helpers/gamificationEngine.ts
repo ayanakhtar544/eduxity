@@ -143,3 +143,47 @@ export const getFriendsLeaderboard = async (currentUserId: string, friendsListId
     return [];
   }
 };
+
+// ==========================================
+// ⭐ 5. CUSTOM XP AWARDER (For Tests, Homework & Chats)
+// ==========================================
+export const awardXP = async (userId: string, xpToAdd: number, reason: string) => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    const userSnap = await getDoc(userRef);
+
+    if (!userSnap.exists()) return null;
+
+    let userData = userSnap.data();
+    
+    // Tere existing gamification structure ko read kar rahe hain
+    let gamification = userData.gamification || { 
+      xp: 0, level: 1, eduCoins: 0, currentStreak: 0, lastActiveDate: '', 
+      badges: [], stats: {} 
+    };
+
+    const newTotalXP = (gamification.xp || 0) + xpToAdd;
+    
+    // 🧠 TERA ADVANCED LEVEL FORMULA (Square Root Logic)
+    const newLevel = Math.floor(Math.sqrt(newTotalXP / 100)) + 1;
+    const leveledUp = newLevel > (gamification.level || 1);
+
+    // Database mein safely merge kar rahe hain taaki streaks/badges delete na hon
+    await setDoc(userRef, {
+      gamification: {
+        xp: newTotalXP,
+        level: newLevel
+      }
+    }, { merge: true });
+
+    return { 
+      leveledUp: leveledUp, 
+      newLevel: newLevel, 
+      xpAdded: xpToAdd 
+    };
+
+  } catch (e) {
+    console.log("Award XP Error:", e);
+    return null;
+  }
+};

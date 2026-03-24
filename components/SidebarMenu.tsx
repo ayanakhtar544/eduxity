@@ -30,7 +30,12 @@ export default function SidebarMenu({ isOpen, onClose, currentUid }: { isOpen: b
         <ScrollView contentContainerStyle={styles.menuScroll}>
           <Text style={styles.menuSectionTitle}>EXPLORE</Text>
           <TouchableOpacity style={styles.menuItem} onPress={() => { onClose(); router.push('/resources'); }}><View style={[styles.menuIconBg, { backgroundColor: '#eef2ff' }]}><Ionicons name="book" size={20} color="#4f46e5" /></View><Text style={styles.menuItemText}>Study Resources</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem} onPress={() => { onClose(); router.push('/test-history'); }}><View style={[styles.menuIconBg, { backgroundColor: '#fef3c7' }]}><Ionicons name="stats-chart" size={20} color="#d97706" /></View><Text style={styles.menuItemText}>My Tests & History</Text></TouchableOpacity>
+<TouchableOpacity style={styles.menuItem} onPress={() => { onClose(); router.push('/tests'); }}>
+  <View style={[styles.menuIconBg, { backgroundColor: '#fef3c7' }]}>
+    <Ionicons name="document-text" size={20} color="#d97706" />
+  </View>
+  <Text style={styles.menuItemText}>Tests</Text>
+</TouchableOpacity>
           <TouchableOpacity style={styles.menuItem} onPress={() => { onClose(); router.push('/grind'); }}><View style={[styles.menuIconBg, { backgroundColor: '#ecfdf5' }]}><Ionicons name="timer" size={20} color="#10b981" /></View><Text style={styles.menuItemText}>Live Grind Room</Text></TouchableOpacity>
           <TouchableOpacity style={styles.menuItem} onPress={() => { onClose(); router.push('/doubts'); }}><View style={[styles.menuIconBg, { backgroundColor: '#e0e7ff' }]}><Ionicons name="help-buoy" size={20} color="#4f46e5" /></View><Text style={styles.menuItemText}>Doubt Hub ❓</Text></TouchableOpacity>
           <TouchableOpacity style={styles.menuItem} onPress={() => { onClose(); router.push('/network'); }}><View style={[styles.menuIconBg, { backgroundColor: '#f0fdf4' }]}><Ionicons name="people" size={20} color="#10b981" /></View><Text style={styles.menuItemText}>My Network</Text></TouchableOpacity>

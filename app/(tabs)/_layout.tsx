@@ -43,7 +43,7 @@ const TabButton = ({ item, onPress, accessibilityState }: any) => {
     <TouchableOpacity 
       onPress={(e) => {
         // Apple style soft haptic feedback
-        Haptics.selectionAsync(); 
+        if (Platform.OS !== 'web') Haptics.selectionAsync(); 
         onPress(e);
       }} 
       activeOpacity={0.6} 
@@ -53,7 +53,7 @@ const TabButton = ({ item, onPress, accessibilityState }: any) => {
         <Ionicons 
           name={focused ? item.activeIcon : item.inactiveIcon} 
           size={24} 
-          color={focused ? '#4f46e5' : '#64748b'} // Indigo when active, Slate when inactive
+          color={focused ? '#4f46e5' : '#64748b'} 
         />
       </Animated.View>
       
@@ -69,8 +69,12 @@ const TabButton = ({ item, onPress, accessibilityState }: any) => {
 const CustomTabBar = ({ state, descriptors, navigation }: any) => {
   return (
     <View style={styles.floatingWrapper}>
-      {/* 🍏 Apple Glass Effect using BlurView */}
-      <BlurView intensity={80} tint="light" style={styles.glassContainer}>
+      {/* 🍏 Fix: Android/Web pe BlurView kabhi crash/invisible hota hai, isliye fallback lagaya */}
+      <BlurView 
+        intensity={80} 
+        tint="light" 
+        style={styles.glassContainer}
+      >
         {state.routes.map((route: any, index: number) => {
           const isFocused = state.index === index;
 
@@ -80,7 +84,7 @@ const CustomTabBar = ({ state, descriptors, navigation }: any) => {
           };
 
           // Perfect Icon Mapping
-          let activeIcon = 'settings-outline';
+          let activeIcon = 'settings';
           let inactiveIcon = 'settings-outline';
           const routeName = route.name.toLowerCase();
           
@@ -143,27 +147,28 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   floatingWrapper: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 35 : 25,
+    bottom: Platform.OS === 'ios' ? 35 : 15, // 🔥 Fix: Android/Web me bottom kam kiya
     left: 20,
     right: 20,
     borderRadius: 35,
-    elevation: 10, // Shadow for Android
-    shadowColor: '#000', // Shadow for iOS
+    elevation: 10,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.1,
     shadowRadius: 20,
-    overflow: 'hidden', // REQUIRED for BlurView to respect border radius
+    overflow: 'hidden',
+    // 🔥 Fix: Agar Android me blur fail ho toh solid white background dikhega
+    backgroundColor: Platform.OS === 'android' ? 'rgba(255,255,255,0.95)' : 'transparent',
   },
   glassContainer: {
     flexDirection: 'row',
     height: 70,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)', // Slight white tint over the blur
+    backgroundColor: Platform.OS === 'android' ? 'transparent' : 'rgba(255, 255, 255, 0.3)', 
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 15,
-    // A subtle inner border to make it look like real glass
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.6)', 
+    borderColor: 'rgba(255, 255, 255, 0.4)', 
   },
   tabButton: { 
     flex: 1, 
@@ -177,7 +182,7 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: '#4f46e5', // Theme color dot
+    backgroundColor: '#4f46e5',
     shadowColor: '#4f46e5',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,

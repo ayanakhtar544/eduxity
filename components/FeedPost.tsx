@@ -1,5 +1,5 @@
 import ResourcePreview from './ResourcePreview';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Linking, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../firebaseConfig';
@@ -25,15 +25,15 @@ export const timeAgo = (timestamp: number | undefined) => {
   return `${days}d ago`;
 };
 
-// ==========================================
-// 🃏 SMART INLINE FLASHCARD PLAYER
-// ==========================================
+// FLASHCARD PLAYER
 const InlineFlashcardPlayer = ({ cardsData, title }: { cardsData: any[], title: string }) => {
   const [deck, setDeck] = useState([...cardsData]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const flipAnim = useSharedValue(0);
+
+  useEffect(() => { setDeck([...cardsData]); setCurrentIndex(0); setIsFlipped(false); setIsFinished(false); flipAnim.value = 0; }, [cardsData]);
 
   if (!deck || deck.length === 0) return null;
   const currentCard = deck[currentIndex];
@@ -47,26 +47,19 @@ const InlineFlashcardPlayer = ({ cardsData, title }: { cardsData: any[], title: 
     return { transform: [{ perspective: 1000 }, { rotateY: `${rotateY}deg` }], backfaceVisibility: 'hidden', zIndex: flipAnim.value > 90 ? 1 : 0, opacity: flipAnim.value > 90 ? 1 : 0, position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
   });
 
-  const handleFlip = () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsFlipped(!isFlipped); flipAnim.value = withTiming(isFlipped ? 0 : 180, { duration: 400 }); };
-
+  const handleFlip = () => { if(Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsFlipped(!isFlipped); flipAnim.value = withTiming(isFlipped ? 0 : 180, { duration: 400 }); };
   const handleAction = (knewIt: boolean) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); 
+    if(Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); 
     let nextDeck = [...deck];
     if (!knewIt) { const failedCard = nextDeck[currentIndex]; nextDeck.push(failedCard); setDeck(nextDeck); }
     if (currentIndex < nextDeck.length - 1) { flipAnim.value = 0; setIsFlipped(false); setCurrentIndex(prev => prev + 1); } else { setIsFinished(true); } 
   };
-
-  const handleRestart = () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); flipAnim.value = 0; setIsFlipped(false); setCurrentIndex(0); setIsFinished(false); setDeck([...cardsData]); };
+  const handleRestart = () => { if(Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); flipAnim.value = 0; setIsFlipped(false); setCurrentIndex(0); setIsFinished(false); setDeck([...cardsData]); };
 
   if (isFinished) {
     return (
       <View style={styles.inlineFlashcardContainer}>
-        <View style={styles.flashcardFinish}>
-          <Ionicons name="trophy" size={50} color="#fde047" />
-          <Text style={styles.finishDeckTitle}>Deck Completed!</Text>
-          <Text style={styles.finishDeckSub}>You revised {deck.length} cards today.</Text>
-          <TouchableOpacity style={styles.restartDeckBtn} onPress={handleRestart}><Ionicons name="refresh" size={16} color="#fff" /><Text style={styles.restartDeckText}>Revise Again</Text></TouchableOpacity>
-        </View>
+        <View style={styles.flashcardFinish}><Ionicons name="trophy" size={50} color="#fde047" /><Text style={styles.finishDeckTitle}>Deck Completed!</Text><Text style={styles.finishDeckSub}>You revised {deck.length} cards today.</Text><TouchableOpacity style={styles.restartDeckBtn} onPress={handleRestart}><Ionicons name="refresh" size={16} color="#fff" /><Text style={styles.restartDeckText}>Revise Again</Text></TouchableOpacity></View>
       </View>
     );
   }
@@ -76,17 +69,14 @@ const InlineFlashcardPlayer = ({ cardsData, title }: { cardsData: any[], title: 
       <View style={styles.inlineFlashcardHeader}><Text style={styles.inlineFlashcardTitle} numberOfLines={1}>{title || 'Revision Deck'}</Text><Text style={styles.inlineFlashcardCount}>{currentIndex + 1} / {deck.length}</Text></View>
       <View style={styles.inlineCardArea}>
         <Animated.View style={[styles.inlineCard, styles.inlineCardFront, frontStyle]}><Text style={styles.inlineCardCategory}>Question</Text><ScrollView contentContainerStyle={styles.inlineScrollCenter}><Text style={styles.inlineCardQuestion}>{currentCard?.q}</Text></ScrollView><TouchableOpacity style={styles.inlineFlipBtn} onPress={handleFlip}><Ionicons name="refresh" size={16} color="#fff" style={{marginRight: 5}}/><Text style={styles.inlineFlipText}>Tap to see Answer</Text></TouchableOpacity></Animated.View>
-        <Animated.View style={[styles.inlineCard, styles.inlineCardBack, backStyle]}><Text style={styles.inlineCardCategory}>Answer</Text><ScrollView contentContainerStyle={styles.inlineScrollCenter}><Text style={styles.inlineCardAnswer}>{currentCard?.a}</Text></ScrollView><View style={styles.inlineCardActions}>
-          <TouchableOpacity style={[styles.inlineActionBtn, {backgroundColor: '#ef4444'}]} onPress={() => handleAction(false)}><Text style={styles.inlineActionText}>Forgot</Text></TouchableOpacity>
-          <TouchableOpacity style={[styles.inlineActionBtn, {backgroundColor: '#10b981'}]} onPress={() => handleAction(true)}><Text style={styles.inlineActionText}>Knew It</Text></TouchableOpacity>
-        </View></Animated.View>
+        <Animated.View style={[styles.inlineCard, styles.inlineCardBack, backStyle]}><Text style={styles.inlineCardCategory}>Answer</Text><ScrollView contentContainerStyle={styles.inlineScrollCenter}><Text style={styles.inlineCardAnswer}>{currentCard?.a}</Text></ScrollView><View style={styles.inlineCardActions}><TouchableOpacity style={[styles.inlineActionBtn, {backgroundColor: '#ef4444'}]} onPress={() => handleAction(false)}><Text style={styles.inlineActionText}>Forgot</Text></TouchableOpacity><TouchableOpacity style={[styles.inlineActionBtn, {backgroundColor: '#10b981'}]} onPress={() => handleAction(true)}><Text style={styles.inlineActionText}>Knew It</Text></TouchableOpacity></View></Animated.View>
       </View>
     </View>
   );
 };
 
 // ==========================================
-// 🔥 THE PREMIUM POST CARD (MEMOIZED)
+// 🔥 THE PREMIUM POST CARD 
 // ==========================================
 const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }: any) => {
   const router = useRouter();
@@ -94,9 +84,9 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
   const isSaved = item.savedBy?.includes(currentUid);
   const userVoteIndex = item.voters ? item.voters[currentUid] : undefined;
   const hasVoted = userVoteIndex !== undefined;
+  
   const likeScale = useSharedValue(1);
   const saveScale = useSharedValue(1);
-
   const collectionName = item.type === 'live_test' ? 'exams_enterprise' : 'posts';
 
   const sendNotification = async () => {
@@ -110,11 +100,7 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
     try {
       const postRef = doc(db, collectionName, item.id);
       if (isLiked) { await updateDoc(postRef, { likes: arrayRemove(currentUid) }); } 
-      else { 
-        await updateDoc(postRef, { likes: arrayUnion(currentUid) }); 
-        await sendNotification(); 
-        if (item.authorId && item.authorId !== currentUid) { await processAction(item.authorId, 'RECEIVE_LIKE'); } 
-      }
+      else { await updateDoc(postRef, { likes: arrayUnion(currentUid) }); await sendNotification(); if (item.authorId && item.authorId !== currentUid) { await processAction(item.authorId, 'RECEIVE_LIKE'); } }
     } catch (error) {}
   };
 
@@ -148,7 +134,7 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
         transaction.update(postRef, { pollOptions: updatedPollOptions, totalVotes: newTotalVotes, [`voters.${currentUid}`]: optIndex });
       });
       await processAction(currentUid, 'POLL_ANSWER');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if(Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) { Alert.alert("Oops!", "Could not register your vote."); }
   };
 
@@ -156,6 +142,10 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
 
   const animatedLikeStyle = useAnimatedStyle(() => ({ transform: [{ scale: likeScale.value }] }));
   const animatedSaveStyle = useAnimatedStyle(() => ({ transform: [{ scale: saveScale.value }] }));
+
+  // 🔥 CHECK IF TEST IS ATTEMPTED
+  const hasAttemptedTest = item.type === 'live_test' && item.responses && item.responses[currentUid];
+  const userResult = hasAttemptedTest ? item.responses[currentUid] : null;
 
   return (
     <Animated.View entering={FadeInDown.duration(400).springify()} layout={Layout.springify()} style={styles.postCard}>
@@ -195,17 +185,53 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
       
       {item.type === 'code' && item.codeSnippet ? (<View style={styles.codeBlockContainer}><View style={styles.macWindowHeader}><View style={styles.macDots}><View style={[styles.macDot, { backgroundColor: '#ff5f56' }]} /><View style={[styles.macDot, { backgroundColor: '#ffbd2e' }]} /><View style={[styles.macDot, { backgroundColor: '#27c93f' }]} /></View><Text style={styles.codeLanguage}>{item.language || 'Code'}</Text></View><Text style={styles.codeText}>{item.codeSnippet}</Text></View>) : null}
 
+      {/* 🔥 LIVE TEST RENDERER WITH VIEW RESULT / REATTEMPT */}
       {item.type === 'live_test' && (
         <View style={styles.liveTestContainer}>
           <LinearGradient colors={['#312e81', '#4f46e5']} style={styles.liveTestBg}>
-            <View style={styles.testHeaderRow}><View style={{flexDirection: 'row', alignItems: 'center'}}><Ionicons name="radio-button-on" size={16} color="#fde047" /><Text style={styles.testLiveText}>{item.ntaFormat ? 'NTA MOCK TEST' : 'LIVE TEST'}</Text></View></View>
-            <Text style={styles.testTitle}>{item.title}</Text>
-            <View style={styles.testInfoRow}>
-              <Ionicons name="help-circle-outline" size={14} color="#cbd5e1" /><Text style={styles.testInfoText}>{item.questions?.length || 0} Questions</Text><Text style={styles.testInfoText}>•</Text><Ionicons name="time-outline" size={14} color="#cbd5e1" />
-              <Text style={styles.testInfoText}>{item.settings?.isTimerEnabled ? `${item.settings.timerPerQuestion}s/Q` : `${item.settings?.totalDuration || 180} Mins`}</Text>
+            <View style={styles.testHeaderRow}>
+              <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                <Ionicons name="radio-button-on" size={16} color="#fde047" />
+                <Text style={styles.testLiveText}>{item.ntaFormat ? 'NTA MOCK TEST' : 'LIVE TEST'}</Text>
+              </View>
+              {hasAttemptedTest && (
+                <View style={{backgroundColor: '#10b981', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8}}>
+                  <Text style={{color: '#fff', fontSize: 10, fontWeight: '900'}}>ATTEMPTED</Text>
+                </View>
+              )}
             </View>
-            <TouchableOpacity style={styles.startTestBtn} activeOpacity={0.8} onPress={() => router.push(`/test/${item.id}`)}><Text style={styles.startTestBtnText}>Attempt Test Now</Text><Ionicons name="arrow-forward" size={18} color="#4f46e5" /></TouchableOpacity>
+            
+            <Text style={styles.testTitle}>{item.title}</Text>
+            
+            <View style={styles.testInfoRow}>
+              <Ionicons name="help-circle-outline" size={14} color="#cbd5e1" />
+              <Text style={styles.testInfoText}>{item.questions?.length || 0} Questions</Text>
+              <Text style={styles.testInfoText}>•</Text>
+              <Ionicons name="time-outline" size={14} color="#cbd5e1" />
+              <Text style={styles.testInfoText}>{item.settings?.isTimerEnabled ? `${item.settings.timerTimerPerQuestion}s/Q` : `${item.settings?.totalDuration || 180} Mins`}</Text>
+            </View>
+
+            {hasAttemptedTest ? (
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 5 }}>
+                <TouchableOpacity style={[styles.startTestBtn, { flex: 1, backgroundColor: 'rgba(255,255,255,0.2)' }]} activeOpacity={0.8} onPress={() => router.push(`/test-analytics/${item.id}`)}>
+                  <Ionicons name="analytics" size={18} color="#fff" style={{marginRight: 6}} />
+                  <Text style={[styles.startTestBtnText, { color: '#fff' }]}>Result</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.startTestBtn, { flex: 1 }]} activeOpacity={0.8} onPress={() => router.push(`/test/${item.id}`)}>
+                  <Ionicons name="refresh" size={18} color="#4f46e5" style={{marginRight: 6}} />
+                  <Text style={styles.startTestBtnText}>Reattempt</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.startTestBtn} activeOpacity={0.8} onPress={() => router.push(`/test/${item.id}`)}>
+                <Text style={styles.startTestBtnText}>Attempt Test Now</Text>
+                <Ionicons name="arrow-forward" size={18} color="#4f46e5" />
+              </TouchableOpacity>
+            )}
           </LinearGradient>
+          {hasAttemptedTest && (
+            <Text style={styles.attemptsText}>Your Last Score: {userResult.score} Marks</Text>
+          )}
         </View>
       )}
 
@@ -225,41 +251,14 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
         </View>
       ) : null}
 
-      {/* 📘 RESOURCE SECTION UPDATED */}
       {item.type === 'resource' && (
         <View style={styles.resourceContainer}>
           <View style={styles.resourceHeader}>
-            <View style={styles.resourceIcon}>
-              <Ionicons name={item.fileUrl?.includes('drive.google.com') ? "logo-google-drive" : "document-text"} size={22} color="#4f46e5" />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.resourceTitle} numberOfLines={1}>{item.title || 'Study Material'}</Text>
-              <Text style={styles.resourceSub}>
-                {item.fileUrl?.includes('drive.google.com') ? 'Google Drive Document' : 
-                 item.fileUrl?.includes('youtube.com') || item.fileUrl?.includes('youtu.be') ? 'Video Tutorial' : 'Learning Resource'}
-              </Text>
-            </View>
-            {item.fileUrl && (
-              <TouchableOpacity style={styles.downloadBtn} onPress={() => Linking.openURL(item.fileUrl)}>
-                <Ionicons name="open-outline" size={16} color="#fff" />
-                <Text style={styles.downloadText}>Open</Text>
-              </TouchableOpacity>
-            )}
+            <View style={styles.resourceIcon}><Ionicons name={item.fileUrl?.includes('drive.google.com') ? "logo-google-drive" : "document-text"} size={22} color="#4f46e5" /></View>
+            <View style={{ flex: 1, marginLeft: 12 }}><Text style={styles.resourceTitle} numberOfLines={1}>{item.title || 'Study Material'}</Text><Text style={styles.resourceSub}>{item.fileUrl?.includes('drive.google.com') ? 'Google Drive Document' : item.fileUrl?.includes('youtube.com') || item.fileUrl?.includes('youtu.be') ? 'Video Tutorial' : 'Learning Resource'}</Text></View>
+            {item.fileUrl && (<TouchableOpacity style={styles.downloadBtn} onPress={() => Linking.openURL(item.fileUrl)}><Ionicons name="open-outline" size={16} color="#fff" /><Text style={styles.downloadText}>Open</Text></TouchableOpacity>)}
           </View>
-
-          {/* 🔥 YAHAN AB MODULAR PREVIEW CHALEGA 🔥 */}
-          {item.fileUrl ? (
-            <ResourcePreview url={item.fileUrl} />
-          ) : item.structuredText ? (
-            <TouchableOpacity 
-              style={styles.smartNotePreview} 
-              onPress={() => router.push(`/resources/view/${item.id}`)} 
-              activeOpacity={0.8}
-            >
-              <Ionicons name="scan-circle" size={40} color="#ec4899" />
-              <Text style={styles.smartNoteText}>Read AI Smart Notes</Text>
-            </TouchableOpacity>
-          ) : null}
+          {item.fileUrl ? (<ResourcePreview url={item.fileUrl} />) : item.structuredText ? (<TouchableOpacity style={styles.smartNotePreview} onPress={() => router.push(`/resources/view/${item.id}`)} activeOpacity={0.8}><Ionicons name="scan-circle" size={40} color="#ec4899" /><Text style={styles.smartNoteText}>Read AI Smart Notes</Text></TouchableOpacity>) : null}
         </View>
       )}
 
@@ -273,8 +272,20 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
       </View>
     </Animated.View>
   );
+// 🔥 FIX: Memo condition mein Result ka check add hua
 }, (prevProps, nextProps) => {
-  return ( prevProps.item.likes?.length === nextProps.item.likes?.length && prevProps.item.commentsCount === nextProps.item.commentsCount && prevProps.item.totalVotes === nextProps.item.totalVotes && prevProps.item.savedBy?.length === nextProps.item.savedBy?.length );
+  const prevScore = prevProps.item.responses?.[prevProps.currentUid]?.score;
+  const nextScore = nextProps.item.responses?.[nextProps.currentUid]?.score;
+
+  return ( 
+    prevProps.item.id === nextProps.item.id && 
+    prevProps.item.likes?.length === nextProps.item.likes?.length && 
+    prevProps.item.commentsCount === nextProps.item.commentsCount && 
+    prevProps.item.totalVotes === nextProps.item.totalVotes && 
+    prevProps.item.savedBy?.length === nextProps.item.savedBy?.length &&
+    prevProps.currentUid === nextProps.currentUid &&
+    prevScore === nextScore
+  );
 });
 
 PostCard.displayName = 'PostCard';
@@ -286,8 +297,7 @@ const styles = StyleSheet.create({
   algoReasonText: { fontSize: 11, fontWeight: '800', color: '#4f46e5', marginLeft: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
   postHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingTop: 15, marginBottom: 12 },
   avatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#e2e8f0' },
-  authorInfo: { flex: 1, marginLeft: 12 },
-  authorName: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
+  authorInfo: { flex: 1, marginLeft: 12 }, authorName: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
   categoryBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#4f46e5', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   categoryBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff', textTransform: 'uppercase' },
   timeText: { fontSize: 12, color: '#94a3b8', marginLeft: 6, fontWeight: '600' },
@@ -317,21 +327,9 @@ const styles = StyleSheet.create({
   liveTestBg: { padding: 20 }, testHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   testLiveText: { color: '#fde047', fontWeight: '900', fontSize: 12, marginLeft: 4, letterSpacing: 1 }, testTitle: { color: '#fff', fontSize: 22, fontWeight: '900', marginBottom: 8 },
   testInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, gap: 5 }, testInfoText: { color: '#cbd5e1', fontWeight: '700', fontSize: 13, marginRight: 10 },
-  testFeaturesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }, featureTag: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }, featureTagText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   startTestBtn: { backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 14, borderRadius: 12 }, startTestBtnText: { color: '#4f46e5', fontWeight: '900', fontSize: 15, marginRight: 8 },
   attemptsText: { textAlign: 'center', color: '#64748b', fontSize: 12, fontWeight: '700', paddingVertical: 10, backgroundColor: '#f8fafc' },
-resourceContainer: { 
-    marginHorizontal: 15, 
-    marginBottom: 15, 
-    backgroundColor: '#fff', 
-    borderRadius: 16, 
-    borderWidth: 1, 
-    borderColor: '#e2e8f0', 
-    overflow: 'hidden', 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 2 }, 
-    shadowOpacity: 0.05, 
-    shadowRadius: 4,},
+  resourceContainer: { marginHorizontal: 15, marginBottom: 15, backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
   resourceHeader: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#fafaf9', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   resourceIcon: { backgroundColor: '#e0e7ff', padding: 10, borderRadius: 10 }, resourceTitle: { fontSize: 15, fontWeight: '800', color: '#0f172a' }, resourceSub: { fontSize: 12, color: '#64748b', marginTop: 2, fontWeight: '600' },
   downloadBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#4f46e5', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 }, downloadText: { color: '#fff', fontSize: 12, fontWeight: '800', marginLeft: 4 },

@@ -1,245 +1,145 @@
 import React, { useState } from 'react';
 import { 
-  View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, 
-  Switch, Alert, SafeAreaView, KeyboardAvoidingView, Platform 
+  View, Text, StyleSheet, TouchableOpacity, SafeAreaView, 
+  KeyboardAvoidingView, Platform, ScrollView, TextInput, Alert, ActivityIndicator 
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { db, auth } from '../firebaseConfig';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import * as Haptics from 'expo-haptics';
 
-// --- TYPES ---
-type QType = 'single_mcq' | 'multi_mcq' | 'integer';
-interface ISubject { id: string; name: string; timeLimit: number; }
-interface IQuestion { id: string; subjectId: string; type: QType; qText: string; options: string[]; correctIndices: number[]; numericalAnswer: string; marks: number; negMarks: number; }
+// 🔥 TERA MODULAR MASTER CONTROLLER YAHAN IMPORT HO RAHA HAI 🔥
+import AdvancedTestBuilder from '../components/test-builder/AdvancedTestBuilder';
 
-export default function AdvancedTestCreator() {
-  const router = useRouter();
-  const [step, setStep] = useState(1);
+// ==========================================
+// ⚡ QUICK BASIC MODE (Kept inline because it's small)
+// ==========================================
+const BasicTestBuilder = ({ router }: { router: any }) => {
   const [loading, setLoading] = useState(false);
-
-  // EXAM DETAILS
   const [title, setTitle] = useState('');
-  const [isStrict, setIsStrict] = useState(true);
-  const [globalDuration, setGlobalDuration] = useState('180');
+  const [subject, setSubject] = useState('');
+  const [duration, setDuration] = useState('30');
+  const [questions, setQuestions] = useState([{ id: 'q1', qText: '', options: ['', '', '', ''], correctIndex: 0 }]);
 
-  // DYNAMIC SUBJECTS
-  const [subjects, setSubjects] = useState<ISubject[]>([]);
-  const [newSubName, setNewSubName] = useState('');
-  const [newSubTime, setNewSubTime] = useState('');
-
-  // QUESTIONS
-  const [questions, setQuestions] = useState<IQuestion[]>([]);
-  const [activeSubjectId, setActiveSubjectId] = useState('');
-
-  // --- HANDLERS ---
-  const handleAddSubject = () => {
-    if (!newSubName.trim()) return Alert.alert("Error", "Enter subject name");
-    const newSub: ISubject = { 
-      id: `sub_${Date.now()}`, 
-      name: newSubName.trim(), 
-      timeLimit: parseInt(newSubTime) || 0 
-    };
-    setSubjects([...subjects, newSub]);
-    if (!activeSubjectId) setActiveSubjectId(newSub.id);
-    setNewSubName(''); setNewSubTime('');
-  };
-
-  const handleAddQuestion = () => {
-    if (!activeSubjectId) return Alert.alert("Error", "Add a subject first!");
-    const newQ: IQuestion = {
-      id: `q_${Date.now()}`, subjectId: activeSubjectId, type: 'single_mcq',
-      qText: '', options: ['Option 1', 'Option 2', 'Option 3', 'Option 4'],
-      correctIndices: [0], numericalAnswer: '', marks: 4, negMarks: 1
-    };
-    setQuestions([...questions, newQ]);
-  };
-
-  const updateQuestion = (qId: string, field: keyof IQuestion, value: any) => {
-    setQuestions(questions.map(q => q.id === qId ? { ...q, [field]: value } : q));
-  };
-
-  const handleDeploy = async () => {
-    if (!title || subjects.length === 0 || questions.length === 0) {
-      return Alert.alert("Incomplete", "Please add Title, Subjects, and Questions.");
-    }
+  const handlePublish = async () => {
+    if (!title.trim() || !subject.trim()) return Alert.alert("Error", "Title & Subject required.");
     setLoading(true);
     try {
       await addDoc(collection(db, 'exams_enterprise'), {
-        title, rules: { isStrict, globalDuration: parseInt(globalDuration) },
-        subjects, questions,
-        authorId: auth.currentUser?.uid || 'admin',
+        title, category: subject, pattern: 'CUSTOM',
+        rules: { globalDuration: parseInt(duration) || 30, isStrict: false },
+        visibility: 'PUBLIC', pricing: { isPaid: false, price: 0 },
+        subjects: [{ id: 'sub_1', name: subject, timeLimit: parseInt(duration), attemptMax: 0 }],
+        questions: questions.map((q, idx) => ({
+          id: `q_${idx}`, subjectId: 'sub_1', type: 'single_mcq',
+          qText: q.qText, options: q.options, correctIndices: [q.correctIndex], marks: 4, negMarks: 1
+        })),
+        authorId: auth.currentUser?.uid || 'admin', authorName: auth.currentUser?.displayName || 'Scholar',
         createdAt: serverTimestamp(), status: 'LIVE'
       });
-      Alert.alert("Success 🚀", "Advanced CBT Published!");
-      router.replace('/(tabs)/explore');
-    } catch (e) {
-      Alert.alert("Error", "Failed to save test.");
-    } finally {
-      setLoading(false);
-    }
+      if(Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Success", "Basic Test Published!");
+      router.replace('/(tabs)/index');
+    } catch (e) { Alert.alert("Error", "Could not publish test."); } 
+    finally { setLoading(false); }
   };
 
-  // --- RENDERERS ---
+  return (
+    <ScrollView style={{ flex: 1, padding: 15 }} contentContainerStyle={{ paddingBottom: 100 }}>
+      <View style={styles.card}>
+        <Text style={styles.label}>Test Title</Text>
+        <TextInput style={styles.input} placeholder="e.g. Physics Quiz" value={title} onChangeText={setTitle} />
+        <View style={{flexDirection: 'row', gap: 10}}>
+          <TextInput style={[styles.input, {flex: 2}]} placeholder="Subject" value={subject} onChangeText={setSubject} />
+          <TextInput style={[styles.input, {flex: 1}]} placeholder="Mins" keyboardType="numeric" value={duration} onChangeText={setDuration} />
+        </View>
+      </View>
+
+      {questions.map((q, index) => (
+        <View key={q.id} style={styles.card}>
+          <View style={{flexDirection: 'row', justifyContent: 'space-between'}}><Text style={styles.label}>Q{index + 1}</Text><TouchableOpacity onPress={() => setQuestions(questions.filter(x => x.id !== q.id))}><Ionicons name="trash" size={18} color="red"/></TouchableOpacity></View>
+          <TextInput style={styles.input} multiline placeholder="Question text..." value={q.qText} onChangeText={v => setQuestions(questions.map(x => x.id === q.id ? {...x, qText: v} : x))} />
+          {q.options.map((opt, oIdx) => (
+            <View key={oIdx} style={{flexDirection: 'row', alignItems: 'center', marginBottom: 8}}>
+              <TouchableOpacity onPress={() => {
+                if(Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setQuestions(questions.map(x => x.id === q.id ? {...x, correctIndex: oIdx} : x));
+              }}>
+                <Ionicons name={q.correctIndex === oIdx ? "radio-button-on" : "radio-button-off"} size={24} color={q.correctIndex === oIdx ? "#10b981" : "#cbd5e1"} />
+              </TouchableOpacity>
+              <TextInput style={[styles.input, {flex: 1, marginBottom: 0, marginLeft: 10}]} placeholder={`Option ${oIdx+1}`} value={opt} onChangeText={v => { const newOpts = [...q.options]; newOpts[oIdx] = v; setQuestions(questions.map(x => x.id === q.id ? {...x, options: newOpts} : x)); }} />
+            </View>
+          ))}
+        </View>
+      ))}
+
+      <TouchableOpacity style={styles.addBtnOutline} onPress={() => {
+        if(Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        setQuestions([...questions, { id: `q${Date.now()}`, qText: '', options: ['', '', '', ''], correctIndex: 0 }]);
+      }}>
+        <Ionicons name="add" size={20} color="#4f46e5" /><Text style={{color: '#4f46e5', fontWeight: 'bold', marginLeft: 6}}>Add Question</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity style={styles.btnPrimary} onPress={handlePublish} disabled={loading}>
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 16}}>Publish Basic Test</Text>}
+      </TouchableOpacity>
+    </ScrollView>
+  );
+};
+
+// ==========================================
+// 👑 MAIN SCREEN WRAPPER
+// ==========================================
+export default function CreateTestScreen() {
+  const router = useRouter();
+  const [mode, setMode] = useState<'BASIC' | 'ADVANCED'>('BASIC');
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* HEADER & TOGGLE */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Enterprise Creator (Step {step}/3)</Text>
-      </View>
+        <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10}}>
+          <TouchableOpacity onPress={() => router.back()}><Ionicons name="close" size={26} color="#0f172a" /></TouchableOpacity>
+          <Text style={{fontSize: 18, fontWeight: '900', color: '#0f172a'}}>Create CBT</Text>
+          <View style={{width: 26}} />
+        </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView style={styles.scroll}>
-          
-          {/* STEP 1: EXAM RULES */}
-          {step === 1 && (
-            <View style={styles.card}>
-              <Text style={styles.label}>Exam Title</Text>
-              <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="e.g. JEE Mains 2026 Mock" />
-              
-              <Text style={styles.label}>Global Duration (Minutes)</Text>
-              <TextInput style={styles.input} value={globalDuration} onChangeText={setGlobalDuration} keyboardType="numeric" />
-              
-              <View style={styles.row}>
-                <Text style={styles.label}>Strict Proctoring (Anti-Cheat)</Text>
-                <Switch value={isStrict} onValueChange={setIsStrict} />
-              </View>
-            </View>
-          )}
-
-          {/* STEP 2: DYNAMIC SUBJECTS */}
-          {step === 2 && (
-            <View style={styles.card}>
-              <Text style={styles.title}>Define Custom Subjects/Sections</Text>
-              
-              {subjects.map(s => (
-                <View key={s.id} style={styles.subjectPill}>
-                  <Text style={styles.subText}>{s.name} ({s.timeLimit > 0 ? `${s.timeLimit} mins` : 'No Limit'})</Text>
-                  <TouchableOpacity onPress={() => setSubjects(subjects.filter(x => x.id !== s.id))}>
-                    <Ionicons name="trash" size={20} color="#ef4444" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-
-              <View style={{ marginTop: 20 }}>
-                <TextInput style={styles.input} placeholder="Subject Name (e.g. Logical Reasoning)" value={newSubName} onChangeText={setNewSubName} />
-                <TextInput style={styles.input} placeholder="Sectional Time Limit (Mins) - Optional" value={newSubTime} onChangeText={setNewSubTime} keyboardType="numeric" />
-                <TouchableOpacity style={styles.btnPrimary} onPress={handleAddSubject}>
-                  <Text style={styles.btnText}>Add Subject</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {/* STEP 3: ADVANCED QUESTIONS */}
-          {step === 3 && (
-            <View style={{ paddingBottom: 50 }}>
-              {/* Subject Tabs */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll}>
-                {subjects.map(s => (
-                  <TouchableOpacity key={s.id} style={[styles.tab, activeSubjectId === s.id && styles.tabActive]} onPress={() => setActiveSubjectId(s.id)}>
-                    <Text style={[styles.tabText, activeSubjectId === s.id && {color:'#fff'}]}>{s.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              {/* Question Builder */}
-              {questions.filter(q => q.subjectId === activeSubjectId).map((q, idx) => (
-                <View key={q.id} style={styles.qCard}>
-                  <Text style={styles.title}>Question {idx + 1}</Text>
-                  
-                  {/* Type Selector */}
-                  <View style={styles.row}>
-                    {(['single_mcq', 'multi_mcq', 'integer'] as QType[]).map(t => (
-                      <TouchableOpacity key={t} style={[styles.typeBtn, q.type === t && styles.typeBtnActive]} onPress={() => updateQuestion(q.id, 'type', t)}>
-                        <Text style={{fontSize: 10, color: q.type===t?'#fff':'#000'}}>{t.toUpperCase()}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-
-                  <TextInput style={[styles.input, {height: 80}]} multiline placeholder="Enter Question Text..." value={q.qText} onChangeText={v => updateQuestion(q.id, 'qText', v)} />
-
-                  {/* Options Builder (If MCQ) */}
-                  {q.type.includes('mcq') && q.options.map((opt, oIdx) => {
-                    const isCorrect = q.correctIndices.includes(oIdx);
-                    return (
-                      <View key={oIdx} style={styles.optRow}>
-                        <TouchableOpacity onPress={() => {
-                          if (q.type === 'single_mcq') updateQuestion(q.id, 'correctIndices', [oIdx]);
-                          else updateQuestion(q.id, 'correctIndices', isCorrect ? q.correctIndices.filter(i=>i!==oIdx) : [...q.correctIndices, oIdx]);
-                        }}>
-                          <Ionicons name={isCorrect ? "checkmark-circle" : "ellipse-outline"} size={24} color={isCorrect ? "#10b981" : "#cbd5e1"} />
-                        </TouchableOpacity>
-                        <TextInput style={styles.optInput} value={opt} onChangeText={v => { const n=[...q.options]; n[oIdx]=v; updateQuestion(q.id, 'options', n); }} />
-                      </View>
-                    );
-                  })}
-
-                  {/* Integer Builder */}
-                  {q.type === 'integer' && (
-                    <TextInput style={styles.input} placeholder="Exact Numerical Answer (e.g. 42)" keyboardType="numeric" value={q.numericalAnswer} onChangeText={v => updateQuestion(q.id, 'numericalAnswer', v)} />
-                  )}
-                  
-                  {/* Marking Scheme */}
-                  <View style={styles.row}>
-                    <TextInput style={[styles.input, {flex:1, marginRight:10}]} placeholder="Marks (+)" keyboardType="numeric" value={String(q.marks)} onChangeText={v => updateQuestion(q.id, 'marks', parseFloat(v)||0)} />
-                    <TextInput style={[styles.input, {flex:1}]} placeholder="Neg Marks (-)" keyboardType="numeric" value={String(q.negMarks)} onChangeText={v => updateQuestion(q.id, 'negMarks', parseFloat(v)||0)} />
-                  </View>
-                </View>
-              ))}
-
-              <TouchableOpacity style={[styles.btnPrimary, {backgroundColor: '#10b981'}]} onPress={handleAddQuestion}>
-                <Text style={styles.btnText}>+ Add Question</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-
-      {/* FOOTER */}
-      <View style={styles.footer}>
-        {step > 1 && <TouchableOpacity style={styles.btnBack} onPress={() => setStep(s => s - 1)}><Text>Back</Text></TouchableOpacity>}
-        {step < 3 ? (
-          <TouchableOpacity style={styles.btnNext} onPress={() => setStep(s => s + 1)}><Text style={{color:'#fff'}}>Next Step</Text></TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.btnDeploy} onPress={handleDeploy} disabled={loading}>
-            {loading ? <Text style={{color:'#fff'}}>Saving...</Text> : <Text style={{color:'#fff', fontWeight:'bold'}}>Deploy CBT Exam 🚀</Text>}
+        <View style={styles.toggleContainer}>
+          <TouchableOpacity style={[styles.toggleBtn, mode === 'BASIC' && styles.toggleBtnActive]} onPress={() => { setMode('BASIC'); if(Platform.OS !== 'web') Haptics.selectionAsync(); }}>
+            <Text style={{fontWeight: 'bold', color: mode === 'BASIC' ? '#fff' : '#64748b'}}>⚡ Basic Mode</Text>
           </TouchableOpacity>
-        )}
+          <TouchableOpacity style={[styles.toggleBtn, mode === 'ADVANCED' && styles.toggleBtnActiveAdv]} onPress={() => { setMode('ADVANCED'); if(Platform.OS !== 'web') Haptics.selectionAsync(); }}>
+            <Text style={{fontWeight: 'bold', color: mode === 'ADVANCED' ? '#fff' : '#64748b'}}>👑 Pro Advanced</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* CONTENT W/ FLEX 1 FIX TO PREVENT MESSY UI */}
+      <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {mode === 'BASIC' ? (
+          <BasicTestBuilder router={router} />
+        ) : (
+          /* 🔥 MODULAR ADVANCED BUILDER LOADED HERE 🔥 */
+          <AdvancedTestBuilder router={router} />
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f1f5f9' },
-  header: { padding: 20, backgroundColor: '#0f172a' },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  scroll: { padding: 15 },
-  card: { backgroundColor: '#fff', padding: 20, borderRadius: 15, marginBottom: 20 },
-  title: { fontSize: 16, fontWeight: 'bold', marginBottom: 15 },
-  label: { fontSize: 12, color: '#64748b', marginBottom: 5, fontWeight: 'bold' },
-  input: { borderWidth: 1, borderColor: '#cbd5e1', padding: 12, borderRadius: 8, marginBottom: 15, backgroundColor: '#f8fafc' },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  header: { backgroundColor: '#fff', padding: 15, borderBottomWidth: 1, borderColor: '#e2e8f0' },
+  toggleContainer: { flexDirection: 'row', backgroundColor: '#f8fafc', borderRadius: 10, padding: 4 },
+  toggleBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 8 },
+  toggleBtnActive: { backgroundColor: '#10b981' },
+  toggleBtnActiveAdv: { backgroundColor: '#0f172a' },
   
-  subjectPill: { flexDirection: 'row', justifyContent: 'space-between', padding: 15, backgroundColor: '#e0e7ff', borderRadius: 8, marginBottom: 10 },
-  subText: { color: '#4f46e5', fontWeight: 'bold' },
+  card: { backgroundColor: '#fff', padding: 15, borderRadius: 12, marginBottom: 15, borderWidth: 1, borderColor: '#e2e8f0' },
+  label: { fontSize: 12, fontWeight: 'bold', color: '#64748b', marginBottom: 5, textTransform: 'uppercase' },
+  input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1', padding: 12, borderRadius: 8, marginBottom: 12, fontSize: 14, color: '#0f172a' },
   
-  tabScroll: { marginBottom: 15 },
-  tab: { padding: 10, paddingHorizontal: 20, backgroundColor: '#e2e8f0', borderRadius: 20, marginRight: 10 },
-  tabActive: { backgroundColor: '#4f46e5' },
-  tabText: { fontWeight: 'bold' },
-  
-  qCard: { backgroundColor: '#fff', padding: 15, borderRadius: 12, marginBottom: 15, borderWidth: 1, borderColor: '#e2e8f0' },
-  typeBtn: { padding: 8, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, flex: 1, alignItems: 'center', marginHorizontal: 2 },
-  typeBtnActive: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
-  optRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  optInput: { flex: 1, borderWidth: 1, borderColor: '#cbd5e1', padding: 10, borderRadius: 8, marginLeft: 10 },
-
-  btnPrimary: { backgroundColor: '#4f46e5', padding: 15, borderRadius: 8, alignItems: 'center' },
-  btnText: { color: '#fff', fontWeight: 'bold' },
-  
-  footer: { flexDirection: 'row', padding: 15, backgroundColor: '#fff', borderTopWidth: 1, borderColor: '#e2e8f0' },
-  btnBack: { padding: 15, backgroundColor: '#e2e8f0', borderRadius: 8, flex: 1, alignItems: 'center', marginRight: 10 },
-  btnNext: { padding: 15, backgroundColor: '#4f46e5', borderRadius: 8, flex: 2, alignItems: 'center' },
-  btnDeploy: { padding: 15, backgroundColor: '#ef4444', borderRadius: 8, flex: 2, alignItems: 'center' }
+  btnPrimary: { backgroundColor: '#4f46e5', padding: 15, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  addBtnOutline: { flexDirection: 'row', justifyContent: 'center', padding: 15, borderRadius: 10, borderWidth: 1, borderColor: '#4f46e5', borderStyle: 'dashed', marginBottom: 15 }
 });

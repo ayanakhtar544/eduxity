@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, collection, query, where, getDocs, documentId } from 'firebase/firestore';
+import { doc, setDoc, collection, query, where, getDocs, documentId, runTransaction } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
 // ==========================================
@@ -34,81 +34,89 @@ export const BADGES_LIST = [
 ];
 
 // ==========================================
-// 🚀 3. THE MAIN GAMIFICATION ENGINE
+// 🚀 3. THE MAIN GAMIFICATION ENGINE (TRANSACTIONAL & HACK-PROOF)
 // ==========================================
 export const processAction = async (userId: string, action: ActionType) => {
   try {
     const userRef = doc(db, 'users', userId);
-    const userSnap = await getDoc(userRef);
     const actionData = ACTION_MAP[action];
 
-    if (!userSnap.exists()) return { success: false };
+    // 🔥 TRANSACTION SHURU: Ye block queue me chalega, koi race condition nahi hogi
+    const result = await runTransaction(db, async (transaction) => {
+      const userSnap = await transaction.get(userRef);
 
-    let userData = userSnap.data();
-    let gamification = userData.gamification || { 
-      xp: 0, level: 1, eduCoins: 0, currentStreak: 0, lastActiveDate: '', 
-      badges: [], stats: { notesUploaded: 0, postsCreated: 0, pollsAnswered: 0, pollsCorrect: 0, likesReceived: 0 } 
-    };
+      if (!userSnap.exists()) {
+        throw new Error("User does not exist");
+      }
 
-    // --- STREAK LOGIC ---
-    const todayStr = new Date().toDateString();
-    let streak = gamification.currentStreak || 0;
-    
-    if (gamification.lastActiveDate !== todayStr) {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
+      let userData = userSnap.data();
+      let gamification = userData.gamification || { 
+        xp: 0, level: 1, eduCoins: 0, currentStreak: 0, lastActiveDate: '', 
+        badges: [], stats: { notesUploaded: 0, postsCreated: 0, pollsAnswered: 0, pollsCorrect: 0, likesReceived: 0 } 
+      };
+
+      // --- STREAK LOGIC ---
+      const todayStr = new Date().toDateString();
+      let streak = gamification.currentStreak || 0;
       
-      if (gamification.lastActiveDate === yesterday.toDateString()) {
-        streak += 1; 
-      } else {
-        streak = 1;  
+      if (gamification.lastActiveDate !== todayStr) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        if (gamification.lastActiveDate === yesterday.toDateString()) {
+          streak += 1; 
+        } else {
+          streak = 1;  
+        }
       }
-    }
-    
-    const streakMultiplier = 1 + (Math.min(streak, 10) * 0.1); 
+      
+      const streakMultiplier = 1 + (Math.min(streak, 10) * 0.1); 
 
-    // --- XP & COINS CALCULATION ---
-    const finalXP = Math.round(actionData.baseXP * streakMultiplier);
-    const finalCoins = actionData.coins;
-    
-    const newTotalXP = (gamification.xp || 0) + finalXP;
-    const newTotalCoins = (gamification.eduCoins || 0) + finalCoins;
-    
-    const newLevel = Math.floor(Math.sqrt(newTotalXP / 100)) + 1;
-    const leveledUp = newLevel > (gamification.level || 1);
+      // --- XP & COINS CALCULATION ---
+      const finalXP = Math.round(actionData.baseXP * streakMultiplier);
+      const finalCoins = actionData.coins;
+      
+      const newTotalXP = (gamification.xp || 0) + finalXP;
+      const newTotalCoins = (gamification.eduCoins || 0) + finalCoins;
+      
+      const newLevel = Math.floor(Math.sqrt(newTotalXP / 100)) + 1;
+      const leveledUp = newLevel > (gamification.level || 1);
 
-    // --- STATS & BADGES ENGINE ---
-    let currentStats = gamification.stats || {};
-    currentStats[actionData.statKey] = (currentStats[actionData.statKey] || 0) + 1;
-    currentStats.currentStreak = streak;
+      // --- STATS & BADGES ENGINE ---
+      let currentStats = gamification.stats || {};
+      currentStats[actionData.statKey] = (currentStats[actionData.statKey] || 0) + 1;
+      currentStats.currentStreak = streak;
 
-    let earnedBadges = gamification.badges || [];
-    let newBadgesUnlocked: any[] = [];
+      let earnedBadges = gamification.badges || [];
+      let newBadgesUnlocked: any[] = [];
 
-    BADGES_LIST.forEach(badge => {
-      if (!earnedBadges.includes(badge.id) && badge.condition(currentStats, newLevel)) {
-        earnedBadges.push(badge.id);
-        newBadgesUnlocked.push(badge);
-      }
+      BADGES_LIST.forEach(badge => {
+        if (!earnedBadges.includes(badge.id) && badge.condition(currentStats, newLevel)) {
+          earnedBadges.push(badge.id);
+          newBadgesUnlocked.push(badge);
+        }
+      });
+
+      // 🔥 TRANSACTION UPDATE (Safe Merge)
+      transaction.set(userRef, {
+        gamification: {
+          xp: newTotalXP,
+          eduCoins: newTotalCoins,
+          level: newLevel,
+          currentStreak: streak,
+          lastActiveDate: todayStr,
+          stats: currentStats,
+          badges: earnedBadges
+        }
+      }, { merge: true });
+
+      return {
+        success: true, xpEarned: finalXP, coinsEarned: finalCoins,
+        leveledUp: leveledUp, newLevel: newLevel, newBadges: newBadgesUnlocked, currentStreak: streak
+      };
     });
 
-    // 🛑 BUG FIX: Using setDoc with merge to avoid missing parent object crashes!
-    await setDoc(userRef, {
-      gamification: {
-        xp: newTotalXP,
-        eduCoins: newTotalCoins,
-        level: newLevel,
-        currentStreak: streak,
-        lastActiveDate: todayStr,
-        stats: currentStats,
-        badges: earnedBadges
-      }
-    }, { merge: true });
-
-    return {
-      success: true, xpEarned: finalXP, coinsEarned: finalCoins,
-      leveledUp: leveledUp, newLevel: newLevel, newBadges: newBadgesUnlocked, currentStreak: streak
-    };
+    return result;
 
   } catch (e) {
     console.log("Gamification Engine Error:", e);
@@ -145,42 +153,46 @@ export const getFriendsLeaderboard = async (currentUserId: string, friendsListId
 };
 
 // ==========================================
-// ⭐ 5. CUSTOM XP AWARDER (For Tests, Homework & Chats)
+// ⭐ 5. CUSTOM XP AWARDER (TRANSACTIONAL & HACK-PROOF)
 // ==========================================
 export const awardXP = async (userId: string, xpToAdd: number, reason: string) => {
   try {
     const userRef = doc(db, 'users', userId);
-    const userSnap = await getDoc(userRef);
 
-    if (!userSnap.exists()) return null;
+    // 🔥 TRANSACTION SHURU: XP loss bypass fix
+    const result = await runTransaction(db, async (transaction) => {
+      const userSnap = await transaction.get(userRef);
 
-    let userData = userSnap.data();
-    
-    // Tere existing gamification structure ko read kar rahe hain
-    let gamification = userData.gamification || { 
-      xp: 0, level: 1, eduCoins: 0, currentStreak: 0, lastActiveDate: '', 
-      badges: [], stats: {} 
-    };
-
-    const newTotalXP = (gamification.xp || 0) + xpToAdd;
-    
-    // 🧠 TERA ADVANCED LEVEL FORMULA (Square Root Logic)
-    const newLevel = Math.floor(Math.sqrt(newTotalXP / 100)) + 1;
-    const leveledUp = newLevel > (gamification.level || 1);
-
-    // Database mein safely merge kar rahe hain taaki streaks/badges delete na hon
-    await setDoc(userRef, {
-      gamification: {
-        xp: newTotalXP,
-        level: newLevel
+      if (!userSnap.exists()) {
+        throw new Error("User does not exist");
       }
-    }, { merge: true });
 
-    return { 
-      leveledUp: leveledUp, 
-      newLevel: newLevel, 
-      xpAdded: xpToAdd 
-    };
+      let userData = userSnap.data();
+      let gamification = userData.gamification || { 
+        xp: 0, level: 1, eduCoins: 0, currentStreak: 0, lastActiveDate: '', 
+        badges: [], stats: {} 
+      };
+
+      const newTotalXP = (gamification.xp || 0) + xpToAdd;
+      
+      const newLevel = Math.floor(Math.sqrt(newTotalXP / 100)) + 1;
+      const leveledUp = newLevel > (gamification.level || 1);
+
+      transaction.set(userRef, {
+        gamification: {
+          xp: newTotalXP,
+          level: newLevel
+        }
+      }, { merge: true });
+
+      return { 
+        leveledUp: leveledUp, 
+        newLevel: newLevel, 
+        xpAdded: xpToAdd 
+      };
+    });
+
+    return result;
 
   } catch (e) {
     console.log("Award XP Error:", e);

@@ -1,9 +1,10 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, initializeAuth, getReactNativePersistence } from 'firebase/auth'; 
-import { getFirestore } from 'firebase/firestore'; 
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeAuth, getReactNativePersistence, browserLocalPersistence, getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
+// 🔥 TERI .ENV FILE SE KEYS YAHAN AAYENGI 🔥
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -13,22 +14,24 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID
 };
 
-// 🔥 YE LINE MISSING THI TERE CODE MEIN
-const app = initializeApp(firebaseConfig);
-
-let auth;
-
-// Platform check logic (Web aur Mobile ke liye)
-if (Platform.OS === 'web') {
-  auth = getAuth(app); 
+// 🔥 1. APP INITIALIZATION FIX (Fast Refresh Error ke liye)
+let app;
+if (getApps().length === 0) {
+  app = initializeApp(firebaseConfig);
 } else {
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage)
-  });
+  app = getApp();
 }
 
-// Database initialization
+// 🔥 2. AUTH INITIALIZATION FIX 
+let auth;
+try {
+  auth = initializeAuth(app, {
+    persistence: Platform.OS === 'web' ? browserLocalPersistence : getReactNativePersistence(AsyncStorage)
+  });
+} catch (error) {
+  auth = getAuth(app);
+}
+
 const db = getFirestore(app);
 
-// Teeno zaroori cheezein export ho rahi hain
-export { app, auth, db };
+export { auth, db };

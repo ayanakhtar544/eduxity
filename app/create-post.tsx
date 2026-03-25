@@ -11,7 +11,10 @@ import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/fires
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeIn, SlideInDown, Layout } from 'react-native-reanimated';
+
+// Gamification Imports
 import { processAction } from '../helpers/gamificationEngine'; 
+import { useRewardStore } from '../store/useRewardStore';
 
 const IMGBB_API_KEY = process.env.EXPO_PUBLIC_IMGBB_API_KEY;
 
@@ -50,6 +53,9 @@ export default function CreatePostScreen() {
   const [flashcards, setFlashcards] = useState([{ q: '', a: '' }, { q: '', a: '' }]);
 
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+
+  // 🔥 REWARD HOOK INITIALIZED
+  const showReward = useRewardStore((state) => state.showReward);
 
   // FETCH USER INTERESTS
   useEffect(() => {
@@ -117,6 +123,7 @@ export default function CreatePostScreen() {
     else Alert.alert("Warning", "A flashcard deck needs at least 2 cards.");
   };
 
+  // 🔥 MAIN PUBLISH LOGIC
   const handlePublish = async () => {
     const user = auth.currentUser;
     if (!user) { Alert.alert("Error", "You must be logged in to post."); return; }
@@ -149,7 +156,7 @@ export default function CreatePostScreen() {
         if (data.success) { finalImageUrl = data.data.url; } else { throw new Error("ImgBB upload failed"); }
       }
 
-      // 🔥 PREPARE POST DATA (Universal Tags Included)
+      // PREPARE POST DATA
       const postData: any = {
         authorId: user.uid,
         authorName: user.displayName || 'Eduxity User',
@@ -157,7 +164,7 @@ export default function CreatePostScreen() {
         type: postType,
         category: category,
         text: text.trim(), 
-        tags: tags, // UNIVERSAL TAGS SAVED HERE
+        tags: tags, 
         likes: [],
         savedBy: [],
         commentsCount: 0,
@@ -183,25 +190,31 @@ export default function CreatePostScreen() {
         postData.subject = subject;
       }
 
+      // 1. SAVE TO FIRESTORE
       await addDoc(collection(db, 'posts'), postData);
       
+      // 2. DETERMINE ACTION TYPE FOR GAMIFICATION
       let actionType = 'CREATE_POST';
-      if (postType === 'resource') actionType = 'UPLOAD_NOTE';
+      if (postType === 'resource' || postType === 'flashcard') actionType = 'UPLOAD_NOTE'; // Notes aur flashcard ke liye zyada XP
       
+      // 3. PROCESS ACTION
       const reward = await processAction(user.uid, actionType);
       
       setLoading(false);
 
+      // 🔥 4. TRIGGER ANIMATION 
       if (reward && reward.success) {
-         let message = `You earned +${reward.xpEarned} XP & ${reward.coinsEarned} EduCoins!\n🔥 Streak: ${reward.currentStreak}`;
-         if (reward.newBadges && reward.newBadges.length > 0) {
-             message += `\n🏅 Unlocked: ${reward.newBadges.map((b:any) => b.name).join(', ')}`;
-         }
-         Alert.alert("Awesome! 🎉", message);
-      } else {
-         Alert.alert("Success", "Post uploaded successfully!");
+         showReward({
+            xpEarned: reward.xpEarned,
+            coinsEarned: reward.coinsEarned,
+            leveledUp: reward.leveledUp,
+            newLevel: reward.newLevel,
+            newBadges: reward.newBadges
+         });
+         // Notice main alert hata diya hai. Ab sirf screen pe notification aayegi.
       }
       
+      // 5. GO BACK
       router.back(); 
 
     } catch (error) {

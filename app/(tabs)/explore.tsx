@@ -194,8 +194,8 @@ export default function ChatListScreen() {
       
       <View style={styles.headerArea}>
         <Text style={styles.mainTitle}>Messages</Text>
-        <TouchableOpacity style={styles.headerIcon} onPress={() => router.push('/search-users')}>
-          <Ionicons name="create-outline" size={24} color="#0f172a" />
+        <TouchableOpacity style={styles.headerIcon} onPress={() => router.push('/find-groups')}>
+          <Ionicons name="search" size={24} color="#0f172a" />
         </TouchableOpacity>
       </View>
 
@@ -248,7 +248,7 @@ export default function ChatListScreen() {
           onPressIn={() => fabFindScale.value = withSpring(0.9)} onPressOut={() => fabFindScale.value = withSpring(1)}
           onPress={() => router.push('/find-groups')}
         >
-          <Ionicons name="compass" size={24} color="#2563eb" />
+          <Ionicons name="search" size={24} color="#2563eb" />
         </TouchableOpacity>
       </Animated.View>
 

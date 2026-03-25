@@ -6,28 +6,66 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../../firebaseConfig';
 import { signOut } from 'firebase/auth';
-import { collection, query, where, getDocs, doc, onSnapshot, deleteDoc } from 'firebase/firestore'; // 🗑️ deleteDoc add kiya
+import { collection, query, where, getDocs, doc, onSnapshot, deleteDoc } from 'firebase/firestore'; 
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
+
+// 🛑 IMPORTANT: Tumhara BADGES_LIST import hai, make sure path correct ho. 
+// Agar abhi file nahi hai toh temporarily is line ko comment kar dena aur niche empty array pass kar dena.
 import { BADGES_LIST } from '../../helpers/gamificationEngine'; 
 
 const { width } = Dimensions.get('window');
 const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
+
 
 export default function ProfileScreen() {
   const router = useRouter();
   const user = auth.currentUser;
 
   const [activeTab, setActiveTab] = useState<'posts' | 'saved'>('posts');
-  const [myPosts, setMyPosts] = useState<any[]>([]);
+  const [myPosts, setMyPosts] = useState<any[]>([]); // Normal posts
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  
+  const [myTests, setMyTests] = useState<any[]>([]); // Exam Engine Tests
+  const [loadingTests, setLoadingTests] = useState(true);
 
+  // ==========================================
+  // 1. FETCH MY CREATED TESTS (Fix #3)
+  // ==========================================
+  useEffect(() => {
+    const fetchMyCreatedTests = async () => {
+      if (!user?.uid) return;
+      try {
+        const q = query(
+          collection(db, 'exams_enterprise'), 
+          where('authorId', '==', user.uid)
+        );
+        const querySnapshot = await getDocs(q);
+        const testsArray = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          // Adding a type flag so we know it's a test when rendering
+          isExamEngineTest: true, 
+          ...doc.data()
+        }));
+        setMyTests(testsArray);
+      } catch (error) {
+        console.error("Error fetching my tests: ", error);
+      } finally {
+        setLoadingTests(false);
+      }
+    };
+
+    fetchMyCreatedTests();
+  }, [user]);
+
+  // ==========================================
+  // 2. LIVE USER DATA LISTENER
+  // ==========================================
   useEffect(() => {
     if (!user) return;
     
-    // 🚀 LIVE USER DATA LISTENER
     const userDocRef = doc(db, 'users', user.uid);
     const unsubscribeUser = onSnapshot(userDocRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -40,16 +78,20 @@ export default function ProfileScreen() {
     return () => unsubscribeUser();
   }, [user]);
 
-  // 🚀 FETCH REAL POSTS DATA
+  // ==========================================
+  // 3. FETCH REAL POSTS DATA
+  // ==========================================
   const fetchProfileData = async () => {
     setLoading(true);
     try {
+      // Fetch normal posts
       const postsQuery = query(collection(db, 'posts'), where('authorId', '==', user?.uid));
       const postsSnapshot = await getDocs(postsQuery);
       let fetchedMyPosts = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       fetchedMyPosts.sort((a: any, b: any) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
       setMyPosts(fetchedMyPosts);
 
+      // Fetch saved posts
       const savedQuery = query(collection(db, 'posts'), where('savedBy', 'array-contains', user?.uid));
       const savedSnapshot = await getDocs(savedQuery);
       let fetchedSavedPosts = savedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -62,30 +104,43 @@ export default function ProfileScreen() {
     }
   };
 
+  // ==========================================
+  // 4. LOGOUT LOGIC (Fix #2)
+  // ==========================================
   const handleLogout = async () => {
-    Alert.alert("Logout", "Are you sure you want to log out?", [
+    Alert.alert("Logout", "Are you sure you want to exit?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Logout", style: "destructive", onPress: async () => { await signOut(auth); router.replace('/auth'); } }
+      { 
+        text: "Logout", 
+        style: "destructive", 
+        onPress: async () => {
+          try {
+            await signOut(auth);
+            router.replace('/login'); // Make sure your login route is correct
+          } catch (error) {
+            Alert.alert("Error", "Logout failed, please try again.");
+            console.error(error);
+          }
+        }
+      }
     ]);
   };
 
-  // 🗑️ CROSS-PLATFORM DELETE FUNCTION (For Profile Posts)
+  // ==========================================
+  // 5. DELETE POST LOGIC
+  // ==========================================
   const handleDeleteFromProfile = async (postId: string) => {
     if (Platform.OS === 'web') {
-      // 🌐 Web Browser ke liye Alert
       const confirmDelete = window.confirm("Delete Post? This will permanently remove it.");
       if (confirmDelete) {
         try {
           await deleteDoc(doc(db, 'posts', postId));
-          // Turant UI se hata do (Fast UX)
           setMyPosts(prev => prev.filter(p => p.id !== postId));
         } catch (error) {
-          console.log(error);
           alert("Could not delete post.");
         }
       }
     } else {
-      // 📱 Mobile App ke liye Alert
       Alert.alert("Delete Post?", "This will permanently remove the post from Eduxity.", [
         { text: "Cancel", style: "cancel" },
         { 
@@ -94,10 +149,8 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               await deleteDoc(doc(db, 'posts', postId));
-              // Turant UI se hata do (Fast UX)
               setMyPosts(prev => prev.filter(p => p.id !== postId));
             } catch (error) {
-              console.log(error);
               Alert.alert("Error", "Could not delete post.");
             }
           }
@@ -106,32 +159,86 @@ export default function ProfileScreen() {
     }
   };
 
-  const renderMiniPost = ({ item, index }: { item: any, index: number }) => (
-    <Animated.View entering={FadeInDown.delay(index * 100).springify()} style={styles.miniPostCard}>
-      <View style={styles.miniPostHeader}>
-        <View style={{flexDirection: 'row', alignItems: 'center'}}>
-          <View style={styles.badgeContainer}>
-            <Ionicons 
-              name={item.type === 'code' ? 'code-slash' : item.type === 'poll' ? 'stats-chart' : item.type === 'resource' ? 'book' : item.type === 'image' ? 'image' : 'text'} 
-              size={14} color="#4f46e5" 
-            />
-            <Text style={styles.miniPostType}>{item.type.toUpperCase()}</Text>
-          </View>
-          <Text style={styles.miniPostLikes}>❤️ {item.likes?.length || 0}</Text>
-        </View>
+  // ==========================================
+  // 6. RENDERERS FOR LIST (Mixes Posts & Tests)
+  // ==========================================
+  
+  // Create a combined list of posts and tests for the "My Posts" tab
+  const combinedFeed = [...myTests, ...myPosts].sort((a: any, b: any) => {
+    // Basic sorting if timestamps exist
+    const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+    const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+    return timeB - timeA;
+  });
 
-        {/* 🗑️ DELETE BUTTON (Only in 'posts' tab) */}
-        {activeTab === 'posts' && (
-          <TouchableOpacity onPress={() => handleDeleteFromProfile(item.id)} style={styles.deleteMiniBtn}>
-            <Ionicons name="trash-outline" size={18} color="#ef4444" />
+  const renderFeedItem = ({ item, index }: { item: any, index: number }) => {
+    
+    // --- RENDER TEST CARD ---
+    if (item.isExamEngineTest) {
+      return (
+        <Animated.View entering={FadeInDown.delay(index * 100).springify()} style={styles.testCard}>
+          <TouchableOpacity 
+            activeOpacity={0.8}
+            onPress={() => router.push(`/test-analytics/${item.id}`)}
+          >
+            <View style={styles.testCardHeader}>
+              <View style={styles.testBadgeContainer}>
+                <Ionicons name="school" size={14} color="#10b981" />
+                <Text style={styles.testBadgeTxt}>CBT EXAM</Text>
+              </View>
+              <Text style={styles.testCategory}>{item.category || 'TEST'}</Text>
+            </View>
+            
+            <Text style={styles.testCardTitle} numberOfLines={2}>{item.title}</Text>
+            
+            <View style={styles.testCardFooter}>
+              <View style={styles.testFooterStat}>
+                <Ionicons name="list" size={14} color="#64748b" />
+                <Text style={styles.testFooterTxt}>{item.questions?.length || 0} Qs</Text>
+              </View>
+              <View style={styles.testFooterStat}>
+                <Ionicons name="time" size={14} color="#64748b" />
+                <Text style={styles.testFooterTxt}>{item.rules?.globalDuration || 0} Mins</Text>
+              </View>
+              <View style={[styles.testFooterStat, {backgroundColor: '#dcfce7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6}]}>
+                <Ionicons name="people" size={14} color="#16a34a" />
+                <Text style={[styles.testFooterTxt, {color: '#16a34a', fontWeight: 'bold'}]}>
+                  {Object.keys(item.responses || {}).length} Attempts
+                </Text>
+              </View>
+            </View>
           </TouchableOpacity>
-        )}
-      </View>
-      <Text style={styles.miniPostText} numberOfLines={2}>
-        {item.title || item.text || item.codeSnippet || "Media Post..."}
-      </Text>
-    </Animated.View>
-  );
+        </Animated.View>
+      );
+    }
+
+    // --- RENDER NORMAL POST CARD ---
+    return (
+      <Animated.View entering={FadeInDown.delay(index * 100).springify()} style={styles.miniPostCard}>
+        <View style={styles.miniPostHeader}>
+          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            <View style={styles.badgeContainer}>
+              <Ionicons 
+                name={item.type === 'code' ? 'code-slash' : item.type === 'poll' ? 'stats-chart' : item.type === 'resource' ? 'book' : item.type === 'image' ? 'image' : 'text'} 
+                size={14} color="#4f46e5" 
+              />
+              <Text style={styles.miniPostType}>{item.type?.toUpperCase() || 'POST'}</Text>
+            </View>
+            <Text style={styles.miniPostLikes}>❤️ {item.likes?.length || 0}</Text>
+          </View>
+
+          {activeTab === 'posts' && (
+            <TouchableOpacity onPress={() => handleDeleteFromProfile(item.id)} style={styles.deleteMiniBtn}>
+              <Ionicons name="trash-outline" size={18} color="#ef4444" />
+            </TouchableOpacity>
+          )}
+        </View>
+        <Text style={styles.miniPostText} numberOfLines={2}>
+          {item.title || item.text || item.codeSnippet || "Media Post..."}
+        </Text>
+      </Animated.View>
+    );
+  };
 
   // ==========================================
   // 🎮 REAL GAMIFICATION MATHS
@@ -148,7 +255,8 @@ export default function ProfileScreen() {
   const xpPercentage = Math.min(Math.max((xpEarnedInCurrentLevel / xpNeededForNextLevel) * 100, 0), 100);
 
   const userBadgeIds = gami.badges || [];
-  const unlockedBadges = BADGES_LIST.filter(b => userBadgeIds.includes(b.id));
+  // Note: if BADGES_LIST is not available, replace with []
+  const unlockedBadges = BADGES_LIST ? BADGES_LIST.filter((b:any) => userBadgeIds.includes(b.id)) : [];
 
   const currentStreak = gami.currentStreak || 0;
   const eduCoins = gami.eduCoins || 0;
@@ -162,9 +270,11 @@ export default function ProfileScreen() {
       <View style={styles.topBar}>
         <Text style={styles.username}>@{user?.displayName?.replace(/\s/g, '').toLowerCase() || 'student'}</Text>
         <View style={styles.topIcons}>
+          {/* 🔥 EDIT ICON FIX (#1) */}
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/edit-profile')}>
-            <Ionicons name="settings-outline" size={24} color="#0f172a" />
+            <Ionicons name="pencil-outline" size={24} color="#0f172a" />
           </TouchableOpacity>
+          {/* 🔥 LOGOUT ICON FIX (#2) */}
           <TouchableOpacity style={styles.iconBtn} onPress={handleLogout}>
             <Ionicons name="log-out-outline" size={26} color="#ef4444" />
           </TouchableOpacity>
@@ -172,7 +282,7 @@ export default function ProfileScreen() {
       </View>
 
       <FlatList
-        data={activeTab === 'posts' ? myPosts : savedPosts}
+        data={activeTab === 'posts' ? combinedFeed : savedPosts}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}
@@ -215,12 +325,12 @@ export default function ProfileScreen() {
             <View style={styles.badgesCard}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>My Badges</Text>
-                <Text style={styles.badgeCount}>{unlockedBadges.length} / {BADGES_LIST.length}</Text>
+                <Text style={styles.badgeCount}>{unlockedBadges.length} / {BADGES_LIST ? BADGES_LIST.length : 0}</Text>
               </View>
               
               {unlockedBadges.length > 0 ? (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgesScroll}>
-                  {unlockedBadges.map((badge, idx) => (
+                  {unlockedBadges.map((badge:any, idx:number) => (
                     <Animated.View entering={FadeIn.delay(idx * 100)} key={badge.id} style={styles.badgeItem}>
                       <Text style={styles.badgeEmoji}>{badge.icon}</Text>
                       <Text style={styles.badgeName}>{badge.name}</Text>
@@ -297,7 +407,7 @@ export default function ProfileScreen() {
             <View style={styles.tabContainer}>
               <TouchableOpacity style={[styles.tabBtn, activeTab === 'posts' && styles.activeTabBtn]} onPress={() => setActiveTab('posts')}>
                 <Ionicons name="grid-outline" size={20} color={activeTab === 'posts' ? '#4f46e5' : '#64748b'} />
-                <Text style={[styles.tabText, activeTab === 'posts' && styles.activeTabText]}>My Posts ({myPosts.length})</Text>
+                <Text style={[styles.tabText, activeTab === 'posts' && styles.activeTabText]}>My Creation ({combinedFeed.length})</Text>
               </TouchableOpacity>
               
               <TouchableOpacity style={[styles.tabBtn, activeTab === 'saved' && styles.activeTabBtn]} onPress={() => setActiveTab('saved')}>
@@ -307,11 +417,11 @@ export default function ProfileScreen() {
             </View>
           </View>
         }
-        renderItem={renderMiniPost}
+        renderItem={renderFeedItem}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Ionicons name={activeTab === 'posts' ? "document-text-outline" : "bookmarks-outline"} size={60} color="#cbd5e1" />
-            <Text style={styles.emptyText}>{activeTab === 'posts' ? "You haven't posted anything yet." : "No saved posts."}</Text>
+            <Text style={styles.emptyText}>{activeTab === 'posts' ? "You haven't posted or created tests yet." : "No saved posts."}</Text>
           </View>
         }
       />
@@ -389,7 +499,7 @@ const styles = StyleSheet.create({
   tabText: { fontSize: 14, fontWeight: '800', color: '#64748b', marginLeft: 8 },
   activeTabText: { color: '#4f46e5' },
 
-  // Mini Posts List
+  // Mini Posts List (For Normal Posts)
   miniPostCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 12, padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: {width: 0, height: 1}, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
   miniPostHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   badgeContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef2ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
@@ -397,6 +507,17 @@ const styles = StyleSheet.create({
   miniPostLikes: { fontSize: 12, fontWeight: '800', color: '#475569', marginLeft: 10 },
   deleteMiniBtn: { backgroundColor: '#fef2f2', padding: 6, borderRadius: 10 },
   miniPostText: { fontSize: 15, color: '#1e293b', lineHeight: 22, fontWeight: '500' },
+
+  // New Test Card UI
+  testCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 12, padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#4f46e5', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
+  testCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  testBadgeContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ecfdf5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  testBadgeTxt: { fontSize: 10, fontWeight: '900', color: '#10b981', marginLeft: 4, letterSpacing: 0.5 },
+  testCategory: { fontSize: 11, fontWeight: '800', color: '#64748b' },
+  testCardTitle: { fontSize: 16, fontWeight: '900', color: '#0f172a', marginBottom: 12, lineHeight: 22 },
+  testCardFooter: { flexDirection: 'row', gap: 15, paddingTop: 10, borderTopWidth: 1, borderColor: '#f1f5f9', alignItems: 'center' },
+  testFooterStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  testFooterTxt: { fontSize: 12, fontWeight: '800', color: '#64748b' },
 
   emptyState: { alignItems: 'center', marginTop: 60 },
   emptyText: { marginTop: 15, fontSize: 15, fontWeight: '700', color: '#94a3b8' }

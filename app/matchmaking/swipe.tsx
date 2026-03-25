@@ -1,337 +1,479 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
-  View, Text, StyleSheet, TouchableOpacity,
-  Dimensions, Image, ActivityIndicator, Platform 
+  View, Text, StyleSheet, Image, ActivityIndicator, TouchableOpacity, 
+  Platform, Dimensions, StatusBar, SafeAreaView, Pressable 
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import Swiper from 'react-native-deck-swiper';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import Animated, { 
-  useSharedValue, useAnimatedStyle, withSpring, withTiming, 
-  interpolate, Extrapolation, runOnJS 
+  FadeIn, FadeOut, SlideInDown, ZoomIn, useSharedValue, 
+  useAnimatedStyle, withSpring, withSequence, withTiming 
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { auth, db } from '../../firebaseConfig';
-import { collection, getDocs, query, where, addDoc, serverTimestamp } from 'firebase/firestore';
 
-const { width, height } = Dimensions.get('window');
-const SWIPE_THRESHOLD = width * 0.25;
+// 🔥 FIREBASE SETUP
+import { db, auth } from '../../firebaseConfig'; 
+import { collection, query, where, getDocs, limit, addDoc, serverTimestamp, setDoc, doc } from 'firebase/firestore';
 
-export default function SwipeScreen() {
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// ==========================================
+// 🧠 INTERFACES & TYPES
+// ==========================================
+interface StudyPartner {
+  id: string;
+  displayName: string;
+  photoURL: string;
+  targetExam: string;
+  class: string;
+  studyTime: string;
+  bio: string;
+  dailyHours: number;
+  streak: number;
+  strongSubjects?: string[];
+  matchScore?: number; // Calculated dynamically
+}
+
+// ==========================================
+// 🚀 THE ULTIMATE MATCHMAKING SCREEN
+// ==========================================
+export default function UltimateSwipeDeck() {
   const router = useRouter();
-  const params = useLocalSearchParams(); 
+  const params = useLocalSearchParams();
   const currentUid = auth.currentUser?.uid;
-
-  const classLevel = (params.classLevel as string) || 'Any Class';
-  const targetExam = (params.targetExam as string) || 'Any Exam';
-  const needHelpIn = (params.needHelpIn as string) || 'General';
-  const canTeach = (params.canTeach as string) || 'General';
-
-  const [profiles, setProfiles] = useState<any[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  
+  const swiperRef = useRef<Swiper<StudyPartner>>(null);
+  const [users, setUsers] = useState<StudyPartner[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const rotate = useSharedValue(0);
-  const scale = useSharedValue(1);
+  const [cardsDone, setCardsDone] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  
+  // Custom Success Overlay State
+  const [showMatchAnimation, setShowMatchAnimation] = useState(false);
 
   // ==========================================
-  // 📡 THE "EASY & FORGIVING" FETCH ENGINE
+  // 🧮 ALGORITHM: DYNAMIC MATCH SCORING
   // ==========================================
-  const fetchMatches = useCallback(async () => {
-    if (!currentUid) return;
-    setLoading(true);
-    try {
-      const connRef = collection(db, 'connections');
-      const [sentSnap, receivedSnap] = await Promise.all([
-        getDocs(query(connRef, where('senderId', '==', currentUid))), 
-        getDocs(query(connRef, where('receiverId', '==', currentUid)))
-      ]);
-      
-      const existingUids = new Set<string>();
-      sentSnap.forEach(doc => existingUids.add(doc.data().receiverId));
-      receivedSnap.forEach(doc => existingUids.add(doc.data().senderId));
+  const calculateMatchScore = useCallback((partner: any) => {
+    let score = 50; // Base score
+    
+    // Exam Match (Heaviest Weight)
+    if (partner.targetExam === params.exam) score += 25;
+    
+    // Class Match
+    if (partner.class === params.targetClass) score += 15;
+    
+    // Timing Match
+    if (partner.studyTime === params.timing) score += 10;
+    
+    // Limit to 99% for realistic feel
+    return Math.min(score, 99);
+  }, [params]);
 
-      const usersQuery = query(collection(db, 'users'), where('uid', '!=', currentUid));
-      const usersSnap = await getDocs(usersQuery);
-      
-      let scoredMatches: any[] = [];
-
-      usersSnap.forEach(doc => {
-        const u = doc.data();
-        if (existingUids.has(u.uid)) return; 
-
-        let matchScore = 0;
-        let matchReason = "New on Eduxity"; // Default reason
-        let badgeColor = "#64748b"; 
-
-        const userClass = (u.classLevel || u.roleDetail || u.class || '').toLowerCase(); 
-        const userTarget = (u.targetExam || u.target || '').toLowerCase();
-        
-        // 🧠 Combine all possible fields to make matching easy!
-        const allSkillsStr = JSON.stringify([u.strongSubject, u.strongSubjects, u.skills, u.interests]).toLowerCase();
-        const allWeaknessesStr = JSON.stringify([u.weakSubject, u.weakSubjects, u.needsHelpIn]).toLowerCase();
-
-        // 🧮 EASY SCORING LOGIC
-        if (needHelpIn !== 'General' && allSkillsStr.includes(needHelpIn.toLowerCase())) { 
-          matchScore += 100; matchReason = `Expert in ${needHelpIn}`; badgeColor = "#ec4899"; 
-        }
-        if (targetExam !== 'Any Exam' && userTarget.includes(targetExam.toLowerCase())) { 
-          matchScore += 50; 
-          if(matchScore === 50) { matchReason = `Preparing for ${targetExam}`; badgeColor = "#fde047"; }
-        }
-        if (classLevel !== 'Any Class' && userClass.includes(classLevel.toLowerCase())) { 
-          matchScore += 30; 
-          if(matchScore === 30) { matchReason = `Also in ${classLevel}`; badgeColor = "#38bdf8"; } 
-        }
-        if (canTeach !== 'General' && allWeaknessesStr.includes(canTeach.toLowerCase())) { 
-          matchScore += 60; 
-          matchReason = "Mutual Benefit (Perfect Match)"; badgeColor = "#10b981"; 
-        }
-
-        // 🔥 THE MAGIC: Push EVERYONE into the array, even if score is 0.
-        scoredMatches.push({
-          id: doc.id,
-          uid: u.uid,
-          name: u.displayName || u.name || 'Scholar',
-          avatar: u.photoURL || u.profilePic || `https://ui-avatars.com/api/?name=${u.displayName || 'User'}&background=random`,
-          bio: u.bio || `Exploring Eduxity to find some good study partners!`,
-          target: u.targetExam || 'Aspirant',
-          classLabel: u.classLevel || u.roleDetail || 'Student',
-          matchScore,
-          matchReason,
-          badgeColor,
-          tags: (u.interests || u.skills || ['Hardworker']).slice(0, 3), 
-        });
-      });
-
-      // Sort by highest score. (0 scores will go to the bottom)
-      scoredMatches.sort((a, b) => b.matchScore - a.matchScore);
-      
-      setProfiles(scoredMatches);
-      setCurrentIndex(0); 
-      
-      translateX.value = 0; translateY.value = 0; rotate.value = 0; scale.value = 1;
-    } catch (error) {
-      console.error("Matchmaking Error:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentUid, classLevel, targetExam, needHelpIn, canTeach]);
-
+  // ==========================================
+  // 📡 FIREBASE FETCH LOGIC (SMART VS STRICT)
+  // ==========================================
   useEffect(() => {
-    fetchMatches();
-  }, [fetchMatches]);
-
-  const currentProfile = profiles[currentIndex];
-
-  const handleSwipeComplete = async (direction: 'right' | 'left') => {
-    if (direction === 'right' && currentProfile && currentUid) {
+    const fetchMatches = async () => {
+      if (!currentUid) return;
       try {
-        await addDoc(collection(db, 'connections'), {
-          senderId: currentUid,
-          senderName: auth.currentUser?.displayName || "Student",
-          senderAvatar: auth.currentUser?.photoURL || "",
-          receiverId: currentProfile.uid, 
-          receiverName: currentProfile.name,
-          receiverAvatar: currentProfile.avatar,
-          status: 'pending',
-          matchReason: currentProfile.matchReason, 
-          timestamp: serverTimestamp()
+        console.log("Radar Active. Params:", params);
+        const usersRef = collection(db, 'users');
+        const isSmartMode = params.smartMode === 'true';
+        let q;
+
+        if (isSmartMode) {
+          // SMART MODE: Relaxed Query (Only Exam Match)
+          q = query(usersRef, where('targetExam', '==', params.exam), limit(25));
+        } else {
+          // STRICT MODE: Exact Match Required
+          q = query(
+            usersRef, 
+            where('targetExam', '==', params.exam), 
+            where('class', '==', params.targetClass), 
+            limit(25)
+          );
+        }
+
+        const snapshot = await getDocs(q);
+        const fetchedUsers: StudyPartner[] = [];
+
+        snapshot.forEach((docSnap) => {
+          if (docSnap.id !== currentUid) {
+            const data = docSnap.data();
+            fetchedUsers.push({
+              id: docSnap.id,
+              displayName: data.displayName || 'Eduxity Scholar',
+              photoURL: data.photoURL || 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png',
+              targetExam: data.targetExam || 'General',
+              class: data.class || 'Student',
+              studyTime: data.studyTime || 'Flexible',
+              bio: data.bio || 'Ready to enter the flow state and crush my goals.',
+              dailyHours: data.dailyHours || 4,
+              streak: data.streak || 1,
+              strongSubjects: data.strongSubjects || ['Physics']
+            });
+          }
         });
-      } catch (error) { 
-        console.log("Failed to send request:", error); 
+
+        // Apply Local Match Scoring Algorithm
+        const rankedUsers = fetchedUsers.map(u => ({
+          ...u,
+          matchScore: calculateMatchScore(u)
+        })).sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+
+        setUsers(rankedUsers);
+      } catch (error) {
+        console.error("Matchmaking Fetch Error:", error);
+      } finally {
+        setLoading(false);
       }
+    };
+
+    fetchMatches();
+  }, [params, currentUid]);
+
+  // ==========================================
+  // 🎮 ACTIONS: SWIPE RIGHT (REQUEST)
+  // ==========================================
+  const handleSwipeRight = async (index: number) => {
+    const swipedUser = users[index];
+    if (!currentUid || !swipedUser) return;
+    
+    setCurrentIndex(index + 1);
+    
+    if (Platform.OS !== 'web') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
 
-    if (currentIndex < profiles.length) {
-      setCurrentIndex(prev => prev + 1);
-      translateX.value = 0; translateY.value = 0; rotate.value = 0; scale.value = 1;
+    // Trigger local overlay animation
+    setShowMatchAnimation(true);
+    setTimeout(() => setShowMatchAnimation(false), 1200);
+
+    try {
+      const connectionId = `${currentUid}_${swipedUser.id}`;
+      await setDoc(doc(db, 'connections', connectionId), {
+        senderId: currentUid,
+        senderName: auth.currentUser?.displayName || 'Scholar',
+        senderPhoto: auth.currentUser?.photoURL || '',
+        receiverId: swipedUser.id,
+        status: 'pending',
+        matchScore: swipedUser.matchScore,
+        createdAt: serverTimestamp()
+      });
+      console.log(`✅ Request sent to ${swipedUser.displayName}`);
+    } catch (e) {
+      console.error("Failed to send request:", e);
     }
   };
 
-  const handleRestart = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    fetchMatches(); // Reloads entirely from DB
+  // ==========================================
+  // 🎮 ACTIONS: SWIPE LEFT (IGNORE)
+  // ==========================================
+  const handleSwipeLeft = (index: number) => {
+    setCurrentIndex(index + 1);
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    console.log(`❌ Ignored ${users[index]?.displayName}`);
   };
 
-  const panGesture = Gesture.Pan()
-    .onStart(() => { scale.value = withTiming(1.02); })
-    .onUpdate((event) => {
-      translateX.value = event.translationX;
-      translateY.value = event.translationY;
-      rotate.value = interpolate(event.translationX, [-width / 2, width / 2], [-10, 10], Extrapolation.CLAMP);
-    })
-    .onEnd(() => {
-      scale.value = withTiming(1);
-      if (translateX.value > SWIPE_THRESHOLD) {
-        translateX.value = withSpring(width + 100, { velocity: 50 });
-        runOnJS(Haptics.notificationAsync)(Haptics.NotificationFeedbackType.Success);
-        runOnJS(handleSwipeComplete)('right');
-      } else if (translateX.value < -SWIPE_THRESHOLD) {
-        translateX.value = withSpring(-width - 100, { velocity: 50 });
-        runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
-        runOnJS(handleSwipeComplete)('left');
-      } else {
-        translateX.value = withSpring(0);
-        translateY.value = withSpring(0);
-        rotate.value = withSpring(0);
-      }
-    });
+  // ==========================================
+  // 🃏 PREMIUM CARD RENDERER
+  // ==========================================
+  const renderCard = (card: StudyPartner) => {
+    if (!card) return <View style={styles.emptyCard} />;
 
-  const swipeAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }, { translateY: translateY.value }, { rotateZ: `${rotate.value}deg` }, { scale: scale.value }],
-  }));
+    return (
+      <View style={styles.cardContainer}>
+        {/* Main Background Image */}
+        <Image source={{ uri: card.photoURL }} style={styles.cardImage} />
+        
+        {/* Dark Gradient for Text Readability */}
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.8)', 'rgba(0,0,0,1)']}
+          style={styles.gradientOverlay}
+        />
 
-  const nopeOpacityStyle = useAnimatedStyle(() => ({ opacity: interpolate(translateX.value, [0, -SWIPE_THRESHOLD], [0, 1], Extrapolation.CLAMP) }));
-  const likeOpacityStyle = useAnimatedStyle(() => ({ opacity: interpolate(translateX.value, [0, SWIPE_THRESHOLD], [0, 1], Extrapolation.CLAMP) }));
+        {/* Top Badges */}
+        <View style={styles.topBadgesContainer}>
+          <BlurView intensity={40} tint="dark" style={styles.matchBadge}>
+            <Ionicons name="flame" size={14} color="#fcd34d" />
+            <Text style={styles.matchText}>{card.matchScore}% Match</Text>
+          </BlurView>
+          <View style={styles.onlineBadge}>
+            <View style={styles.onlineDot} />
+            <Text style={styles.onlineText}>Active</Text>
+          </View>
+        </View>
 
+        {/* Core Information Section */}
+        <View style={styles.infoContainer}>
+          <Text style={styles.nameText}>{card.displayName}</Text>
+          
+          <Text style={styles.bioText} numberOfLines={2}>
+            "{card.bio}"
+          </Text>
+
+          <View style={styles.tagsContainer}>
+            <BlurView intensity={30} tint="light" style={styles.blurTag}>
+              <Ionicons name="school" size={14} color="#fff" />
+              <Text style={styles.tagText}>{card.targetExam} • {card.class}</Text>
+            </BlurView>
+            <BlurView intensity={30} tint="light" style={styles.blurTag}>
+              <Ionicons name="time" size={14} color="#fff" />
+              <Text style={styles.tagText}>{card.studyTime}</Text>
+            </BlurView>
+          </View>
+
+          {/* Deep Stats Row */}
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{card.dailyHours}h</Text>
+              <Text style={styles.statLabel}>Daily Avg</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{card.streak}</Text>
+              <Text style={styles.statLabel}>Day Streak</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, {color: '#34d399', fontSize: 14}]}>
+                {card.strongSubjects?.[0] || 'Maths'}
+              </Text>
+              <Text style={styles.statLabel}>Expert In</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  // ==========================================
+  // 🔄 LOADING & EMPTY STATES
+  // ==========================================
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#ec4899" />
-        <Text style={styles.loadingText}>Fetching available profiles...</Text>
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#4f46e5" />
+        <Text style={styles.loaderText}>Scanning database for the best minds...</Text>
       </View>
     );
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={styles.container}>
-        <StatusBar style="light" />
-        
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-            <Ionicons name="chevron-back" size={28} color="#f8fafc" />
-          </TouchableOpacity>
-          <View style={{alignItems: 'center'}}>
-            <Text style={styles.headerTitle}>Network</Text>
-            <Text style={styles.headerSub}>{targetExam !== 'Any Exam' ? targetExam : 'All Users'}</Text>
-          </View>
-          <View style={{width: 40}} />
+    <SafeAreaView style={styles.mainWrapper}>
+      <StatusBar barStyle="light-content" />
+      
+      {/* 🚀 ABSOLUTE BACKGROUND FOR PREMIUM FEEL */}
+      <View style={styles.absoluteBackground} />
+
+      {/* 🔝 HEADER */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+          <Ionicons name="chevron-down" size={28} color="#fff" />
+        </TouchableOpacity>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>Study Radar</Text>
+          <Text style={styles.headerSubTitle}>
+            {currentIndex} / {users.length} Profiles
+          </Text>
         </View>
+        <TouchableOpacity style={styles.iconBtn} onPress={() => alert("Filters opening...")}>
+          <Ionicons name="options" size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
 
-        <View style={styles.cardArea}>
-          {profiles.length === 0 ? (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIconBg}><Ionicons name="search-outline" size={60} color="#ec4899" /></View>
-              <Text style={styles.emptyTitle}>You're the first one here!</Text>
-              <Text style={styles.emptySub}>Share the app with your friends to start building a network.</Text>
+      {/* 🃏 DECK SWIPER */}
+      <View style={styles.deckWrapper}>
+        {cardsDone || users.length === 0 ? (
+          <Animated.View entering={ZoomIn} style={styles.noCardsView}>
+            <View style={styles.radarCircle}>
+              <Ionicons name="radio-outline" size={60} color="#4f46e5" />
             </View>
-          ) : currentIndex >= profiles.length ? (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIconBg}><Ionicons name="radar-outline" size={60} color="#ec4899" /></View>
-              <Text style={styles.emptyTitle}>You've seen everyone!</Text>
-              <Text style={styles.emptySub}>Want to give the people you passed on another chance?</Text>
-              
-              <View style={styles.emptyBtnRow}>
-                <TouchableOpacity style={styles.restartBtn} onPress={handleRestart}>
-                  <Ionicons name="refresh" size={18} color="#fff" style={{marginRight: 6}} />
-                  <Text style={styles.restartBtnText}>Shuffle Again</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <GestureDetector gesture={panGesture}>
-              <Animated.View style={[styles.cardWrapper, swipeAnimatedStyle]}>
-                
-                <Animated.View style={[styles.badge, styles.nopeBadge, nopeOpacityStyle]}><Text style={styles.nopeText}>PASS</Text></Animated.View>
-                <Animated.View style={[styles.badge, styles.likeBadge, likeOpacityStyle]}><Text style={styles.likeText}>CONNECT</Text></Animated.View>
-
-                <View style={styles.card}>
-                  <Image source={{ uri: currentProfile.avatar }} style={styles.profileImage} />
-                  <LinearGradient colors={['transparent', 'rgba(2, 6, 23, 0.85)', '#020617']} style={styles.cardGradient}>
-                    <View style={styles.cardContent}>
-                      
-                      {currentProfile.matchScore > 0 && (
-                        <View style={[styles.matchHighlightBadge, { backgroundColor: currentProfile.badgeColor + '20', borderColor: currentProfile.badgeColor }]}>
-                          <Ionicons name="sparkles" size={12} color={currentProfile.badgeColor} />
-                          <Text style={[styles.matchHighlightText, { color: currentProfile.badgeColor }]}>{currentProfile.matchReason}</Text>
-                        </View>
-                      )}
-
-                      <Text style={styles.profileName}>{currentProfile.name}</Text>
-                      <Text style={styles.targetText}>{currentProfile.target || currentProfile.classLabel}</Text>
-                      <Text style={styles.bioText} numberOfLines={2}>"{currentProfile.bio}"</Text>
-                      
-                      <View style={styles.tagsRow}>
-                        {currentProfile.tags.map((tag: string, idx: number) => (
-                          <View key={idx} style={styles.skillTag}>
-                            <Text style={styles.skillTagText}>{tag}</Text>
-                          </View>
-                        ))}
-                      </View>
-
-                    </View>
-                  </LinearGradient>
-                </View>
-
-              </Animated.View>
-            </GestureDetector>
-          )}
-        </View>
-
-        {currentIndex < profiles.length && profiles.length > 0 && (
-          <View style={styles.footerControls}>
-            <TouchableOpacity style={[styles.actionBtn, styles.skipBtn]} activeOpacity={0.8} onPress={() => { translateX.value = withSpring(-width - 100); setTimeout(() => handleSwipeComplete('left'), 300); }}>
-              <Ionicons name="close" size={36} color="#ef4444" />
+            <Text style={styles.noCardsTitle}>Radar Empty</Text>
+            <Text style={styles.noCardsDesc}>
+              We've shown you all available partners for your current filters. 
+              {params.smartMode === 'false' ? " Try enabling Smart Mode!" : " Check back later!"}
+            </Text>
+            <TouchableOpacity style={styles.reloadBtn} onPress={() => router.back()}>
+              <Text style={styles.reloadBtnText}>Adjust Filters</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionBtn, styles.connectBtn]} activeOpacity={0.8} onPress={() => { translateX.value = withSpring(width + 100); setTimeout(() => handleSwipeComplete('right'), 300); }}>
-              <Ionicons name="flash" size={32} color="#fff" />
-            </TouchableOpacity>
-          </View>
+          </Animated.View>
+        ) : (
+          <Swiper
+            ref={swiperRef}
+            cards={users}
+            renderCard={renderCard}
+            onSwipedLeft={handleSwipeLeft}
+            onSwipedRight={handleSwipeRight}
+            onSwipedAll={() => setCardsDone(true)}
+            cardIndex={0}
+            backgroundColor="transparent"
+            stackSize={3}
+            stackScale={5}
+            stackSeparation={14}
+            animateCardOpacity
+            disableTopSwipe
+            disableBottomSwipe
+            overlayLabels={{
+              left: {
+                title: 'PASS',
+                style: {
+                  label: styles.overlayLabelNope,
+                  wrapper: styles.overlayWrapperLeft
+                }
+              },
+              right: {
+                title: 'CONNECT',
+                style: {
+                  label: styles.overlayLabelLike,
+                  wrapper: styles.overlayWrapperRight
+                }
+              }
+            }}
+          />
         )}
-      </SafeAreaView>
-    </GestureHandlerRootView>
+      </View>
+
+      {/* 🎮 FLOATING ACTION BUTTONS */}
+      {!cardsDone && users.length > 0 && (
+        <Animated.View entering={SlideInDown.delay(300)} style={styles.actionRow}>
+          
+          <AnimatedButton 
+            icon="close" 
+            color="#ef4444" 
+            size={65} 
+            onPress={() => swiperRef.current?.swipeLeft()} 
+          />
+          
+          <AnimatedButton 
+            icon="bookmark" 
+            color="#3b82f6" 
+            size={55} 
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              Alert.alert("Saved", "Profile saved for later.");
+            }} 
+          />
+
+          <AnimatedButton 
+            icon="heart" 
+            color="#10b981" 
+            size={65} 
+            onPress={() => swiperRef.current?.swipeRight()} 
+          />
+
+        </Animated.View>
+      )}
+
+      {/* ✨ SUCCESS OVERLAY ANIMATION */}
+      {showMatchAnimation && (
+        <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.successOverlay}>
+          <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+          <Ionicons name="paper-plane" size={100} color="#10b981" />
+          <Text style={styles.successText}>Request Sent!</Text>
+        </Animated.View>
+      )}
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#020617' }, 
-  loadingText: { color: '#a78bfa', marginTop: 15, fontWeight: '700', fontSize: 14, letterSpacing: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 40 : 10, paddingBottom: 10 },
-  iconBtn: { padding: 8, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 20 },
-  headerTitle: { fontSize: 20, fontWeight: '900', color: '#f8fafc', letterSpacing: 0.5 },
-  headerSub: { color: '#ec4899', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', marginTop: 2 },
-  
-  cardArea: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  cardWrapper: { width: width * 0.9, height: height * 0.68, position: 'relative' },
-  card: { width: '100%', height: '100%', backgroundColor: '#0f172a', borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: '#1e293b', elevation: 10, shadowColor: '#ec4899', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 20 },
-  profileImage: { width: '100%', height: '100%', position: 'absolute' },
-  cardGradient: { position: 'absolute', bottom: 0, width: '100%', height: '75%', justifyContent: 'flex-end', padding: 20 },
-  cardContent: { width: '100%' },
-  
-  matchHighlightBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, alignSelf: 'flex-start', marginBottom: 10, borderWidth: 1 },
-  matchHighlightText: { fontSize: 11, fontWeight: '900', marginLeft: 5, letterSpacing: 0.5 },
-  profileName: { fontSize: 34, fontWeight: '900', color: '#fff', marginBottom: 4, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: {width: 1, height: 1}, textShadowRadius: 10 },
-  targetText: { color: '#fde047', fontSize: 14, fontWeight: '800', marginBottom: 12 },
-  bioText: { color: '#cbd5e1', fontSize: 15, fontWeight: '500', lineHeight: 22, marginBottom: 20, fontStyle: 'italic' },
-  
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  skillTag: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
-  skillTagText: { color: '#f8fafc', fontSize: 12, fontWeight: '700' },
+// ==========================================
+// 🕹️ CUSTOM ANIMATED BUTTON COMPONENT
+// ==========================================
+const AnimatedButton = ({ icon, color, size, onPress }: any) => {
+  const scale = useSharedValue(1);
 
-  badge: { position: 'absolute', top: 40, paddingHorizontal: 20, paddingVertical: 8, borderRadius: 12, borderWidth: 4, zIndex: 100, transform: [{rotate: '-15deg'}] },
-  nopeBadge: { right: 40, borderColor: '#ef4444', transform: [{rotate: '15deg'}] },
-  nopeText: { color: '#ef4444', fontSize: 32, fontWeight: '900', letterSpacing: 2 },
-  likeBadge: { left: 40, borderColor: '#10b981' },
-  likeText: { color: '#10b981', fontSize: 32, fontWeight: '900', letterSpacing: 2 },
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }]
+  }));
+
+  const handlePressIn = () => { scale.value = withSpring(0.85); };
+  const handlePressOut = () => { 
+    scale.value = withSpring(1); 
+    onPress();
+  };
+
+  return (
+    <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut}>
+      <Animated.View style={[styles.actionBtn, { width: size, height: size }, animatedStyle]}>
+        <Ionicons name={icon} size={size * 0.45} color={color} />
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+// ==========================================
+// 🎨 HYPER-PREMIUM STYLESHEET
+// ==========================================
+const styles = StyleSheet.create({
+  mainWrapper: { flex: 1, backgroundColor: '#020617' },
+  absoluteBackground: { position: 'absolute', top: 0, width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.4, backgroundColor: '#4f46e5', borderBottomLeftRadius: 50, borderBottomRightRadius: 50, opacity: 0.15 },
   
-  footerControls: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingBottom: Platform.OS === 'ios' ? 40 : 20, gap: 30, marginTop: 10 },
-  actionBtn: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 8 },
-  skipBtn: { backgroundColor: '#0f172a', borderWidth: 2, borderColor: '#ef4444', shadowColor: '#ef4444' },
-  connectBtn: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#ec4899', shadowColor: '#ec4899', borderWidth: 2, borderColor: '#fbcfe8' },
+  // Header
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20, zIndex: 10 },
+  iconBtn: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  headerCenter: { alignItems: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: '#fff', letterSpacing: 1, textTransform: 'uppercase' },
+  headerSubTitle: { fontSize: 12, fontWeight: '700', color: '#94a3b8', marginTop: 2 },
+
+  // Deck Base
+  deckWrapper: { flex: 1, marginTop: -20, marginBottom: Platform.OS === 'ios' ? 120 : 100 },
   
-  emptyState: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 },
-  emptyIconBg: { backgroundColor: 'rgba(236, 72, 153, 0.1)', padding: 30, borderRadius: 60, marginBottom: 20 },
-  emptyTitle: { fontSize: 24, fontWeight: '900', color: '#f8fafc', marginBottom: 10, textAlign: 'center' },
-  emptySub: { fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 22, marginBottom: 30 },
+  // Card Design
+  cardContainer: { height: SCREEN_HEIGHT * 0.68, width: SCREEN_WIDTH - 40, borderRadius: 30, backgroundColor: '#0f172a', overflow: 'hidden', elevation: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.5, shadowRadius: 30 },
+  cardImage: { position: 'absolute', width: '100%', height: '100%', resizeMode: 'cover' },
+  gradientOverlay: { position: 'absolute', width: '100%', height: '70%', bottom: 0 },
   
-  emptyBtnRow: { flexDirection: 'row', gap: 15 },
-  restartBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ec4899', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 20 },
-  restartBtnText: { color: '#fff', fontWeight: '900', fontSize: 14 }
+  // Card Badges
+  topBadgesContainer: { flexDirection: 'row', justifyContent: 'space-between', padding: 20, position: 'absolute', top: 0, width: '100%' },
+  matchBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 15, overflow: 'hidden' },
+  matchText: { color: '#fcd34d', fontSize: 13, fontWeight: '900', marginLeft: 6 },
+  onlineBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 15 },
+  onlineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#10b981', marginRight: 6 },
+  onlineText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+
+  // Card Info
+  infoContainer: { position: 'absolute', bottom: 0, width: '100%', padding: 25 },
+  nameText: { fontSize: 34, fontWeight: '900', color: '#fff', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 10 },
+  bioText: { fontSize: 15, color: '#e2e8f0', fontWeight: '500', lineHeight: 22, marginTop: 8, fontStyle: 'italic' },
+  tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 15 },
+  blurTag: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  tagText: { color: '#fff', fontSize: 13, fontWeight: '700', marginLeft: 6 },
+  
+  // Sub-Stats Row
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, backgroundColor: 'rgba(0,0,0,0.4)', padding: 15, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  statItem: { alignItems: 'center', flex: 1 },
+  statValue: { fontSize: 18, fontWeight: '900', color: '#fff' },
+  statLabel: { fontSize: 10, fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', marginTop: 4 },
+  statDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.1)' },
+
+  // Action Buttons
+  actionRow: { position: 'absolute', bottom: Platform.OS === 'ios' ? 40 : 20, width: '100%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 25, zIndex: 20 },
+  actionBtn: { backgroundColor: '#fff', borderRadius: 50, justifyContent: 'center', alignItems: 'center', elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20 },
+
+  // Overlay Labels (Nope/Connect)
+  overlayLabelNope: { fontSize: 36, fontWeight: '900', color: '#ef4444', borderWidth: 4, borderColor: '#ef4444', padding: 10, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.9)', overflow: 'hidden' },
+  overlayWrapperLeft: { flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'flex-start', marginTop: 40, marginLeft: -40, transform: [{ rotate: '15deg' }] },
+  overlayLabelLike: { fontSize: 36, fontWeight: '900', color: '#10b981', borderWidth: 4, borderColor: '#10b981', padding: 10, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.9)', overflow: 'hidden' },
+  overlayWrapperRight: { flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'flex-start', marginTop: 40, marginLeft: 40, transform: [{ rotate: '-15deg' }] },
+
+  // Loading & Empty States
+  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#020617' },
+  loaderText: { color: '#94a3b8', marginTop: 15, fontWeight: '700', fontSize: 15 },
+  noCardsView: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
+  radarCircle: { width: 120, height: 120, borderRadius: 60, backgroundColor: 'rgba(79, 70, 229, 0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: 'rgba(79, 70, 229, 0.3)' },
+  noCardsTitle: { fontSize: 26, fontWeight: '900', color: '#fff', marginBottom: 10 },
+  noCardsDesc: { fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 22, paddingHorizontal: 20 },
+  reloadBtn: { marginTop: 30, backgroundColor: '#4f46e5', paddingHorizontal: 30, paddingVertical: 16, borderRadius: 20 },
+  reloadBtnText: { color: '#fff', fontSize: 16, fontWeight: '900' },
+
+  // Success Overlay
+  successOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 999 },
+  successText: { fontSize: 28, fontWeight: '900', color: '#fff', marginTop: 20, textShadowColor: '#000', textShadowRadius: 10 }
 });

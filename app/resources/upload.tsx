@@ -9,7 +9,10 @@ import * as ImagePicker from 'expo-image-picker';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../../firebaseConfig';
 import { useRouter } from 'expo-router';
-import { awardXP } from '../../helpers/gamificationEngine';
+
+// 🔥 FIx 1 & 2: Process Action aur Reward Store Imported Correctly
+import { processAction } from '../../helpers/gamificationEngine'; 
+import { useRewardStore } from '../../store/useRewardStore'; 
 
 // 🛑 APNI KEYS YAHAN DAALNA 
 const GEMINI_API_KEY = 'process.env.EXPO_PUBLIC_GEMINI_API_KEY'; // Apni Gemini API Key daal do
@@ -19,6 +22,10 @@ const RECOMMENDED_TAGS = ['Physics', 'Kinematics', 'JEE Advanced', 'Short Notes'
 
 export default function AdvancedUploadScreen() {
   const router = useRouter();
+  
+  // 🔥 Fix 3: Reward Hook Call
+  const showReward = useRewardStore((state) => state.showReward);
+  
   const [activeMode, setActiveMode] = useState<'scan' | 'drive'>('scan');
   
   const [title, setTitle] = useState('');
@@ -108,7 +115,7 @@ export default function AdvancedUploadScreen() {
     }
   };
 
-  // 🚀 MAIN UPLOAD FUNCTION (Saves to POSTS collection for Feed visibility)
+  // 🚀 MAIN UPLOAD FUNCTION
   const handleUpload = async () => {
     if (!title || tags.length === 0) {
       Alert.alert("Hold on!", "Title aur kam se kam 1 tag zaroori hai bhai.");
@@ -129,13 +136,13 @@ export default function AdvancedUploadScreen() {
         finalFileUrl = driveLink; 
       }
 
-      // 💾 SAVE DIRECTLY TO POSTS COLLECTION
+      // 💾 1. SAVE DIRECTLY TO POSTS COLLECTION
       await addDoc(collection(db, 'posts'), {
         type: 'resource',
         category: 'Resources',
         title: title,
-        text: description, // Ye caption ki tarah dikhega
-        tags: tags,        // 🏷️ Naya Tags array save ho gaya
+        text: description, 
+        tags: tags,        
         fileUrl: finalFileUrl,
         structuredText: finalMarkdown,
         authorId: auth.currentUser?.uid,
@@ -146,10 +153,26 @@ export default function AdvancedUploadScreen() {
         commentsCount: 0,
       });
 
-      // 🎁 Reward Student
-      await awardXP(auth.currentUser!.uid, 100, "Shared Resource with Tags");
+      // 🔥 2. THE MAGIC BLOCK (Gamification + UI Animation trigger)
+      const currentUid = auth.currentUser?.uid;
       
-      Alert.alert("Resource Live! 🚀", "Notes feed mein chale gaye!\nEarned: +100 XP ⚡");
+      if (currentUid) {
+        const result = await processAction(currentUid, 'UPLOAD_NOTE');
+
+        // Agar Action process hua aur rewards mile
+        if (result && result.success) {
+          showReward({
+            xpEarned: result.xpEarned,
+            coinsEarned: result.coinsEarned,
+            leveledUp: result.leveledUp,
+            newLevel: result.newLevel,
+            newBadges: result.newBadges
+          });
+        }
+      }
+      
+      // 3. Navigate back
+      Alert.alert("Resource Live! 🚀", "Notes feed mein chale gaye!");
       router.back();
       
     } catch (error) {

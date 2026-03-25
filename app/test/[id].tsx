@@ -17,6 +17,7 @@ export default function NtaExamEngine() {
   const router = useRouter();
   const uid = auth.currentUser?.uid || "anonymous";
   const appState = useRef(AppState.currentState);
+  const { isDarkMode } = useTheme();
 
   // 🧠 CORE STATES
   const [phase, setPhase] = useState<'LOADING' | 'INSTRUCTIONS' | 'PLAYING' | 'SUBMITTING'>('LOADING');

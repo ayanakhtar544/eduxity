@@ -1,6 +1,6 @@
 import ResourcePreview from './ResourcePreview';
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Linking, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Linking, Alert, Share } from 'react-native';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../firebaseConfig';
 import { collection, doc, updateDoc, arrayUnion, arrayRemove, addDoc, serverTimestamp, deleteDoc, runTransaction } from 'firebase/firestore';
@@ -10,6 +10,7 @@ import { processAction } from '../helpers/gamificationEngine';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown, Layout, useSharedValue, useAnimatedStyle, withSpring, withTiming, interpolate, Extrapolation } from 'react-native-reanimated';
 import { Image } from 'expo-image';
+import { useRewardStore } from '../store/useRewardStore'; // 🔥 Reward Store
 
 const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 
@@ -25,7 +26,9 @@ export const timeAgo = (timestamp: number | undefined) => {
   return `${days}d ago`;
 };
 
-// FLASHCARD PLAYER
+// ==========================================
+// 🃏 INLINE FLASHCARD PLAYER (Cleaned up!)
+// ==========================================
 const InlineFlashcardPlayer = ({ cardsData, title }: { cardsData: any[], title: string }) => {
   const [deck, setDeck] = useState([...cardsData]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -33,7 +36,13 @@ const InlineFlashcardPlayer = ({ cardsData, title }: { cardsData: any[], title: 
   const [isFinished, setIsFinished] = useState(false);
   const flipAnim = useSharedValue(0);
 
-  useEffect(() => { setDeck([...cardsData]); setCurrentIndex(0); setIsFlipped(false); setIsFinished(false); flipAnim.value = 0; }, [cardsData]);
+  useEffect(() => { 
+    setDeck([...cardsData]); 
+    setCurrentIndex(0); 
+    setIsFlipped(false); 
+    setIsFinished(false); 
+    flipAnim.value = 0; 
+  }, [cardsData]);
 
   if (!deck || deck.length === 0) return null;
   const currentCard = deck[currentIndex];
@@ -42,49 +51,120 @@ const InlineFlashcardPlayer = ({ cardsData, title }: { cardsData: any[], title: 
     const rotateY = interpolate(flipAnim.value, [0, 180], [0, 180], Extrapolation.CLAMP);
     return { transform: [{ perspective: 1000 }, { rotateY: `${rotateY}deg` }], backfaceVisibility: 'hidden', zIndex: flipAnim.value < 90 ? 1 : 0, opacity: flipAnim.value < 90 ? 1 : 0 };
   });
+  
   const backStyle = useAnimatedStyle(() => {
     const rotateY = interpolate(flipAnim.value, [0, 180], [180, 360], Extrapolation.CLAMP);
     return { transform: [{ perspective: 1000 }, { rotateY: `${rotateY}deg` }], backfaceVisibility: 'hidden', zIndex: flipAnim.value > 90 ? 1 : 0, opacity: flipAnim.value > 90 ? 1 : 0, position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
   });
 
-  const handleFlip = () => { if(Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsFlipped(!isFlipped); flipAnim.value = withTiming(isFlipped ? 0 : 180, { duration: 400 }); };
+  const handleFlip = () => { 
+    if(Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); 
+    setIsFlipped(!isFlipped); 
+    flipAnim.value = withTiming(isFlipped ? 0 : 180, { duration: 400 }); 
+  };
+
   const handleAction = (knewIt: boolean) => {
     if(Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); 
     let nextDeck = [...deck];
-    if (!knewIt) { const failedCard = nextDeck[currentIndex]; nextDeck.push(failedCard); setDeck(nextDeck); }
-    if (currentIndex < nextDeck.length - 1) { flipAnim.value = 0; setIsFlipped(false); setCurrentIndex(prev => prev + 1); } else { setIsFinished(true); } 
+    if (!knewIt) { 
+      const failedCard = nextDeck[currentIndex]; 
+      nextDeck.push(failedCard); 
+      setDeck(nextDeck); 
+    }
+    if (currentIndex < nextDeck.length - 1) { 
+      flipAnim.value = 0; 
+      setIsFlipped(false); 
+      setCurrentIndex(prev => prev + 1); 
+    } else { 
+      setIsFinished(true); 
+    } 
   };
-  const handleRestart = () => { if(Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); flipAnim.value = 0; setIsFlipped(false); setCurrentIndex(0); setIsFinished(false); setDeck([...cardsData]); };
+
+  const handleRestart = () => { 
+    if(Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); 
+    flipAnim.value = 0; setIsFlipped(false); setCurrentIndex(0); setIsFinished(false); setDeck([...cardsData]); 
+  };
 
   if (isFinished) {
     return (
       <View style={styles.inlineFlashcardContainer}>
-        <View style={styles.flashcardFinish}><Ionicons name="trophy" size={50} color="#fde047" /><Text style={styles.finishDeckTitle}>Deck Completed!</Text><Text style={styles.finishDeckSub}>You revised {deck.length} cards today.</Text><TouchableOpacity style={styles.restartDeckBtn} onPress={handleRestart}><Ionicons name="refresh" size={16} color="#fff" /><Text style={styles.restartDeckText}>Revise Again</Text></TouchableOpacity></View>
+        <View style={styles.flashcardFinish}>
+          <Ionicons name="trophy" size={50} color="#fde047" />
+          <Text style={styles.finishDeckTitle}>Deck Completed!</Text>
+          <Text style={styles.finishDeckSub}>You revised {deck.length} cards today.</Text>
+          <TouchableOpacity style={styles.restartDeckBtn} onPress={handleRestart}>
+            <Ionicons name="refresh" size={16} color="#fff" />
+            <Text style={styles.restartDeckText}>Revise Again</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.inlineFlashcardContainer}>
-      <View style={styles.inlineFlashcardHeader}><Text style={styles.inlineFlashcardTitle} numberOfLines={1}>{title || 'Revision Deck'}</Text><Text style={styles.inlineFlashcardCount}>{currentIndex + 1} / {deck.length}</Text></View>
+      <View style={styles.inlineFlashcardHeader}>
+        <Text style={styles.inlineFlashcardTitle} numberOfLines={1}>{title || 'Revision Deck'}</Text>
+        <Text style={styles.inlineFlashcardCount}>{currentIndex + 1} / {deck.length}</Text>
+      </View>
       <View style={styles.inlineCardArea}>
-        <Animated.View style={[styles.inlineCard, styles.inlineCardFront, frontStyle]}><Text style={styles.inlineCardCategory}>Question</Text><ScrollView contentContainerStyle={styles.inlineScrollCenter}><Text style={styles.inlineCardQuestion}>{currentCard?.q}</Text></ScrollView><TouchableOpacity style={styles.inlineFlipBtn} onPress={handleFlip}><Ionicons name="refresh" size={16} color="#fff" style={{marginRight: 5}}/><Text style={styles.inlineFlipText}>Tap to see Answer</Text></TouchableOpacity></Animated.View>
-        <Animated.View style={[styles.inlineCard, styles.inlineCardBack, backStyle]}><Text style={styles.inlineCardCategory}>Answer</Text><ScrollView contentContainerStyle={styles.inlineScrollCenter}><Text style={styles.inlineCardAnswer}>{currentCard?.a}</Text></ScrollView><View style={styles.inlineCardActions}><TouchableOpacity style={[styles.inlineActionBtn, {backgroundColor: '#ef4444'}]} onPress={() => handleAction(false)}><Text style={styles.inlineActionText}>Forgot</Text></TouchableOpacity><TouchableOpacity style={[styles.inlineActionBtn, {backgroundColor: '#10b981'}]} onPress={() => handleAction(true)}><Text style={styles.inlineActionText}>Knew It</Text></TouchableOpacity></View></Animated.View>
+        <Animated.View style={[styles.inlineCard, styles.inlineCardFront, frontStyle]}>
+          <Text style={styles.inlineCardCategory}>Question</Text>
+          <ScrollView contentContainerStyle={styles.inlineScrollCenter}>
+            <Text style={styles.inlineCardQuestion}>{currentCard?.q}</Text>
+          </ScrollView>
+          <TouchableOpacity style={styles.inlineFlipBtn} onPress={handleFlip}>
+            <Ionicons name="refresh" size={16} color="#fff" style={{marginRight: 5}}/>
+            <Text style={styles.inlineFlipText}>Tap to see Answer</Text>
+          </TouchableOpacity>
+        </Animated.View>
+        <Animated.View style={[styles.inlineCard, styles.inlineCardBack, backStyle]}>
+          <Text style={styles.inlineCardCategory}>Answer</Text>
+          <ScrollView contentContainerStyle={styles.inlineScrollCenter}>
+            <Text style={styles.inlineCardAnswer}>{currentCard?.a}</Text>
+          </ScrollView>
+          <View style={styles.inlineCardActions}>
+            <TouchableOpacity style={[styles.inlineActionBtn, {backgroundColor: '#ef4444'}]} onPress={() => handleAction(false)}>
+              <Text style={styles.inlineActionText}>Forgot</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.inlineActionBtn, {backgroundColor: '#10b981'}]} onPress={() => handleAction(true)}>
+              <Text style={styles.inlineActionText}>Knew It</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
       </View>
     </View>
   );
 };
 
 // ==========================================
-// 🔥 THE PREMIUM POST CARD 
+// 🔥 THE PREMIUM POST CARD (Logic Correctly Placed Here)
 // ==========================================
 const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }: any) => {
   const router = useRouter();
-  const isLiked = item.likes?.includes(currentUid);
-  const isSaved = item.savedBy?.includes(currentUid);
-  const userVoteIndex = item.voters ? item.voters[currentUid] : undefined;
-  const hasVoted = userVoteIndex !== undefined;
+  const showReward = useRewardStore((state) => state.showReward);
   
+  // ⚡ Optimistic UI States (Likes & Saves)
+  const [localIsLiked, setLocalIsLiked] = useState(item.likes?.includes(currentUid));
+  const [localLikeCount, setLocalLikeCount] = useState(item.likes?.length || 0);
+  const [localIsSaved, setLocalIsSaved] = useState(item.savedBy?.includes(currentUid));
+
+  // 🗳️ Optimistic UI States (Polls)
+  const [localPollOptions, setLocalPollOptions] = useState(item.pollOptions);
+  const [localTotalVotes, setLocalTotalVotes] = useState(item.totalVotes || 0);
+  const [localUserVote, setLocalUserVote] = useState(item.voters ? item.voters[currentUid] : undefined);
+  const hasVoted = localUserVote !== undefined;
+
+  // Sync state if props change from DB
+  useEffect(() => {
+    setLocalIsLiked(item.likes?.includes(currentUid));
+    setLocalLikeCount(item.likes?.length || 0);
+    setLocalIsSaved(item.savedBy?.includes(currentUid));
+    setLocalPollOptions(item.pollOptions);
+    setLocalTotalVotes(item.totalVotes || 0);
+    setLocalUserVote(item.voters ? item.voters[currentUid] : undefined);
+  }, [item.likes, item.savedBy, item.pollOptions, item.totalVotes, item.voters, currentUid]);
+
   const likeScale = useSharedValue(1);
   const saveScale = useSharedValue(1);
   const collectionName = item.type === 'live_test' ? 'exams_enterprise' : 'posts';
@@ -94,24 +174,64 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
     try { await addDoc(collection(db, 'notifications'), { recipientId: item.authorId, senderId: currentUid, senderName: auth.currentUser?.displayName || 'User', senderAvatar: auth.currentUser?.photoURL || '', type: 'like', postId: item.id, isRead: false, createdAt: serverTimestamp() }); } catch (error) {}
   };
 
+  // ❤️ OPTIMISTIC LIKE LOGIC
   const handleLike = async () => {
     if (!currentUid) return;
-    likeScale.value = withSpring(0.7, {}, () => { likeScale.value = withSpring(1); });
+    
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    likeScale.value = withSpring(1.3, { damping: 5, stiffness: 200 }, () => { likeScale.value = withSpring(1); });
+
+    const wasLiked = localIsLiked;
+    setLocalIsLiked(!wasLiked);
+    setLocalLikeCount((prev: number) => wasLiked ? prev - 1 : prev + 1);
+
     try {
       const postRef = doc(db, collectionName, item.id);
-      if (isLiked) { await updateDoc(postRef, { likes: arrayRemove(currentUid) }); } 
-      else { await updateDoc(postRef, { likes: arrayUnion(currentUid) }); await sendNotification(); if (item.authorId && item.authorId !== currentUid) { await processAction(item.authorId, 'RECEIVE_LIKE'); } }
-    } catch (error) {}
+      if (wasLiked) { 
+        await updateDoc(postRef, { likes: arrayRemove(currentUid) }); 
+      } else { 
+        await updateDoc(postRef, { likes: arrayUnion(currentUid) }); 
+        await sendNotification(); 
+        if (item.authorId && item.authorId !== currentUid) { 
+          await processAction(item.authorId, 'RECEIVE_LIKE'); 
+        } 
+      }
+    } catch (error) {
+      setLocalIsLiked(wasLiked);
+      setLocalLikeCount((prev: number) => wasLiked ? prev + 1 : prev - 1);
+    }
   };
 
+  // 📑 OPTIMISTIC SAVE LOGIC
   const handleSave = async () => {
     if (!currentUid) return;
-    saveScale.value = withSpring(0.7, {}, () => { saveScale.value = withSpring(1); });
+    
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    saveScale.value = withSpring(1.3, { damping: 5, stiffness: 200 }, () => { saveScale.value = withSpring(1); });
+
+    const wasSaved = localIsSaved;
+    setLocalIsSaved(!wasSaved);
+
     try {
       const postRef = doc(db, collectionName, item.id);
-      if (isSaved) await updateDoc(postRef, { savedBy: arrayRemove(currentUid) });
+      if (wasSaved) await updateDoc(postRef, { savedBy: arrayRemove(currentUid) });
       else await updateDoc(postRef, { savedBy: arrayUnion(currentUid) });
-    } catch (error) {}
+    } catch (error) {
+      setLocalIsSaved(wasSaved); 
+    }
+  };
+
+  // 📤 NATIVE SHARE FEATURE
+  const handleShare = async () => {
+    try {
+      if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const contentToShare = item.text || item.title || "Check out this amazing post!";
+      const result = await Share.share({
+        message: `Look what ${item.authorName || 'someone'} shared on Eduxity:\n\n"${contentToShare}"\n\nJoin us and learn together!`,
+      });
+    } catch (error) {
+      Alert.alert("Error", "Could not share the post.");
+    }
   };
 
   const handleDeletePost = async () => {
@@ -119,8 +239,26 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
     else { Alert.alert("Delete Post?", "Are you sure?", [ { text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive", onPress: async () => { try { await deleteDoc(doc(db, 'posts', item.id)); } catch (error) {} } } ]); }
   };
 
+  // 🗳️ POLL VOTE LOGIC (Optimistic + Reward Trigger)
   const handleVote = async (optIndex: number) => {
     if (hasVoted || !currentUid) return; 
+
+    // ⚡ OPTIMISTIC UPDATE: Instant UI Change
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    const previousOptions = [...(localPollOptions || [])];
+    const previousTotal = localTotalVotes;
+    const previousVote = localUserVote;
+
+    const newOptions = previousOptions.map((opt: any, idx: number) => {
+      if (idx === optIndex) return { ...opt, votes: (opt.votes || 0) + 1 };
+      return opt;
+    });
+    
+    setLocalPollOptions(newOptions);
+    setLocalTotalVotes(previousTotal + 1);
+    setLocalUserVote(optIndex);
+
     try {
       const postRef = doc(db, 'posts', item.id);
       await runTransaction(db, async (transaction) => {
@@ -128,14 +266,36 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
         if (!postDoc.exists()) throw new Error("Post does not exist!");
         const data = postDoc.data();
         if (data.voters && data.voters[currentUid] !== undefined) return;
+        
         const newTotalVotes = (data.totalVotes || 0) + 1;
         const updatedPollOptions = [...data.pollOptions];
         updatedPollOptions[optIndex].votes = (updatedPollOptions[optIndex].votes || 0) + 1;
-        transaction.update(postRef, { pollOptions: updatedPollOptions, totalVotes: newTotalVotes, [`voters.${currentUid}`]: optIndex });
+        
+        transaction.update(postRef, { 
+          pollOptions: updatedPollOptions, 
+          totalVotes: newTotalVotes, 
+          [`voters.${currentUid}`]: optIndex 
+        });
       });
-      await processAction(currentUid, 'POLL_ANSWER');
-      if(Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (error) { Alert.alert("Oops!", "Could not register your vote."); }
+
+      // 🔥 REWARD TRIGGER ON SUCCESSFUL VOTE
+      const result = await processAction(currentUid, 'POLL_ANSWER');
+      if (result && result.success) {
+         showReward({
+            xpEarned: result.xpEarned,
+            coinsEarned: result.coinsEarned,
+            leveledUp: result.leveledUp,
+            newLevel: result.newLevel,
+            newBadges: result.newBadges
+         });
+      }
+    } catch (error) { 
+      // Revert if fails
+      setLocalPollOptions(previousOptions);
+      setLocalTotalVotes(previousTotal);
+      setLocalUserVote(previousVote);
+      Alert.alert("Oops!", "Could not register your vote."); 
+    }
   };
 
   const navigateToProfile = () => { if(item.authorId && item.authorId !== 'admin') router.push(`/user/${item.authorId}`); };
@@ -143,13 +303,13 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
   const animatedLikeStyle = useAnimatedStyle(() => ({ transform: [{ scale: likeScale.value }] }));
   const animatedSaveStyle = useAnimatedStyle(() => ({ transform: [{ scale: saveScale.value }] }));
 
-  // 🔥 CHECK IF TEST IS ATTEMPTED
   const hasAttemptedTest = item.type === 'live_test' && item.responses && item.responses[currentUid];
   const userResult = hasAttemptedTest ? item.responses[currentUid] : null;
 
   return (
     <Animated.View entering={FadeInDown.duration(400).springify()} layout={Layout.springify()} style={styles.postCard}>
       {item.algoReason && (<View style={styles.algoReasonBar}><Ionicons name="sparkles" size={14} color="#6366f1" /><Text style={styles.algoReasonText}>{item.algoReason}</Text></View>)}
+      
       <View style={styles.postHeader}>
         <TouchableOpacity onPress={navigateToProfile} activeOpacity={0.8}><Image source={{ uri: item.authorAvatar || DEFAULT_AVATAR }} style={styles.avatar} contentFit="cover" transition={200} /></TouchableOpacity>
         <View style={styles.authorInfo}>
@@ -174,7 +334,9 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
       </View>
 
       {item.text ? <Text style={styles.postText}>{item.text}</Text> : null}
+      
       {item.type === 'flashcard' && item.cardsData && (<InlineFlashcardPlayer cardsData={item.cardsData} title={item.title} />)}
+      
       {item.tags && item.tags.length > 0 && (<View style={styles.tagsContainer}>{item.tags.map((tag: string, idx: number) => (<View key={idx} style={styles.tagPill}><Text style={styles.tagText}>#{tag}</Text></View>))}</View>)}
       
       {item.type === 'image' && item.imageUrl ? (
@@ -185,7 +347,7 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
       
       {item.type === 'code' && item.codeSnippet ? (<View style={styles.codeBlockContainer}><View style={styles.macWindowHeader}><View style={styles.macDots}><View style={[styles.macDot, { backgroundColor: '#ff5f56' }]} /><View style={[styles.macDot, { backgroundColor: '#ffbd2e' }]} /><View style={[styles.macDot, { backgroundColor: '#27c93f' }]} /></View><Text style={styles.codeLanguage}>{item.language || 'Code'}</Text></View><Text style={styles.codeText}>{item.codeSnippet}</Text></View>) : null}
 
-      {/* 🔥 LIVE TEST RENDERER WITH VIEW RESULT / REATTEMPT */}
+      {/* 🔥 LIVE TEST RENDERER */}
       {item.type === 'live_test' && (
         <View style={styles.liveTestContainer}>
           <LinearGradient colors={['#312e81', '#4f46e5']} style={styles.liveTestBg}>
@@ -235,22 +397,46 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
         </View>
       )}
 
-      {item.type === 'poll' && item.pollOptions ? (
+      {/* 🗳️ POLL RENDERER */}
+      {item.type === 'poll' && localPollOptions ? (
         <View style={styles.pollContainer}>
-          <View style={styles.pollHeader}><View style={[styles.liveIndicator, item.pollMode === 'quiz' && { backgroundColor: '#8b5cf6' }]} /><Text style={[styles.liveText, item.pollMode === 'quiz' && { color: '#8b5cf6' }]}>{item.pollMode === 'quiz' ? 'LIVE QUIZ' : 'LIVE POLL'}</Text></View>
-          {item.pollOptions.map((opt: any, idx: number) => {
-            const totalVotes = item.totalVotes || 0; 
+          <View style={styles.pollHeader}>
+            <View style={[styles.liveIndicator, item.pollMode === 'quiz' && { backgroundColor: '#8b5cf6' }]} />
+            <Text style={[styles.liveText, item.pollMode === 'quiz' && { color: '#8b5cf6' }]}>{item.pollMode === 'quiz' ? 'LIVE QUIZ' : 'LIVE POLL'}</Text>
+          </View>
+          
+          {localPollOptions.map((opt: any, idx: number) => {
+            const totalVotes = localTotalVotes || 0; 
             const percentage = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0;
             let barColor = '#e0f2fe'; let textColor = '#0f172a';
-            if (hasVoted) { if (idx === userVoteIndex) { barColor = '#bae6fd'; textColor = '#0369a1'; } }
+            
+            if (hasVoted) { if (idx === localUserVote) { barColor = '#bae6fd'; textColor = '#0369a1'; } }
+            
             if (hasVoted) {
-              return (<View key={idx} style={[styles.pollOptionResult, idx === userVoteIndex && { borderWidth: 1, borderColor: '#3b82f6' }]}><Animated.View style={[styles.pollFill, { width: `${percentage}%`, backgroundColor: barColor }]} /><View style={styles.pollContent}><View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}><Text style={[styles.pollOptionText, { color: textColor }]}>{opt.text}</Text></View><Text style={[styles.pollPercentage, { color: textColor }]}>{percentage}%</Text></View></View>);
-            } else { return (<TouchableOpacity key={idx} style={styles.pollOptionBtn} activeOpacity={0.7} onPress={() => handleVote(idx)}><Text style={styles.pollOptionBtnText}>{opt.text}</Text></TouchableOpacity>); }
+              return (
+                <View key={idx} style={[styles.pollOptionResult, idx === localUserVote && { borderWidth: 1, borderColor: '#3b82f6' }]}>
+                  <Animated.View style={[styles.pollFill, { width: `${percentage}%`, backgroundColor: barColor }]} />
+                  <View style={styles.pollContent}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      <Text style={[styles.pollOptionText, { color: textColor }]}>{opt.text}</Text>
+                    </View>
+                    <Text style={[styles.pollPercentage, { color: textColor }]}>{percentage}%</Text>
+                  </View>
+                </View>
+              );
+            } else { 
+              return (
+                <TouchableOpacity key={idx} style={styles.pollOptionBtn} activeOpacity={0.7} onPress={() => handleVote(idx)}>
+                  <Text style={styles.pollOptionBtnText}>{opt.text}</Text>
+                </TouchableOpacity>
+              ); 
+            }
           })}
-          <Text style={styles.pollTotalVotes}>{item.totalVotes || 0} votes {hasVoted ? '• Results visible' : ''}</Text>
+          <Text style={styles.pollTotalVotes}>{localTotalVotes || 0} votes {hasVoted ? '• Results visible' : ''}</Text>
         </View>
       ) : null}
 
+      {/* 📚 RESOURCE RENDERER */}
       {item.type === 'resource' && (
         <View style={styles.resourceContainer}>
           <View style={styles.resourceHeader}>
@@ -262,29 +448,41 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
         </View>
       )}
 
+      {/* 🔥 THE NEW ACTION BAR */}
       <View style={styles.actionBar}>
         <View style={styles.actionLeft}>
-          <TouchableOpacity style={styles.actionBtn} onPress={handleLike} activeOpacity={0.7}><Animated.View style={animatedLikeStyle}><Ionicons name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "#ef4444" : "#475569"} /></Animated.View><Text style={[styles.actionText, isLiked && { color: '#ef4444', fontWeight: '700' }]}>{item.likes?.length || 0}</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={() => onOpenComments && onOpenComments(item)}><Ionicons name="chatbubble-outline" size={22} color="#475569" /><Text style={styles.actionText}>{item.commentsCount || 0}</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}><Ionicons name="share-social-outline" size={22} color="#475569" /></TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={handleLike} activeOpacity={0.7}>
+            <Animated.View style={animatedLikeStyle}>
+              <Ionicons name={localIsLiked ? "heart" : "heart-outline"} size={26} color={localIsLiked ? "#ef4444" : "#64748b"} />
+            </Animated.View>
+            <Text style={[styles.actionText, localIsLiked && { color: '#ef4444', fontWeight: '800' }]}>{localLikeCount}</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={() => onOpenComments && onOpenComments(item)}>
+            <Ionicons name="chatbubble-outline" size={24} color="#64748b" />
+            <Text style={styles.actionText}>{item.commentsCount || 0}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={handleShare}>
+            <Ionicons name="share-social-outline" size={24} color="#64748b" />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={handleSave} activeOpacity={0.7} style={styles.saveBtn}><Animated.View style={animatedSaveStyle}><Ionicons name={isSaved ? "bookmark" : "bookmark-outline"} size={24} color={isSaved ? "#4f46e5" : "#475569"} /></Animated.View></TouchableOpacity>
+
+        <TouchableOpacity onPress={handleSave} activeOpacity={0.7} style={styles.saveBtn}>
+          <Animated.View style={animatedSaveStyle}>
+            <Ionicons name={localIsSaved ? "bookmark" : "bookmark-outline"} size={26} color={localIsSaved ? "#4f46e5" : "#64748b"} />
+          </Animated.View>
+        </TouchableOpacity>
       </View>
     </Animated.View>
   );
-// 🔥 FIX: Memo condition mein Result ka check add hua
 }, (prevProps, nextProps) => {
-  const prevScore = prevProps.item.responses?.[prevProps.currentUid]?.score;
-  const nextScore = nextProps.item.responses?.[nextProps.currentUid]?.score;
-
   return ( 
     prevProps.item.id === nextProps.item.id && 
     prevProps.item.likes?.length === nextProps.item.likes?.length && 
     prevProps.item.commentsCount === nextProps.item.commentsCount && 
-    prevProps.item.totalVotes === nextProps.item.totalVotes && 
     prevProps.item.savedBy?.length === nextProps.item.savedBy?.length &&
-    prevProps.currentUid === nextProps.currentUid &&
-    prevScore === nextScore
+    prevProps.currentUid === nextProps.currentUid
   );
 });
 
@@ -345,6 +543,9 @@ const styles = StyleSheet.create({
   inlineCardActions: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginTop: 15, gap: 10 }, inlineActionBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center' }, inlineActionText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   flashcardFinish: { height: 240, justifyContent: 'center', alignItems: 'center', padding: 20 }, finishDeckTitle: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 10 }, finishDeckSub: { color: '#94a3b8', fontSize: 13, fontWeight: '600', marginTop: 4, marginBottom: 20 },
   restartDeckBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#4f46e5', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 }, restartDeckText: { color: '#fff', fontSize: 13, fontWeight: '800', marginLeft: 6 },
-  actionBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 12, borderTopWidth: 1, borderColor: '#f1f5f9', backgroundColor: '#fafaf9' },
-  actionLeft: { flexDirection: 'row', alignItems: 'center', gap: 24 }, actionBtn: { flexDirection: 'row', alignItems: 'center' }, actionText: { marginLeft: 6, fontSize: 14, fontWeight: '700', color: '#475569' }, saveBtn: { padding: 5 }
+  actionBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 14, borderTopWidth: 1, borderColor: '#f1f5f9', backgroundColor: '#fff' },
+  actionLeft: { flexDirection: 'row', alignItems: 'center', gap: 28 }, 
+  actionBtn: { flexDirection: 'row', alignItems: 'center' }, 
+  actionText: { marginLeft: 6, fontSize: 14, fontWeight: '700', color: '#64748b' }, 
+  saveBtn: { padding: 5 }
 });

@@ -1,333 +1,254 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, Image, TouchableOpacity, 
-  ScrollView, ActivityIndicator, Dimensions, StatusBar 
+  ActivityIndicator, ScrollView, Platform, StatusBar 
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import * as Haptics from 'expo-haptics';
+import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
+
+// 🔥 FIREBASE IMPORTS
 import { db, auth } from '../../firebaseConfig';
+import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 
-const { width } = Dimensions.get('window');
-
-export default function PublicProfileScreen() {
+export default function CompleteProfileScreen() {
   const { id } = useLocalSearchParams(); 
   const router = useRouter();
   
-  const [userData, setUserData] = useState<any>(null);
+  const currentUid = auth.currentUser?.uid;
+  const isOwnProfile = currentUid === id;
+
+  // States
+  const [profileUser, setProfileUser] = useState<any>(null);
+  const [recentPosts, setRecentPosts] = useState<any[]>([]); // Real posts store karne ke liye
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('Stats'); 
-  const [isFollowing, setIsFollowing] = useState(false);
+  
+  // connectionStatus: 'none' | 'pending' | 'friends'
+  const [connectionStatus, setConnectionStatus] = useState('none'); 
+  const [isActionLoading, setIsActionLoading] = useState(false);
 
-  const currentUserId = auth.currentUser?.uid;
-
-  // 🚀 Fetch User Data from Firebase
+  // ==========================================
+  // 📡 1. FETCH PROFILE, POSTS & CONNECTIONS
+  // ==========================================
   useEffect(() => {
-    const fetchUserProfile = async () => {
-      if (!id) return;
+    if (!id) return;
+
+    const fetchAllData = async () => {
       try {
+        // 1. Fetch User Info
         const userDoc = await getDoc(doc(db, 'users', id as string));
         if (userDoc.exists()) {
-          const data = userDoc.data();
-          setUserData(data);
-          if (data.followers && currentUserId && data.followers.includes(currentUserId)) {
-            setIsFollowing(true);
+          setProfileUser({ id: userDoc.id, ...userDoc.data() });
+        }
+
+        // 2. Fetch Actual Posts from this User
+        // Firebase index error se bachne ke liye hum simple where() lagakar locally sort karenge
+        const postsQuery = query(collection(db, 'posts'), where('authorId', '==', id));
+        const postsSnapshot = await getDocs(postsQuery);
+        
+        const fetchedPosts = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Local sorting by timestamp (newest first)
+        fetchedPosts.sort((a: any, b: any) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+        setRecentPosts(fetchedPosts);
+
+        // 3. Check Connection (Friends / Pending)
+        if (!isOwnProfile && currentUid) {
+          const conn1 = await getDoc(doc(db, 'connections', `${currentUid}_${id}`));
+          const conn2 = await getDoc(doc(db, 'connections', `${id}_${currentUid}`));
+
+          if (conn1.exists()) {
+            setConnectionStatus(conn1.data().status === 'accepted' ? 'friends' : 'pending');
+          } else if (conn2.exists()) {
+            setConnectionStatus(conn2.data().status === 'accepted' ? 'friends' : 'pending');
           }
         }
       } catch (error) {
-        console.log("Error fetching profile:", error);
+        console.error("Fetch Error:", error);
       } finally {
         setLoading(false);
       }
     };
-    fetchUserProfile();
-  }, [id, currentUserId]);
 
-  // 🤝 Follow / Unfollow Logic
-  const toggleFollow = async () => {
-    if (!currentUserId || !userData) return;
+    fetchAllData();
+  }, [id, currentUid]);
+
+  // ==========================================
+  // 🎮 2. FRIEND REQUEST LOGIC
+  // ==========================================
+  const handleConnect = async () => {
+    if (!currentUid || !profileUser) return;
+    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     
-    const userRef = doc(db, 'users', id as string);
-    const currentUserRef = doc(db, 'users', currentUserId);
-
+    setIsActionLoading(true);
     try {
-      if (isFollowing) {
-        setIsFollowing(false);
-        setUserData((prev: any) => ({ ...prev, followerCount: Math.max(0, (prev.followerCount || 1) - 1) }));
-        await updateDoc(userRef, { followers: arrayRemove(currentUserId), followerCount: userData.followerCount - 1 });
-        await updateDoc(currentUserRef, { following: arrayRemove(id) });
-      } else {
-        setIsFollowing(true);
-        setUserData((prev: any) => ({ ...prev, followerCount: (prev.followerCount || 0) + 1 }));
-        await updateDoc(userRef, { followers: arrayUnion(currentUserId), followerCount: (userData.followerCount || 0) + 1 });
-        await updateDoc(currentUserRef, { following: arrayUnion(id) });
-      }
-    } catch (error) {
-      console.log("Follow toggle error:", error);
+      const connectionId = `${currentUid}_${profileUser.id}`;
+      await setDoc(doc(db, 'connections', connectionId), {
+        senderId: currentUid,
+        receiverId: profileUser.id,
+        status: 'pending',
+        createdAt: serverTimestamp()
+      });
+      setConnectionStatus('pending');
+    } catch (e) {
+      console.error(e);
+      alert("Could not send request.");
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
-  // 🛑 SAFETY CHECK: Pehle loading aur null check, uske baad variables nikalenge
-  if (loading) {
-    return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#2563eb" />
-      </View>
-    );
-  }
+  // ==========================================
+  // 🧠 3. DATA FALLBACKS & PREPARATION
+  // ==========================================
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#4f46e5" /></View>;
+  if (!profileUser) return <View style={styles.center}><Text style={styles.errorTxt}>User not found in Eduxity</Text></View>;
 
-  if (!userData) {
-    return (
-      <View style={styles.loaderContainer}>
-        <Ionicons name="person-circle-outline" size={80} color="#cbd5e1" />
-        <Text style={{ marginTop: 10, fontSize: 18, color: '#64748b', fontWeight: 'bold' }}>User not found</Text>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20, padding: 10, backgroundColor: '#f1f5f9', borderRadius: 10 }}>
-          <Text style={{ fontWeight: '700' }}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // ✅ Aab safely variables nikal sakte hain kyunki userData exist karta hai
-  const level = userData.gamification?.level || 1;
-  const xp = userData.gamification?.xp || 0;
-  const eduCoins = userData.gamification?.eduCoins || 0;
-  const currentStreak = userData.gamification?.currentStreak || 0;
-  const solvedQuestions = userData.gamification?.solvedQuestions || 0;
-  const totalPosts = userData.postCount || 0;
+  const name = profileUser.displayName || profileUser.name || "Student";
+  const avatar = profileUser.photoURL || 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
+  const studentClass = profileUser.class || "N/A";
+  const exam = profileUser.targetExam || "General";
   
-  // Dummy data fallback for UI presentation
-  const targetExam = userData.targetExam || 'JEE Advanced';
-  const bio = userData.bio || 'Future IITian 🚀 | Keep grinding!';
-  const subjects = userData.topSubjects || ['Physics', 'Mathematics', 'Chemistry'];
+  // Level Calculation (Fallback if not in DB)
+  const userLevel = profileUser.level || Math.max(1, Math.floor(recentPosts.length / 3) + 1);
+  
+  // Interests Data (Fallback array if user hasn't set them)
+  const interests = profileUser.interests || ['Tech', 'Science', 'Gaming', 'Startup'];
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      
-      <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+
+      {/* 🔙 HEADER */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+          <Ionicons name="arrow-back" size={24} color="#0f172a" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Profile</Text>
+        <TouchableOpacity style={styles.iconBtn}>
+          <Ionicons name="ellipsis-horizontal" size={24} color="#0f172a" />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
-        {/* 🎨 COVER PHOTO */}
-        <View style={styles.coverPhotoContainer}>
-          <Image 
-            source={{ uri: userData.coverPhoto || 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?q=80&w=1000&auto=format&fit=crop' }} 
-            style={styles.coverPhoto} 
-          />
-          <LinearGradient colors={['rgba(0,0,0,0.5)', 'transparent']} style={styles.headerGradient}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-              <Ionicons name="chevron-back" size={28} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.menuBtn}>
-              <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
-            </TouchableOpacity>
-          </LinearGradient>
-        </View>
-
-        {/* 👤 PROFILE INFO SECTION */}
-        <Animated.View entering={FadeInDown.duration(600).springify()} style={styles.profileInfoContainer}>
-          
-          {/* Avatar (Overlapping Cover) */}
-          <View style={styles.avatarWrapper}>
-            <Image 
-              source={{ uri: userData.avatar || `https://ui-avatars.com/api/?name=${userData.name}&size=200` }} 
-              style={styles.avatar} 
-            />
-            {/* Real Level Badge */}
+        {/* 🟢 TOP SECTION: Avatar, Name, Level, Class */}
+        <Animated.View entering={FadeInDown.duration(400)} layout={Layout.springify()} style={styles.topSection}>
+          <View style={styles.avatarContainer}>
+            <Image source={{ uri: avatar }} style={styles.avatar} />
             <View style={styles.levelBadge}>
-              <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>LVL {level}</Text>
-            </View>
-            {/* Fire Streak Badge */}
-            {currentStreak > 0 && (
-              <View style={styles.streakBadge}>
-                <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#d97706' }}>🔥 {currentStreak}</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Name & Target */}
-          <View style={styles.nameSection}>
-            <Text style={styles.userName}>{userData.name}</Text>
-            <Text style={styles.userTagline}>🎯 Target: {targetExam}</Text>
-            <Text style={styles.userBio}>{bio}</Text>
-          </View>
-
-          {/* 👥 SOCIAL STATS (Posts, Followers, Following) */}
-          <View style={styles.socialStatsRow}>
-            <View style={styles.statBox}>
-              <Text style={styles.statNumber}>{totalPosts}</Text>
-              <Text style={styles.statLabel}>Posts</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statBox}>
-              <Text style={styles.statNumber}>{userData.followerCount || 0}</Text>
-              <Text style={styles.statLabel}>Followers</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statBox}>
-              <Text style={styles.statNumber}>{userData.followingCount || 0}</Text>
-              <Text style={styles.statLabel}>Following</Text>
+              <Text style={styles.levelBadgeText}>Lv.{userLevel}</Text>
             </View>
           </View>
-
-          {/* 🎮 GAMIFICATION STATS ROW (The Flex Zone) */}
-          <View style={styles.gamificationRow}>
-            <View style={styles.gamificationBox}>
-              <Ionicons name="star" size={20} color="#f59e0b" />
-              <Text style={styles.gamificationValue}>{level}</Text>
-              <Text style={styles.gamificationLabel}>Rank</Text>
-            </View>
-            <View style={styles.gamificationBox}>
-              <Ionicons name="flash" size={20} color="#3b82f6" />
-              <Text style={styles.gamificationValue}>{xp}</Text>
-              <Text style={styles.gamificationLabel}>Total XP</Text>
-            </View>
-            <View style={styles.gamificationBox}>
-              <Ionicons name="cash" size={20} color="#10b981" />
-              <Text style={styles.gamificationValue}>{eduCoins}</Text>
-              <Text style={styles.gamificationLabel}>Coins</Text>
-            </View>
-          </View>
-
-          {/* 🔘 ACTION BUTTONS */}
-          {currentUserId !== id && (
-            <View style={styles.actionRow}>
-              <TouchableOpacity 
-                style={[styles.primaryBtn, isFollowing ? styles.followingBtn : {}]} 
-                onPress={toggleFollow}
-              >
-                <Ionicons name={isFollowing ? "checkmark" : "person-add"} size={18} color={isFollowing ? "#1e293b" : "#fff"} />
-                <Text style={[styles.primaryBtnText, isFollowing ? { color: '#1e293b' } : {}]}>
-                  {isFollowing ? 'Following' : 'Follow'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push(`/chat/private/${id}`)}>
-                <Ionicons name="chatbubble-ellipses" size={18} color="#1e293b" />
-                <Text style={styles.secondaryBtnText}>Message</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-        </Animated.View>
-
-        {/* 📑 TAB NAVIGATION */}
-        <View style={styles.tabContainer}>
-          {['Stats', 'Badges', 'About'].map((tab) => (
-            <TouchableOpacity 
-              key={tab} 
-              style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive]}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* 📄 TAB CONTENT */}
-        <Animated.View entering={FadeInUp.duration(400).springify()} style={styles.tabContent}>
           
-          {/* 📊 STATS TAB (Super Detailed) */}
-          {activeTab === 'Stats' && (
-            <View style={styles.contentSection}>
-              <Text style={styles.sectionTitle}>Academic Performance</Text>
-              
-              <View style={styles.detailedStatsGrid}>
-                {/* Total Solved */}
-                <View style={styles.detailedStatCard}>
-                  <View style={[styles.iconWrapper, {backgroundColor: '#e0e7ff'}]}>
-                    <Ionicons name="checkbox" size={24} color="#4f46e5" />
-                  </View>
-                  <Text style={styles.detailedStatValue}>{solvedQuestions}</Text>
-                  <Text style={styles.detailedStatLabel}>Questions Solved</Text>
-                </View>
+          <Text style={styles.name}>{name}</Text>
+          <Text style={styles.username}>@{profileUser.username || name.toLowerCase().replace(/\s/g, '')}</Text>
 
-                {/* Fire Streak */}
-                <View style={styles.detailedStatCard}>
-                  <View style={[styles.iconWrapper, {backgroundColor: '#ffedd5'}]}>
-                    <Ionicons name="flame" size={24} color="#ea580c" />
-                  </View>
-                  <Text style={styles.detailedStatValue}>{currentStreak} Days</Text>
-                  <Text style={styles.detailedStatLabel}>Current Streak</Text>
-                </View>
-
-                {/* Homeworks */}
-                <View style={styles.detailedStatCard}>
-                  <View style={[styles.iconWrapper, {backgroundColor: '#dcfce7'}]}>
-                    <Ionicons name="folder-open" size={24} color="#16a34a" />
-                  </View>
-                  <Text style={styles.detailedStatValue}>{userData.homeworkCompleted || 0}</Text>
-                  <Text style={styles.detailedStatLabel}>Homeworks Done</Text>
-                </View>
-
-                {/* Avg Score */}
-                <View style={styles.detailedStatCard}>
-                  <View style={[styles.iconWrapper, {backgroundColor: '#fce7f3'}]}>
-                    <Ionicons name="analytics" size={24} color="#db2777" />
-                  </View>
-                  <Text style={styles.detailedStatValue}>{userData.averageScore || '0%'}</Text>
-                  <Text style={styles.detailedStatLabel}>Avg. Test Score</Text>
-                </View>
-              </View>
+          <View style={styles.academicRow}>
+            <View style={styles.academicPill}>
+              <Ionicons name="school" size={14} color="#4f46e5" />
+              <Text style={styles.academicText}>{studentClass}</Text>
             </View>
-          )}
-
-          {/* 🏅 BADGES TAB */}
-          {activeTab === 'Badges' && (
-            <View style={styles.contentSection}>
-              <Text style={styles.sectionTitle}>Earned Badges</Text>
-              <View style={styles.badgesGrid}>
-                <View style={styles.badgeItem}>
-                  <LinearGradient colors={['#fde68a', '#f59e0b']} style={styles.badgeIconBg}>
-                    <Ionicons name="flame" size={32} color="#fff" />
-                  </LinearGradient>
-                  <Text style={styles.badgeName}>Streak Master</Text>
-                </View>
-                <View style={styles.badgeItem}>
-                  <LinearGradient colors={['#bfdbfe', '#3b82f6']} style={styles.badgeIconBg}>
-                    <Ionicons name="school" size={32} color="#fff" />
-                  </LinearGradient>
-                  <Text style={styles.badgeName}>Topper</Text>
-                </View>
-                <View style={styles.badgeItem}>
-                  <LinearGradient colors={['#fecdd3', '#e11d48']} style={styles.badgeIconBg}>
-                    <Ionicons name="heart" size={32} color="#fff" />
-                  </LinearGradient>
-                  <Text style={styles.badgeName}>Helper</Text>
-                </View>
-              </View>
+            <View style={[styles.academicPill, {backgroundColor: '#fffbeb', borderColor: '#fef3c7'}]}>
+              <Ionicons name="book" size={14} color="#d97706" />
+              <Text style={[styles.academicText, {color: '#d97706'}]}>{exam}</Text>
             </View>
-          )}
-
-          {/* ℹ️ ABOUT TAB */}
-          {activeTab === 'About' && (
-            <View style={styles.contentSection}>
-              <Text style={styles.sectionTitle}>Strong Subjects</Text>
-              <View style={styles.skillsContainer}>
-                {subjects.map((sub: string, index: number) => (
-                  <View key={index} style={styles.skillBadge}>
-                    <Text style={styles.skillText}>{sub}</Text>
-                  </View>
-                ))}
-              </View>
-
-              <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Personal Info</Text>
-              <View style={styles.infoRow}>
-                <Ionicons name="location" size={20} color="#64748b" />
-                <Text style={styles.infoText}>{userData.location || 'India'}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Ionicons name="calendar" size={20} color="#64748b" />
-                <Text style={styles.infoText}>Joined {userData.createdAt ? new Date(userData.createdAt.toDate()).toLocaleDateString() : 'recently'}</Text>
-              </View>
-            </View>
-          )}
-
+          </View>
         </Animated.View>
-        <View style={{ height: 50 }} />
+
+        <View style={styles.divider} />
+
+        {/* 🟡 INTERESTS SECTION */}
+        <Animated.View entering={FadeInDown.delay(100)} style={styles.section}>
+          <Text style={styles.sectionTitle}>Interests</Text>
+          <View style={styles.tagsContainer}>
+            {interests.map((interest: string, index: number) => (
+              <View key={index} style={styles.interestTag}>
+                <Text style={styles.interestTagText}>#{interest}</Text>
+              </View>
+            ))}
+          </View>
+        </Animated.View>
+
+        <View style={styles.divider} />
+
+        {/* 🔴 USER'S ACTUAL POSTS */}
+        <Animated.View entering={FadeInDown.delay(200)} style={styles.section}>
+          <View style={styles.postsHeader}>
+            <Text style={styles.sectionTitle}>Recent Activity</Text>
+            <Text style={styles.postCountText}>{recentPosts.length} Posts</Text>
+          </View>
+
+          {recentPosts.length === 0 ? (
+            <View style={styles.emptyPosts}>
+              <Ionicons name="document-text-outline" size={40} color="#cbd5e1" />
+              <Text style={styles.emptyPostsText}>No posts shared yet.</Text>
+            </View>
+          ) : (
+            recentPosts.map((post, idx) => (
+              <View key={post.id || idx} style={styles.postCard}>
+                <View style={styles.postTopRow}>
+                  <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                    <Image source={{uri: avatar}} style={styles.postAvatar} />
+                    <View>
+                      <Text style={styles.postAuthorName}>{name}</Text>
+                      <Text style={styles.postTime}>
+                        {post.createdAt ? new Date(post.createdAt.toMillis()).toLocaleDateString() : 'Recently'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Ionicons name="ellipsis-vertical" size={18} color="#94a3b8" />
+                </View>
+                
+                <Text style={styles.postContent}>{post.content || post.text || 'Shared a post.'}</Text>
+                
+                {post.imageUrl && (
+                  <Image source={{uri: post.imageUrl}} style={styles.postImage} />
+                )}
+
+                <View style={styles.postMetrics}>
+                  <View style={styles.metricItem}>
+                    <Ionicons name="heart-outline" size={18} color="#64748b" />
+                    <Text style={styles.metricText}>{post.likes || 0}</Text>
+                  </View>
+                  <View style={styles.metricItem}>
+                    <Ionicons name="chatbubble-outline" size={18} color="#64748b" />
+                    <Text style={styles.metricText}>{post.comments || 0}</Text>
+                  </View>
+                </View>
+              </View>
+            ))
+          )}
+        </Animated.View>
+
       </ScrollView>
+
+      {/* 🟤 BOTTOM ACTION BAR (Smart Routing) */}
+      <View style={styles.bottomAction}>
+        {isOwnProfile ? (
+          <TouchableOpacity style={styles.editBtn} onPress={() => router.push('/settings/edit-profile')}>
+            <Ionicons name="pencil" size={20} color="#0f172a" style={{marginRight: 8}} />
+            <Text style={styles.editBtnText}>Edit Profile</Text>
+          </TouchableOpacity>
+        ) : connectionStatus === 'friends' ? (
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push(`/chat/${profileUser.id}`)}>
+            <Ionicons name="chatbubbles" size={20} color="#fff" style={{marginRight: 8}} />
+            <Text style={styles.primaryBtnText}>Message {name}</Text>
+          </TouchableOpacity>
+        ) : connectionStatus === 'pending' ? (
+          <TouchableOpacity style={styles.pendingBtn} disabled>
+            <Ionicons name="time" size={20} color="#64748b" style={{marginRight: 8}} />
+            <Text style={styles.pendingBtnText}>Request Pending</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.primaryBtn} onPress={handleConnect} disabled={isActionLoading}>
+            <Ionicons name="person-add" size={20} color="#fff" style={{marginRight: 8}} />
+            <Text style={styles.primaryBtnText}>{isActionLoading ? 'Sending...' : 'Send Friend Request'}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
     </SafeAreaView>
   );
 }
@@ -336,70 +257,65 @@ export default function PublicProfileScreen() {
 // 🎨 STYLES
 // ==========================================
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#ffffff' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  errorTxt: { fontSize: 16, fontWeight: '700', color: '#94a3b8' },
   
-  coverPhotoContainer: { height: 180, width: '100%', position: 'relative' },
-  coverPhoto: { width: '100%', height: '100%', resizeMode: 'cover' },
-  headerGradient: { position: 'absolute', top: 0, width: '100%', height: 90, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 15, paddingTop: 40 },
-  backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  menuBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-
-  profileInfoContainer: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, marginTop: -20, paddingHorizontal: 20, paddingBottom: 20, alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 10 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 10, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  iconBtn: { padding: 10, borderRadius: 12 },
+  headerTitle: { fontSize: 16, fontWeight: '900', color: '#0f172a' },
   
-  avatarWrapper: { position: 'relative', marginTop: -50, marginBottom: 10 },
-  avatar: { width: 100, height: 100, borderRadius: 50, borderWidth: 4, borderColor: '#fff', backgroundColor: '#e2e8f0' },
-  levelBadge: { position: 'absolute', bottom: -5, alignSelf: 'center', backgroundColor: '#1e293b', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 2, borderColor: '#fff' },
-  streakBadge: { position: 'absolute', top: -5, right: -10, backgroundColor: '#fef3c7', borderRadius: 15, padding: 5, elevation: 2, borderWidth: 1, borderColor: '#f59e0b' },
-
-  nameSection: { alignItems: 'center', marginBottom: 20 },
-  userName: { fontSize: 24, fontWeight: '900', color: '#0f172a' },
-  userTagline: { fontSize: 14, color: '#2563eb', fontWeight: '700', marginTop: 4 },
-  userBio: { fontSize: 13, color: '#64748b', textAlign: 'center', marginTop: 8, paddingHorizontal: 20, lineHeight: 18 },
-
-  socialStatsRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', width: '100%', marginBottom: 15 },
-  statBox: { flex: 1, alignItems: 'center' },
-  statNumber: { fontSize: 18, fontWeight: '900', color: '#1e293b' },
-  statLabel: { fontSize: 12, color: '#94a3b8', fontWeight: '600', marginTop: 2 },
-  statDivider: { width: 1, height: 30, backgroundColor: '#e2e8f0' },
-
-  gamificationRow: { flexDirection: 'row', backgroundColor: '#f8fafc', padding: 15, borderRadius: 16, width: '100%', justifyContent: 'space-around', marginBottom: 20, borderWidth: 1, borderColor: '#f1f5f9' },
-  gamificationBox: { alignItems: 'center' },
-  gamificationValue: { fontSize: 18, fontWeight: '900', color: '#0f172a', marginTop: 4 },
-  gamificationLabel: { fontSize: 11, color: '#64748b', fontWeight: '700', marginTop: 2 },
-
-  actionRow: { flexDirection: 'row', justifyContent: 'center', width: '100%', gap: 10 },
-  primaryBtn: { flex: 1, flexDirection: 'row', backgroundColor: '#2563eb', paddingVertical: 12, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  followingBtn: { backgroundColor: '#e2e8f0' },
-  primaryBtnText: { color: '#fff', fontWeight: '800', fontSize: 14, marginLeft: 6 },
-  secondaryBtn: { flex: 1, flexDirection: 'row', backgroundColor: '#f1f5f9', paddingVertical: 12, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  secondaryBtnText: { color: '#1e293b', fontWeight: '800', fontSize: 14, marginLeft: 6 },
-
-  tabContainer: { flexDirection: 'row', backgroundColor: '#fff', marginTop: 10, paddingHorizontal: 10, borderBottomWidth: 1, borderColor: '#e2e8f0' },
-  tabBtn: { flex: 1, paddingVertical: 15, alignItems: 'center', borderBottomWidth: 3, borderColor: 'transparent' },
-  tabBtnActive: { borderColor: '#2563eb' },
-  tabText: { fontSize: 14, fontWeight: '700', color: '#94a3b8' },
-  tabTextActive: { color: '#2563eb' },
-
-  tabContent: { padding: 20 },
-  contentSection: { backgroundColor: '#fff', padding: 20, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginBottom: 15 },
-
-  detailedStatsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10 },
-  detailedStatCard: { width: '48%', backgroundColor: '#f8fafc', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#f1f5f9' },
-  iconWrapper: { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
-  detailedStatValue: { fontSize: 20, fontWeight: '900', color: '#1e293b' },
-  detailedStatLabel: { fontSize: 11, color: '#64748b', fontWeight: '600', marginTop: 2 },
-
-  badgesGrid: { flexDirection: 'row', justifyContent: 'space-around' },
-  badgeItem: { alignItems: 'center' },
-  badgeIconBg: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginBottom: 8, elevation: 3 },
-  badgeName: { fontSize: 11, fontWeight: '700', color: '#475569' },
-
-  skillsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  skillBadge: { backgroundColor: '#dbeafe', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  skillText: { color: '#2563eb', fontWeight: '700', fontSize: 12 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 110 },
   
-  infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  infoText: { fontSize: 14, color: '#475569', fontWeight: '500', marginLeft: 10 },
+  // TOP SECTION
+  topSection: { alignItems: 'center', marginTop: 20 },
+  avatarContainer: { position: 'relative', marginBottom: 15 },
+  avatar: { width: 110, height: 110, borderRadius: 55, backgroundColor: '#f1f5f9', borderWidth: 3, borderColor: '#fff' },
+  levelBadge: { position: 'absolute', bottom: -5, alignSelf: 'center', backgroundColor: '#ef4444', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, borderWidth: 2, borderColor: '#fff', shadowColor: '#ef4444', shadowOpacity: 0.3, shadowRadius: 5, shadowOffset: {width: 0, height: 3} },
+  levelBadgeText: { color: '#fff', fontSize: 12, fontWeight: '900' },
+  
+  name: { fontSize: 24, fontWeight: '900', color: '#0f172a', textAlign: 'center' },
+  username: { fontSize: 14, fontWeight: '600', color: '#94a3b8', marginTop: 2 },
+  
+  academicRow: { flexDirection: 'row', gap: 10, marginTop: 15 },
+  academicPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef2ff', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#e0e7ff' },
+  academicText: { fontSize: 13, fontWeight: '800', color: '#4f46e5', marginLeft: 6 },
+
+  divider: { height: 1, backgroundColor: '#f1f5f9', marginVertical: 25 },
+
+  section: { paddingHorizontal: 5 },
+  sectionTitle: { fontSize: 16, fontWeight: '900', color: '#0f172a', marginBottom: 15, letterSpacing: 0.5 },
+  
+  // INTERESTS
+  tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  interestTag: { backgroundColor: '#f8fafc', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
+  interestTagText: { color: '#475569', fontSize: 13, fontWeight: '700' },
+
+  // POSTS
+  postsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  postCountText: { fontSize: 13, fontWeight: '700', color: '#4f46e5', backgroundColor: '#eef2ff', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  
+  postCard: { backgroundColor: '#fff', padding: 18, borderRadius: 20, marginBottom: 15, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 10, elevation: 2 },
+  postTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  postAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 10 },
+  postAuthorName: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
+  postTime: { fontSize: 11, fontWeight: '600', color: '#94a3b8', marginTop: 2 },
+  postContent: { fontSize: 14, color: '#334155', lineHeight: 22, fontWeight: '500' },
+  postImage: { width: '100%', height: 200, borderRadius: 12, marginTop: 15, resizeMode: 'cover' },
+  
+  postMetrics: { flexDirection: 'row', marginTop: 15, borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 15, gap: 20 },
+  metricItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  metricText: { fontSize: 13, fontWeight: '700', color: '#64748b' },
+
+  emptyPosts: { alignItems: 'center', padding: 30, backgroundColor: '#f8fafc', borderRadius: 20, borderWidth: 1, borderColor: '#f1f5f9' },
+  emptyPostsText: { marginTop: 10, fontSize: 14, fontWeight: '600', color: '#94a3b8' },
+
+  // BOTTOM ACTION
+  bottomAction: { position: 'absolute', bottom: 0, width: '100%', padding: 20, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingBottom: Platform.OS === 'ios' ? 35 : 20 },
+  primaryBtn: { flexDirection: 'row', backgroundColor: '#4f46e5', paddingVertical: 18, borderRadius: 20, justifyContent: 'center', alignItems: 'center', shadowColor: '#4f46e5', shadowOpacity: 0.3, shadowOffset: {width: 0, height: 5}, shadowRadius: 10, elevation: 5 },
+  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  pendingBtn: { flexDirection: 'row', backgroundColor: '#f1f5f9', paddingVertical: 18, borderRadius: 20, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0' },
+  pendingBtnText: { color: '#64748b', fontSize: 16, fontWeight: '800' },
+  editBtn: { flexDirection: 'row', backgroundColor: '#fff', paddingVertical: 18, borderRadius: 20, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#e2e8f0' },
+  editBtnText: { color: '#0f172a', fontSize: 16, fontWeight: '900' }
 });

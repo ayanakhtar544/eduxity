@@ -40,7 +40,7 @@ const BasicTestBuilder = ({ router }: { router: any }) => {
       });
       if(Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Success", "Basic Test Published!");
-      router.replace('/(tabs)/index');
+      router.replace('/');
     } catch (e) { Alert.alert("Error", "Could not publish test."); } 
     finally { setLoading(false); }
   };

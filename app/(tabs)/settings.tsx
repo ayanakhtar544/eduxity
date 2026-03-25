@@ -1,195 +1,260 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
-  View, Text, StyleSheet, TextInput, TouchableOpacity, StatusBar, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, 
+  Alert, SafeAreaView, StatusBar, Platform, Modal, TextInput, Linking
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { auth, db } from '../../firebaseConfig';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+
+// 🔥 PATH CHECK: Ensure these paths match your project structure
+import { auth, db } from '../../firebaseConfig'; 
+import { signOut, deleteUser } from 'firebase/auth';
+import { doc, deleteDoc } from 'firebase/firestore';
+import { useUserStore } from '../../store/useUserStore';
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const user = auth.currentUser;
+  const username = user?.displayName || "user";
   
-  // States
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [userData, setUserData] = useState<any>(null);
-  
-  // Editable Fields
-  const [phone, setPhone] = useState('');
+  // Zustand State
+  const clearUserData = useUserStore((state) => state.clearUserData);
 
-  // 📡 Firebase se Data Fetch karo
-  useEffect(() => {
-    const fetchUserDetails = async () => {
-      if (!auth.currentUser) return;
-      try {
-        const docRef = doc(db, 'users', auth.currentUser.uid);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setUserData(data);
-          setPhone(data.phone || ''); // Agar pehle se phone number hai toh set karo
-        }
-      } catch (error) {
-        console.log("Error fetching user settings: ", error);
-        Alert.alert("Error", "Details load nahi ho payi.");
-      } finally {
-        setLoading(false);
-      }
-    };
+  // States for Delete Confirmation Modal
+  const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
-    fetchUserDetails();
-  }, []);
+  const REQUIRED_PHRASE = `Delete my account ${username}`;
 
-  // 💾 Data Save karne ka logic
-  const handleSave = async () => {
-    if (!auth.currentUser) return;
-    
-    // Basic Phone Validation (Optional: Agar khali chhodna chahe toh chhod sakta hai)
-    if (phone.length > 0 && phone.length < 10) {
-      Alert.alert("Invalid Number", "Bhai phone number theek se check kar lo.");
-      return;
-    }
-
-    setSaving(true);
+  // ==========================================
+  // 🔐 1. THE LOGOUT LOGIC
+  // ==========================================
+  const performLogout = async () => {
     try {
-      const docRef = doc(db, 'users', auth.currentUser.uid);
-      await updateDoc(docRef, {
-        phone: phone.trim()
-      });
+      console.log("Logout triggered...");
+      if (Platform.OS !== 'web') await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       
-      Alert.alert("Success! 🎉", "Tumhari profile details update ho gayi hain.");
-    } catch (error) {
-      console.log("Error updating settings: ", error);
-      Alert.alert("Error", "Details save nahi ho payi.");
-    } finally {
-      setSaving(false);
+      clearUserData(); 
+      await signOut(auth);
+      router.replace('/'); 
+    } catch (error: any) {
+      console.error("Logout Error:", error);
+      Alert.alert("Error", "Failed to logout. Please try again.");
     }
   };
 
+  const handleLogout = () => {
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm("Are you sure you want to log out?");
+      if (confirmed) performLogout();
+    } else {
+      Alert.alert("Logout", "Are you sure you want to log out?", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Logout", style: "destructive", onPress: performLogout }
+      ]);
+    }
+  };
+
+  // ==========================================
+  // 🧨 2. DELETE ACCOUNT LOGIC
+  // ==========================================
+  const executeAccountDeletion = async () => {
+    if (confirmText !== REQUIRED_PHRASE) {
+      Alert.alert("Error", "The confirmation text does not match.");
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      if (user) {
+        await deleteDoc(doc(db, 'users', user.uid));
+        await deleteUser(user);
+        
+        clearUserData();
+        setIsDeleteModalVisible(false);
+        router.replace('/');
+        Alert.alert("Deleted", "Your account has been removed.");
+      }
+    } catch (error: any) {
+      console.error("Delete Error:", error);
+      if (error.code === 'auth/requires-recent-login') {
+        Alert.alert("Security", "Please logout and login again to verify your identity before deleting.");
+      } else {
+        Alert.alert("Error", "Failed to delete account.");
+      }
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // ==========================================
+  // 📜 3. LEGAL & POLICIES HANDLERS
+  // ==========================================
+ const handleOpenPrivacyPolicy = () => {
+    if (Platform.OS !== 'web') Haptics.selectionAsync();
+    router.push('/privacy-policy'); // 👈 Ye ab naye page pe bhejega
+  };
+
+  const handleOpenTerms = () => {
+    if (Platform.OS !== 'web') Haptics.selectionAsync();
+    router.push('/terms'); // 👈 Ye ab terms page pe bhejega
+  };
+
+  // ==========================================
+  // 🧩 UI COMPONENTS
+  // ==========================================
+  
+  // Extracting SettingsItem outside of render prevents unnecessary re-renders
+  const SettingsItem = ({ icon, label, rightElement, onPress, isDestructive = false }: any) => (
+    <TouchableOpacity 
+      style={styles.itemRow} 
+      onPress={onPress} 
+      activeOpacity={0.7}
+      disabled={!onPress}
+    >
+      <View style={styles.itemLeft} pointerEvents="none">
+        <View style={[styles.iconBox, isDestructive && {backgroundColor: '#fef2f2'}]}>
+          <Ionicons name={icon} size={18} color={isDestructive ? '#ef4444' : '#64748b'} />
+        </View>
+        <Text style={[styles.itemLabel, isDestructive && {color: '#ef4444', fontWeight: 'bold'}]}>{label}</Text>
+      </View>
+      <View style={styles.itemRight} pointerEvents="none">
+        {rightElement || (onPress && <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />)}
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+      <StatusBar barStyle="dark-content" backgroundColor="#f1f5f9" />
       
-      {/* 🔝 Premium Header */}
+      {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#0f172a" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Account Settings</Text>
-        <View style={{ width: 34 }} /> {/* Balancing div for center alignment */}
+        <Text style={styles.headerTitle}>Settings</Text>
+        <View style={{width: 40}} />
       </View>
 
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#3b82f6" />
-        </View>
-      ) : (
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-            
-            <Text style={styles.sectionTitle}>Profile Information</Text>
-            
-            {/* 🛑 READ-ONLY FIELD: Name */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Full Name</Text>
-              <View style={styles.readOnlyInput}>
-                <Ionicons name="person" size={18} color="#94a3b8" style={styles.inputIcon} />
-                <Text style={styles.readOnlyText}>{userData?.name || "Not Set"}</Text>
-              </View>
-            </View>
-
-            {/* 🛑 READ-ONLY FIELD: Username */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Username</Text>
-              <View style={styles.readOnlyInput}>
-                <Ionicons name="at" size={18} color="#94a3b8" style={styles.inputIcon} />
-                <Text style={styles.readOnlyText}>{userData?.username || "Not Set"}</Text>
-              </View>
-              <Text style={styles.helpText}>Username ek baar set hone ke baad change nahi kiya jaa sakta.</Text>
-            </View>
-
-            {/* 🛑 READ-ONLY FIELD: Email */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Email Address</Text>
-              <View style={styles.readOnlyInput}>
-                <Ionicons name="mail" size={18} color="#94a3b8" style={styles.inputIcon} />
-                <Text style={styles.readOnlyText}>{userData?.email || "Not Set"}</Text>
-              </View>
-            </View>
-
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        
+        {/* ACCOUNT SECURITY */}
+        <View style={styles.groupContainer}>
+          <Text style={styles.groupTitle}>Account Security</Text>
+          <View style={styles.groupContent}>
+            <SettingsItem icon="mail-outline" label="Email" rightElement={<Text style={styles.valueText}>{user?.email || 'N/A'}</Text>} />
             <View style={styles.divider} />
-            <Text style={styles.sectionTitle}>Contact Details</Text>
+            <SettingsItem icon="key-outline" label="Change Password" onPress={() => Alert.alert("Reset", "Password reset link sent to your email.")} />
+          </View>
+        </View>
 
-            {/* ✅ EDITABLE FIELD: Phone Number */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Phone Number</Text>
-              <View style={styles.editableInputWrapper}>
-                <Ionicons name="call" size={18} color="#3b82f6" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.editableInput}
-                  placeholder="Enter your mobile number"
-                  placeholderTextColor="#94a3b8"
-                  keyboardType="phone-pad"
-                  value={phone}
-                  onChangeText={setPhone}
-                  maxLength={15}
-                />
-              </View>
+        {/* HELP & SUPPORT */}
+        <View style={styles.groupContainer}>
+          <Text style={styles.groupTitle}>Help & Support</Text>
+          <View style={styles.groupContent}>
+            <SettingsItem icon="help-buoy-outline" label="FAQs & Help Center" onPress={() => router.push('/help-center')} />
+            <View style={styles.divider} />
+            <SettingsItem icon="bug-outline" label="Report a Bug" onPress={() => Alert.alert("Report", "Feature coming soon!")} />
+          </View>
+        </View>
+
+        {/* 📜 NEW SECTION: LEGAL & POLICIES */}
+        <View style={styles.groupContainer}>
+          <Text style={styles.groupTitle}>Legal</Text>
+          <View style={styles.groupContent}>
+            <SettingsItem 
+              icon="shield-checkmark-outline" 
+              label="Privacy Policy" 
+              onPress={handleOpenPrivacyPolicy} 
+            />
+            <View style={styles.divider} />
+            <SettingsItem 
+              icon="document-text-outline" 
+              label="Terms & Conditions" 
+              onPress={handleOpenTerms} 
+            />
+          </View>
+        </View>
+
+        {/* DANGER ZONE */}
+        <View style={styles.groupContainer}>
+          <Text style={styles.groupTitle}>Danger Zone</Text>
+          <View style={styles.groupContent}>
+            <SettingsItem icon="log-out-outline" label="Log Out" onPress={handleLogout} />
+            <View style={styles.divider} />
+            <SettingsItem icon="trash-outline" label="Delete Account" isDestructive={true} onPress={() => setIsDeleteModalVisible(true)} />
+          </View>
+        </View>
+
+        <Text style={styles.versionText}>Eduxity App Version 1.0.0</Text>
+      </ScrollView>
+
+      {/* DELETE MODAL */}
+      <Modal visible={isDeleteModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Danger Zone</Text>
+            <Text style={styles.modalSub}>This is permanent. To confirm, type exactly:</Text>
+            <Text style={styles.phraseToCopy}>{REQUIRED_PHRASE}</Text>
+            
+            <TextInput 
+              style={styles.modalInput}
+              placeholder="Type phrase here..."
+              value={confirmText}
+              onChangeText={setConfirmText}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => { setIsDeleteModalVisible(false); setConfirmText(''); }}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.confirmDeleteBtn, confirmText !== REQUIRED_PHRASE && {opacity: 0.5}]}
+                disabled={confirmText !== REQUIRED_PHRASE || isDeleting}
+                onPress={executeAccountDeletion}
+              >
+                <Text style={styles.confirmDeleteText}>{isDeleting ? 'Deleting...' : 'Confirm'}</Text>
+              </TouchableOpacity>
             </View>
-
-            {/* 💾 SAVE BUTTON */}
-            <TouchableOpacity 
-              style={[styles.saveBtnContainer, saving && { opacity: 0.7 }]} 
-              onPress={handleSave} 
-              disabled={saving}
-            >
-              <LinearGradient colors={['#3b82f6', '#2563eb']} style={styles.saveBtn}>
-                {saving ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="save-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-                    <Text style={styles.saveBtnText}>Save Changes</Text>
-                  </>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
-
-          </ScrollView>
-        </KeyboardAvoidingView>
-      )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-// --- 🎨 PREMIUM SETTINGS STYLES ---
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 15, paddingBottom: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
-  backBtn: { padding: 5, backgroundColor: '#f1f5f9', borderRadius: 12 },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scrollContent: { padding: 20, paddingBottom: 50 },
-  
-  sectionTitle: { fontSize: 14, fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 15, marginTop: 10 },
-  divider: { height: 1, backgroundColor: '#e2e8f0', marginVertical: 20 },
-  
-  inputGroup: { marginBottom: 20 },
-  label: { fontSize: 13, fontWeight: '700', color: '#64748b', marginBottom: 8, marginLeft: 4 },
-  
-  readOnlyInput: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#e2e8f0', paddingHorizontal: 15, height: 55, borderRadius: 14 },
-  readOnlyText: { flex: 1, fontSize: 15, color: '#475569', fontWeight: '600' },
-  helpText: { fontSize: 11, color: '#94a3b8', marginTop: 6, marginLeft: 4, fontWeight: '500' },
-  
-  editableInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 15, height: 55, borderRadius: 14, borderWidth: 1, borderColor: '#cbd5e1', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
-  editableInput: { flex: 1, fontSize: 16, color: '#0f172a', fontWeight: '600' },
-  inputIcon: { marginRight: 12 },
-  
-  saveBtnContainer: { marginTop: 30, borderRadius: 16, overflow: 'hidden', elevation: 4, shadowColor: '#2563eb', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
-  saveBtn: { flexDirection: 'row', height: 55, justifyContent: 'center', alignItems: 'center' },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
+  container: { flex: 1, backgroundColor: '#f1f5f9' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 45 },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+  backBtn: { padding: 8, backgroundColor: '#f8fafc', borderRadius: 10 },
+  scrollContent: { padding: 15, paddingBottom: 50 },
+  groupContainer: { marginBottom: 25 },
+  groupTitle: { fontSize: 13, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: 10, marginBottom: 8 },
+  groupContent: { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', overflow: 'hidden' },
+  itemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 15 },
+  itemLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  iconBox: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  itemLabel: { fontSize: 15, fontWeight: '600', color: '#0f172a' },
+  itemRight: { flexDirection: 'row', alignItems: 'center' },
+  valueText: { fontSize: 14, color: '#64748b', fontWeight: '500' },
+  divider: { height: 1, backgroundColor: '#f1f5f9', marginLeft: 60 },
+  versionText: { textAlign: 'center', fontSize: 12, color: '#94a3b8', fontWeight: '600', marginTop: 20 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { width: '100%', backgroundColor: '#fff', borderRadius: 25, padding: 20, alignItems: 'center' },
+  modalTitle: { fontSize: 20, fontWeight: '900', color: '#ef4444', marginBottom: 10 },
+  modalSub: { fontSize: 14, color: '#64748b', textAlign: 'center', marginBottom: 15 },
+  phraseToCopy: { fontSize: 13, fontWeight: '800', color: '#0f172a', backgroundColor: '#f1f5f9', padding: 12, borderRadius: 12, marginBottom: 15, textAlign: 'center' },
+  modalInput: { width: '100%', height: 50, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 15, paddingHorizontal: 15, marginBottom: 20 },
+  modalActions: { flexDirection: 'row', gap: 10 },
+  cancelBtn: { flex: 1, height: 50, justifyContent: 'center', alignItems: 'center', borderRadius: 15, backgroundColor: '#f1f5f9' },
+  cancelBtnText: { fontWeight: '700', color: '#64748b' },
+  confirmDeleteBtn: { flex: 1, height: 50, justifyContent: 'center', alignItems: 'center', borderRadius: 15, backgroundColor: '#ef4444' },
+  confirmDeleteText: { fontWeight: '700', color: '#fff' }
 });

@@ -39,6 +39,10 @@ const TabButton = ({ item, onPress, accessibilityState }: any) => {
     };
   });
 
+  // Pure Light Mode Colors
+  const activeColor = '#4f46e5'; 
+  const inactiveColor = '#64748b';
+
   return (
     <TouchableOpacity 
       onPress={(e) => {
@@ -53,12 +57,12 @@ const TabButton = ({ item, onPress, accessibilityState }: any) => {
         <Ionicons 
           name={focused ? item.activeIcon : item.inactiveIcon} 
           size={24} 
-          color={focused ? '#4f46e5' : '#64748b'} 
+          color={focused ? activeColor : inactiveColor} 
         />
       </Animated.View>
       
       {/* Subtle bottom dot instead of a big bubble */}
-      <Animated.View style={[styles.indicatorDot, animatedIndicatorStyle]} />
+      <Animated.View style={[styles.indicatorDot, animatedIndicatorStyle, { backgroundColor: activeColor, shadowColor: activeColor }]} />
     </TouchableOpacity>
   );
 };
@@ -67,9 +71,14 @@ const TabButton = ({ item, onPress, accessibilityState }: any) => {
 // 🍏 2. APPLE-STYLE GLASSY DOCK
 // ==========================================
 const CustomTabBar = ({ state, descriptors, navigation }: any) => {
+
   return (
-    <View style={styles.floatingWrapper}>
-      {/* 🍏 Fix: Android/Web pe BlurView kabhi crash/invisible hota hai, isliye fallback lagaya */}
+    <View style={[
+      styles.floatingWrapper, 
+      // Solid White Fallback for Android
+      { backgroundColor: Platform.OS === 'android' ? 'rgba(255,255,255,0.95)' : 'transparent' }
+    ]}>
+      {/* 🍏 Light Tint Glass Effect restored */}
       <BlurView 
         intensity={80} 
         tint="light" 
@@ -147,7 +156,7 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   floatingWrapper: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 35 : 15, // 🔥 Fix: Android/Web me bottom kam kiya
+    bottom: Platform.OS === 'ios' ? 35 : 15,
     left: 20,
     right: 20,
     borderRadius: 35,
@@ -157,13 +166,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 20,
     overflow: 'hidden',
-    // 🔥 Fix: Agar Android me blur fail ho toh solid white background dikhega
-    backgroundColor: Platform.OS === 'android' ? 'rgba(255,255,255,0.95)' : 'transparent',
   },
   glassContainer: {
     flexDirection: 'row',
     height: 70,
-    backgroundColor: Platform.OS === 'android' ? 'transparent' : 'rgba(255, 255, 255, 0.3)', 
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 15,
@@ -182,8 +188,6 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: '#4f46e5',
-    shadowColor: '#4f46e5',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,
     shadowRadius: 4,

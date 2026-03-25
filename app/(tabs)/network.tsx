@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, FlatList, Image, TouchableOpacity, 
-  StatusBar, TextInput, ActivityIndicator, Alert,
-  Platform
+  StatusBar, TextInput, ActivityIndicator, Alert, Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
@@ -15,25 +14,25 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInUp, Layout } from 'react-native-reanimated';
+import { useSmartRecommendations } from '../../hooks/useSmartRecommendations';
 
 export default function NetworkScreen() {
   const router = useRouter();
   
-  // 🚨 Strict Auth State
   const [activeUid, setActiveUid] = useState<string | null>(null);
   const [currentUserData, setCurrentUserData] = useState<any>(null);
 
-  // 🗂️ Core States
   const [activeTab, setActiveTab] = useState<'recommended' | 'requests' | 'friends'>('recommended');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   
-  // 📡 Real Data States
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [myConnections, setMyConnections] = useState<any[]>([]);
 
+  const { recommendedList } = useSmartRecommendations(currentUserData, allUsers, myConnections);
+
   // ============================================================================
-  // 🔒 1. STRICT AUTH CHECK & FETCH MY DATA
+  // 🔒 1. AUTH & FETCH MY DATA
   // ============================================================================
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
@@ -45,7 +44,7 @@ export default function NetworkScreen() {
             setCurrentUserData(myDoc.data());
           }
         } catch (error) {
-          console.log("Error fetching my data for matching:", error);
+          console.log("Error fetching my data:", error);
         }
       } else {
         setActiveUid(null);
@@ -81,7 +80,6 @@ export default function NetworkScreen() {
         setMyConnections([...sentData, ...recData]);
         setLoading(false);
       });
-      
       return () => unsubRec();
     });
 
@@ -89,51 +87,94 @@ export default function NetworkScreen() {
   }, [activeUid]);
 
   // ============================================================================
-  // 🧠 3. THE "FAANG" MATCHING ALGORITHM
+  // 🧠 3. THE "LINKEDIN KILLER" MATCHING ALGORITHM (Upgraded with Graph Theory)
   // ============================================================================
-  const calculateMatchScore = (user: any, me: any) => {
+  const calculateMatchMatrix = (user: any, me: any) => {
     let score = 0;
-    if (!me) return 0;
+    let matchReasons: { reason: string, weight: number, color: string }[] = [];
 
-    if (user.roleDetail && me.roleDetail && user.roleDetail === me.roleDetail) {
-      score += 50;
+    if (!me) return { score: 0, primaryReason: null, badgeColor: '#64748b' };
+
+    // 🤝 TIER 0: GRAPH THEORY (Mutual Connections - HIGHEST TRUST)
+    // Assuming both users have an array of 'friendIds' saved in their profile
+    if (user.friendIds && me.friendIds) {
+      const mutualFriends = user.friendIds.filter((id: string) => me.friendIds.includes(id));
+      if (mutualFriends.length > 0) {
+        score += mutualFriends.length * 25; // 25 points per mutual friend!
+        matchReasons.push({ 
+          reason: `🤝 ${mutualFriends.length} Mutual Connection${mutualFriends.length > 1 ? 's' : ''}`, 
+          weight: mutualFriends.length * 25, 
+          color: '#f43f5e' // Rose Red for High Trust
+        }); 
+      }
     }
 
-    if (user.city && me.city && user.city.toLowerCase() === me.city.toLowerCase()) {
+    // 🏆 TIER 1: ACADEMIC CORE
+    if (user.targetExam && me.targetExam && user.targetExam === me.targetExam) {
+      score += 40;
+      matchReasons.push({ reason: 'Same Target Exam', weight: 40, color: '#ec4899' }); 
+    }
+    if (user.class && me.class && user.class === me.class) {
       score += 20;
-    } else if (user.state && me.state && user.state === me.state) {
+      matchReasons.push({ reason: 'Same Class', weight: 20, color: '#8b5cf6' }); 
+    }
+
+    // 💡 TIER 2: SKILL SYNERGY
+    const synergyMatch = user.strongSubjects?.some((s: string) => me.weakSubjects?.includes(s));
+    if (synergyMatch) {
+      score += 35;
+      matchReasons.push({ reason: 'Can help you study', weight: 35, color: '#10b981' }); 
+    }
+
+    // ⏰ TIER 3: LOGISTICS
+    if (user.studyTime && me.studyTime && user.studyTime === me.studyTime) {
+      score += 15;
+      const timeLabel = user.studyTime.includes('Night') ? '🌙 Night Owl Buddy' : '☀️ Morning Buddy';
+      matchReasons.push({ reason: timeLabel, weight: 15, color: '#f59e0b' }); 
+    }
+
+    // 📍 TIER 4: LOCATION & INTERESTS
+    if (user.city && me.city && user.city.toLowerCase() === me.city.toLowerCase()) {
       score += 10;
+      matchReasons.push({ reason: 'From your City', weight: 10, color: '#3b82f6' }); 
     }
 
     if (user.interests && me.interests) {
       const sharedInterests = user.interests.filter((i: string) => me.interests.includes(i));
-      score += (sharedInterests.length * 10);
-      user.sharedInterestCount = sharedInterests.length; 
+      score += (sharedInterests.length * 5);
+      if (sharedInterests.length > 0) {
+        matchReasons.push({ reason: `${sharedInterests.length} Shared Interests`, weight: sharedInterests.length * 5, color: '#14b8a6' }); 
+      }
     }
 
-    return score;
+    matchReasons.sort((a, b) => b.weight - a.weight);
+    
+    return { 
+      score, 
+      primaryReason: matchReasons.length > 0 ? matchReasons[0].reason : null, 
+      badgeColor: matchReasons.length > 0 ? matchReasons[0].color : '#64748b' 
+    };
   };
 
   // ============================================================================
   // 🧠 4. SMART FILTERING & SORTING LOGIC
   // ============================================================================
-  let recommendedUsers = allUsers.filter(user => {
+  // Filter out people we already have a connection with
+  let rawRecommended = allUsers.filter(user => {
     const hasConnection = myConnections.some(conn => conn.senderId === user.uid || conn.receiverId === user.uid);
     return !hasConnection;
   });
 
-  if (currentUserData) {
-    recommendedUsers.sort((a, b) => {
-      const scoreA = calculateMatchScore(a, currentUserData);
-      const scoreB = calculateMatchScore(b, currentUserData);
-      return scoreB - scoreA; 
-    });
-  }
+  // Apply the Algorithm and map the results
+  let recommendedUsers = rawRecommended.map(user => {
+    const matchData = calculateMatchMatrix(user, currentUserData);
+    return { ...user, matchScore: matchData.score, matchReason: matchData.primaryReason, badgeColor: matchData.badgeColor };
+  });
 
-  let incomingRequests = myConnections.filter(conn => 
-    conn.receiverId === activeUid && conn.status === 'pending'
-  );
+  // Sort by highest Match Score first
+  recommendedUsers.sort((a, b) => b.matchScore - a.matchScore);
 
+  let incomingRequests = myConnections.filter(conn => conn.receiverId === activeUid && conn.status === 'pending');
   let acceptedFriends = myConnections.filter(conn => conn.status === 'accepted');
 
   if (searchQuery.trim() !== '') {
@@ -147,7 +188,7 @@ export default function NetworkScreen() {
   }
 
   // ============================================================================
-  // ⚡ 5. REAL FIREBASE ACTIONS
+  // ⚡ 5. ACTIONS
   // ============================================================================
   const handleSendRequest = async (receiver: any) => {
     if (!activeUid) return;
@@ -156,23 +197,38 @@ export default function NetworkScreen() {
         senderId: activeUid,
         senderName: auth.currentUser?.displayName || "Student",
         senderAvatar: auth.currentUser?.photoURL || `https://ui-avatars.com/api/?name=${auth.currentUser?.displayName}`,
-        receiverId: receiver.uid,
+        receiverId: receiver.uid || receiver.id,
         receiverName: receiver.displayName || receiver.name || "Student",
         receiverAvatar: receiver.photoURL || receiver.profilePic || `https://ui-avatars.com/api/?name=${receiver.name}`,
         status: 'pending',
         timestamp: serverTimestamp()
       });
     } catch (error) {
-      Alert.alert("Error", "Request nahi jaa payi.");
+      Alert.alert("Error", "Request failed.");
     }
   };
 
-  const handleAcceptRequest = async (connectionId: string) => {
+  const handleAcceptRequest = async (connection: any) => {
     try {
-      await updateDoc(doc(db, 'connections', connectionId), { status: 'accepted' });
+      // 1. Update Connection Status
+      await updateDoc(doc(db, 'connections', connection.id), { status: 'accepted' });
+      
+      // 2. BUILD THE GRAPH (Denormalization for Mutual Friends)
+      // Add Sender's ID to Receiver's friend list
+      await updateDoc(doc(db, 'users', connection.receiverId), {
+        friendIds: arrayUnion(connection.senderId)
+      });
+      
+      // Add Receiver's ID to Sender's friend list
+      await updateDoc(doc(db, 'users', connection.senderId), {
+        friendIds: arrayUnion(connection.receiverId)
+      });
+
       setActiveTab('friends'); 
+      Alert.alert("Awesome! 🎉", "You are now connected. Say Hi!");
     } catch (error) {
-      Alert.alert("Error", "Request accept nahi hui.");
+      Alert.alert("Error", "Could not accept request.");
+      console.error(error);
     }
   };
 
@@ -187,19 +243,9 @@ export default function NetworkScreen() {
   // ============================================================================
   // 🎨 6. UI RENDER COMPONENTS
   // ============================================================================
-  
-  // 🌟 NEW: THE MATCHMAKING BANNER COMPONENT
   const renderMatchmakingBanner = () => (
-    <TouchableOpacity 
-      activeOpacity={0.9} 
-      onPress={() => router.push('/matchmaking')} 
-      style={styles.matchBannerContainer}
-    >
-      <LinearGradient 
-        colors={['#ec4899', '#8b5cf6']} 
-        start={{x: 0, y: 0}} end={{x: 1, y: 1}} 
-        style={styles.matchBannerGradient}
-      >
+    <TouchableOpacity activeOpacity={0.9} onPress={() => router.push('/matchmaking')} style={styles.matchBannerContainer}>
+      <LinearGradient colors={['#ec4899', '#8b5cf6']} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.matchBannerGradient}>
         <View style={styles.matchBannerTextContainer}>
           <Text style={styles.matchBannerTitle}>🤝 Find a Study Partner</Text>
           <Text style={styles.matchBannerSub}>Swipe & connect with serious aspirants</Text>
@@ -213,22 +259,6 @@ export default function NetworkScreen() {
   );
 
   const renderRecommendedCard = ({ item, index }: any) => {
-    let badgeText = "";
-    let badgeColor = "#64748b"; 
-    
-    if (currentUserData) {
-      if (item.roleDetail && item.roleDetail === currentUserData.roleDetail) {
-        badgeText = "Same Class";
-        badgeColor = "#10b981"; 
-      } else if (item.city && item.city === currentUserData.city) {
-        badgeText = "From your City";
-        badgeColor = "#3b82f6"; 
-      } else if (item.sharedInterestCount > 0) {
-        badgeText = `${item.sharedInterestCount} Shared Interests`;
-        badgeColor = "#f59e0b"; 
-      }
-    }
-
     return (
       <Animated.View entering={FadeInUp.delay(index * 100)} layout={Layout.springify()} style={styles.cardPremium}>
         <TouchableOpacity 
@@ -239,11 +269,12 @@ export default function NetworkScreen() {
           <Image source={{ uri: item.photoURL || item.profilePic || `https://ui-avatars.com/api/?name=${item.displayName || 'User'}` }} style={styles.avatarLarge} />
           
           <Text style={styles.userNameLarge} numberOfLines={1}>{item.displayName || item.name || 'User'}</Text>
-          <Text style={styles.userSubtitle} numberOfLines={1}>{item.roleDetail || item.role || 'Scholar'}</Text>
+          <Text style={styles.userSubtitle} numberOfLines={1}>{item.targetExam || item.roleDetail || 'Scholar'}</Text>
 
-          {badgeText !== "" && (
-            <View style={[styles.algoBadge, { backgroundColor: badgeColor + '20' }]}>
-              <Text style={[styles.algoBadgeText, { color: badgeColor }]}>{badgeText}</Text>
+          {/* 🔥 Dynamic Recommendation Badge */}
+          {item.matchReason && (
+            <View style={[styles.algoBadge, { backgroundColor: item.badgeColor + '15', borderColor: item.badgeColor + '40', borderWidth: 1 }]}>
+              <Text style={[styles.algoBadgeText, { color: item.badgeColor }]}>{item.matchReason}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -260,18 +291,13 @@ export default function NetworkScreen() {
 
   const renderRequestCard = ({ item, index }: any) => (
     <Animated.View entering={FadeInUp.delay(index * 100)} layout={Layout.springify()} style={styles.listCard}>
-      <TouchableOpacity 
-        style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
-        activeOpacity={0.7}
-        onPress={() => router.push({ pathname: '/user/[id]', params: { id: item.senderId } })}
-      >
+      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }} onPress={() => router.push({ pathname: '/user/[id]', params: { id: item.senderId } })}>
         <Image source={{ uri: item.senderAvatar }} style={styles.avatarMedium} />
         <View style={{ marginLeft: 12, flex: 1 }}>
           <Text style={styles.userNameLarge}>{item.senderName}</Text>
           <Text style={styles.userSubtitle}>Sent you a request</Text>
         </View>
       </TouchableOpacity>
-
       <View style={styles.requestActionRow}>
         <TouchableOpacity style={styles.iconBtnReject} onPress={() => handleRejectRequest(item.id)}>
           <Ionicons name="close" size={20} color="#ef4444" />
@@ -291,11 +317,7 @@ export default function NetworkScreen() {
 
     return (
       <Animated.View entering={FadeInUp.delay(index * 50)} layout={Layout.springify()} style={styles.listCard}>
-        <TouchableOpacity 
-          style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
-          activeOpacity={0.7}
-          onPress={() => router.push({ pathname: '/user/[id]', params: { id: friendId } })}
-        >
+        <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }} onPress={() => router.push({ pathname: '/user/[id]', params: { id: friendId } })}>
           <View>
             <Image source={{ uri: friendAvatar }} style={styles.avatarMedium} />
             <View style={styles.onlineDot} />
@@ -305,11 +327,7 @@ export default function NetworkScreen() {
             <Text style={[styles.userSubtitle, {color: '#10b981'}]}>Connected</Text>
           </View>
         </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.chatIconBtn}
-          onPress={() => router.push({ pathname: '/chat/[id]', params: { id: item.id, name: friendName } })}
-        >
+        <TouchableOpacity style={styles.chatIconBtn} onPress={() => router.push({ pathname: '/chat/[id]', params: { id: item.id, name: friendName } })}>
           <Ionicons name="chatbubbles" size={22} color="#3b82f6" />
         </TouchableOpacity>
       </Animated.View>
@@ -323,7 +341,6 @@ export default function NetworkScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
       
-      {/* --- HEADER --- */}
       <View style={styles.headerArea}>
         <Text style={styles.mainTitle}>Network</Text>
         <View style={styles.searchBar}>
@@ -335,21 +352,13 @@ export default function NetworkScreen() {
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}><Ionicons name="close-circle" size={20} color="#cbd5e1" /></TouchableOpacity>
-          )}
         </View>
       </View>
 
-      {/* --- TABS --- */}
       <View style={styles.tabWrapper}>
         <View style={styles.tabContainer}>
           {(['recommended', 'requests', 'friends'] as const).map((tab) => (
-            <TouchableOpacity 
-              key={tab} 
-              style={[styles.tabBtn, activeTab === tab && styles.activeTabBtn]} 
-              onPress={() => setActiveTab(tab)}
-            >
+            <TouchableOpacity key={tab} style={[styles.tabBtn, activeTab === tab && styles.activeTabBtn]} onPress={() => setActiveTab(tab)}>
               <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
                 {tab === 'requests' && incomingRequests.length > 0 && ` (${incomingRequests.length})`}
@@ -360,7 +369,6 @@ export default function NetworkScreen() {
         </View>
       </View>
 
-      {/* --- LIST CONTENT --- */}
       {loading ? (
         <View style={styles.center}><ActivityIndicator size="large" color="#4f46e5" /></View>
       ) : (
@@ -373,7 +381,7 @@ export default function NetworkScreen() {
               columnWrapperStyle={{ justifyContent: 'space-between', paddingHorizontal: 15 }}
               contentContainerStyle={styles.listArea}
               showsVerticalScrollIndicator={false}
-              ListHeaderComponent={renderMatchmakingBanner} // 👈 BANNER ADDED HERE
+              ListHeaderComponent={renderMatchmakingBanner}
               renderItem={renderRecommendedCard}
               ListEmptyComponent={<Text style={styles.emptyText}>No new scholars found.</Text>}
             />
@@ -430,19 +438,7 @@ const styles = StyleSheet.create({
   listAreaVertical: { paddingHorizontal: 15, paddingBottom: 120, paddingTop: 10 },
   emptyText: { textAlign: 'center', marginTop: 50, color: '#94a3b8', fontSize: 15, fontWeight: '600' },
 
-  // 🤝 Matchmaking Banner Styles
-  matchBannerContainer: { 
-    marginHorizontal: 15, 
-    marginBottom: 20, 
-    marginTop: 5,
-    borderRadius: 16, 
-    overflow: 'hidden', 
-    elevation: 5, 
-    shadowColor: '#ec4899', 
-    shadowOffset: { width: 0, height: 4 }, 
-    shadowOpacity: 0.3, 
-    shadowRadius: 8 
-  },
+  matchBannerContainer: { marginHorizontal: 15, marginBottom: 20, marginTop: 5, borderRadius: 16, overflow: 'hidden', elevation: 5, shadowColor: '#ec4899', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
   matchBannerGradient: { flexDirection: 'row', alignItems: 'center', padding: 20 },
   matchBannerTextContainer: { flex: 1, paddingRight: 10 },
   matchBannerTitle: { color: '#fff', fontSize: 17, fontWeight: '900', marginBottom: 4 },

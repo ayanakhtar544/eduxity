@@ -1,7 +1,8 @@
+// Location: app/create-post.tsx
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, TextInput, TouchableOpacity, 
-  Image, ScrollView, StatusBar, ActivityIndicator, 
+  ScrollView, StatusBar, ActivityIndicator, 
   Alert, KeyboardAvoidingView, Platform, Keyboard 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,7 +11,8 @@ import { auth, db } from '../firebaseConfig';
 import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import Animated, { FadeIn, SlideInDown, Layout } from 'react-native-reanimated';
+import Animated, { FadeIn, Layout } from 'react-native-reanimated';
+import { Image } from 'expo-image';
 
 // Gamification Imports
 import { processAction } from '../helpers/gamificationEngine'; 
@@ -19,7 +21,6 @@ import { useRewardStore } from '../store/useRewardStore';
 const IMGBB_API_KEY = process.env.EXPO_PUBLIC_IMGBB_API_KEY;
 
 type PostType = 'text' | 'image' | 'code' | 'poll' | 'resource' | 'flashcard';
-const CATEGORIES = ['General', 'JEE Warriors', 'Coding Group', 'Doubts', 'Resources'];
 const SUBJECTS = ['Physics', 'Chemistry', 'Mathematics', 'Biology', 'General'];
 const FALLBACK_TAGS = ['JEE Advanced', 'Short Notes', 'PYQs', 'Tricks', 'Formula Sheet'];
 
@@ -29,8 +30,6 @@ export default function CreatePostScreen() {
   
   const [postType, setPostType] = useState<PostType>((params.type as PostType) || 'text');
   const [text, setText] = useState('');
-  const [category, setCategory] = useState(CATEGORIES[0]);
-  const [showCategories, setShowCategories] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -44,8 +43,8 @@ export default function CreatePostScreen() {
   const [driveLink, setDriveLink] = useState('');
   const [subject, setSubject] = useState('Physics');
   
-  // 🔥 TAGS STATES (Now Universal)
-  const [tags, setTags] = useState<string[]>([]);
+  // 🔥 TAGS STATES (Pehle se 'general' tag selected hai)
+  const [tags, setTags] = useState<string[]>(['general']);
   const [currentTag, setCurrentTag] = useState('');
   const [userInterests, setUserInterests] = useState<string[]>([]);
 
@@ -54,7 +53,6 @@ export default function CreatePostScreen() {
 
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
 
-  // 🔥 REWARD HOOK INITIALIZED
   const showReward = useRewardStore((state) => state.showReward);
 
   // FETCH USER INTERESTS
@@ -63,7 +61,9 @@ export default function CreatePostScreen() {
       if (auth.currentUser) {
         const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
         if (userDoc.exists() && userDoc.data().interests?.length > 0) {
-          setUserInterests(userDoc.data().interests);
+          // Filter out 'general' from interests if it exists so we don't show duplicate suggestions
+          const fetchedInterests = userDoc.data().interests.filter((i: string) => i.toLowerCase() !== 'general');
+          setUserInterests(fetchedInterests.length > 0 ? fetchedInterests : FALLBACK_TAGS);
         } else {
           setUserInterests(FALLBACK_TAGS);
         }
@@ -73,16 +73,13 @@ export default function CreatePostScreen() {
   }, []);
 
   useEffect(() => {
-    if (params.type === 'resource') setCategory('Resources');
-    if (params.type === 'flashcard') setCategory('Resources');
-    
     const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
     const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
     return () => {
       keyboardDidHideListener.remove();
       keyboardDidShowListener.remove();
     };
-  }, [params.type]);
+  }, []);
 
   // --- TAGS LOGIC ---
   const handleAddTag = (tagToAdd: string) => {
@@ -102,7 +99,7 @@ export default function CreatePostScreen() {
     try {
       let result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images, 
-        allowsEditing: true, quality: 0.5, base64: true, 
+        allowsEditing: true, quality: 0.3, base64: true, // Quality 0.3 for proper compression
       });
       if (!result.canceled && result.assets && result.assets.length > 0) { 
         setImageUri(result.assets[0].uri); setImageBase64(result.assets[0].base64 || null); setPostType('image'); 
@@ -162,8 +159,8 @@ export default function CreatePostScreen() {
         authorName: user.displayName || 'Eduxity User',
         authorAvatar: user.photoURL || 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
         type: postType,
-        category: category,
-        text: text.trim(), 
+        category: 'General', // Fallback to avoid breaking feed algorithm
+        text: text.trim().substring(0, 2000), 
         tags: tags, 
         likes: [],
         savedBy: [],
@@ -178,13 +175,13 @@ export default function CreatePostScreen() {
         postData.totalVotes = 0; postData.voters = [];
       }
       if (postType === 'resource') {
-        postData.title = resourceTitle.trim();
+        postData.title = resourceTitle.trim().substring(0, 150);
         postData.fileUrl = driveLink.trim();
         postData.subject = subject; 
       }
       if (postType === 'flashcard') {
         const validCards = flashcards.filter(c => c.q.trim() !== '' && c.a.trim() !== '');
-        postData.title = flashcardTitle.trim();
+        postData.title = flashcardTitle.trim().substring(0, 150);
         postData.cardsCount = validCards.length;
         postData.cardsData = validCards; 
         postData.subject = subject;
@@ -195,7 +192,7 @@ export default function CreatePostScreen() {
       
       // 2. DETERMINE ACTION TYPE FOR GAMIFICATION
       let actionType = 'CREATE_POST';
-      if (postType === 'resource' || postType === 'flashcard') actionType = 'UPLOAD_NOTE'; // Notes aur flashcard ke liye zyada XP
+      if (postType === 'resource' || postType === 'flashcard') actionType = 'UPLOAD_NOTE'; 
       
       // 3. PROCESS ACTION
       const reward = await processAction(user.uid, actionType);
@@ -211,10 +208,8 @@ export default function CreatePostScreen() {
             newLevel: reward.newLevel,
             newBadges: reward.newBadges
          });
-         // Notice main alert hata diya hai. Ab sirf screen pe notification aayegi.
       }
       
-      // 5. GO BACK
       router.back(); 
 
     } catch (error) {
@@ -223,6 +218,8 @@ export default function CreatePostScreen() {
       setLoading(false);
     }
   };
+
+  const noOutlineStyle = Platform.OS === 'web' ? { outlineStyle: 'none' } as any : {};
 
   return (
     <SafeAreaView style={styles.container}>
@@ -252,28 +249,15 @@ export default function CreatePostScreen() {
           
           <View style={styles.mainContentCard}>
             <View style={styles.authorSection}>
-              <Image source={{ uri: auth.currentUser?.photoURL || 'https://cdn-icons-png.flaticon.com/512/149/149071.png' }} style={styles.authorAvatar} />
+              <Image source={{ uri: auth.currentUser?.photoURL || 'https://cdn-icons-png.flaticon.com/512/149/149071.png' }} style={styles.authorAvatar} contentFit="cover" />
               <View style={{ flex: 1 }}>
                 <Text style={styles.authorName}>{auth.currentUser?.displayName || 'User'}</Text>
-                <TouchableOpacity style={styles.categorySelector} onPress={() => setShowCategories(!showCategories)}>
-                  <Text style={styles.categoryText}>{category}</Text>
-                  <Ionicons name={showCategories ? "chevron-up" : "chevron-down"} size={14} color="#4f46e5" style={{ marginLeft: 5 }} />
-                </TouchableOpacity>
+                {/* REMOVED: Top Category Selector Dropdown completely */}
               </View>
             </View>
 
-            {showCategories && (
-              <Animated.View entering={SlideInDown.duration(200)} style={styles.categoryDropdown}>
-                {CATEGORIES.map((cat, idx) => (
-                  <TouchableOpacity key={idx} style={[styles.categoryOption, category === cat && styles.categoryOptionActive]} onPress={() => { setCategory(cat); setShowCategories(false); }}>
-                    <Text style={[styles.categoryOptionText, category === cat && { color: '#fff' }]}>{cat}</Text>
-                  </TouchableOpacity>
-                ))}
-              </Animated.View>
-            )}
-
             <TextInput
-              style={styles.mainInput}
+              style={[styles.mainInput, noOutlineStyle]}
               placeholder={
                 postType === 'poll' ? "Ask a question..." : 
                 postType === 'resource' ? "Describe this material..." : 
@@ -284,13 +268,14 @@ export default function CreatePostScreen() {
               multiline
               value={text}
               onChangeText={setText}
+              maxLength={2000}
               autoFocus={postType === 'text'}
             />
           </View>
 
           {postType === 'image' && imageUri && (
             <Animated.View entering={FadeIn} layout={Layout.springify()} style={styles.imagePreviewContainer}>
-              <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="cover" />
+              <Image source={{ uri: imageUri }} style={styles.imagePreview} contentFit="cover" />
               <TouchableOpacity style={styles.removeMediaBtn} onPress={() => { setImageUri(null); setImageBase64(null); setPostType('text'); }}>
                 <Ionicons name="trash-outline" size={20} color="#fff" />
               </TouchableOpacity>
@@ -303,9 +288,9 @@ export default function CreatePostScreen() {
                 <View style={styles.macDots}>
                   <View style={[styles.macDot, { backgroundColor: '#ff5f56' }]} /><View style={[styles.macDot, { backgroundColor: '#ffbd2e' }]} /><View style={[styles.macDot, { backgroundColor: '#27c93f' }]} />
                 </View>
-                <TextInput style={styles.langInput} placeholder="Language (e.g. JSX)" placeholderTextColor="#64748b" value={language} onChangeText={setLanguage} />
+                <TextInput style={[styles.langInput, noOutlineStyle]} placeholder="Language (e.g. JSX)" placeholderTextColor="#64748b" value={language} onChangeText={setLanguage} />
               </View>
-              <TextInput style={styles.codeEditor} placeholder="// Paste your code snippet here..." placeholderTextColor="#64748b" multiline value={codeSnippet} onChangeText={setCodeSnippet} spellCheck={false} autoCorrect={false} autoCapitalize="none" />
+              <TextInput style={[styles.codeEditor, noOutlineStyle]} placeholder="// Paste your code snippet here..." placeholderTextColor="#64748b" multiline value={codeSnippet} onChangeText={setCodeSnippet} spellCheck={false} autoCorrect={false} autoCapitalize="none" />
             </Animated.View>
           )}
 
@@ -317,7 +302,7 @@ export default function CreatePostScreen() {
               </View>
               {pollOptions.map((opt, idx) => (
                 <View key={idx} style={styles.pollOptionRow}>
-                  <TextInput style={styles.pollInput} placeholder={`Option ${idx + 1}`} placeholderTextColor="#94a3b8" value={opt} onChangeText={(val) => updatePollOption(val, idx)} maxLength={50} />
+                  <TextInput style={[styles.pollInput, noOutlineStyle]} placeholder={`Option ${idx + 1}`} placeholderTextColor="#94a3b8" value={opt} onChangeText={(val) => updatePollOption(val, idx)} maxLength={100} />
                   {pollOptions.length > 2 && (
                     <TouchableOpacity onPress={() => removePollOption(idx)} style={styles.removeOptBtn}><Ionicons name="trash-outline" size={22} color="#ef4444" /></TouchableOpacity>
                   )}
@@ -342,7 +327,7 @@ export default function CreatePostScreen() {
               </View>
 
               <Text style={styles.label}>Material Title</Text>
-              <TextInput style={styles.resourceInput} placeholder="e.g. HC Verma Solutions PDF" placeholderTextColor="#94a3b8" value={resourceTitle} onChangeText={setResourceTitle} />
+              <TextInput style={[styles.resourceInput, noOutlineStyle]} placeholder="e.g. HC Verma Solutions PDF" placeholderTextColor="#94a3b8" value={resourceTitle} onChangeText={setResourceTitle} maxLength={150} />
 
               <Text style={styles.label}>Select Subject</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subjectRow}>
@@ -356,9 +341,9 @@ export default function CreatePostScreen() {
               <Text style={styles.label}>Google Drive / Video Link</Text>
               <View style={styles.linkInputWrapper}>
                 <Ionicons name="link" size={20} color="#4f46e5" style={{ marginLeft: 12 }} />
-                <TextInput style={styles.linkInput} placeholder="https://drive.google.com/..." placeholderTextColor="#94a3b8" value={driveLink} onChangeText={setDriveLink} autoCapitalize="none" autoCorrect={false} />
+                <TextInput style={[styles.linkInput, noOutlineStyle]} placeholder="https://drive.google.com/..." placeholderTextColor="#94a3b8" value={driveLink} onChangeText={setDriveLink} autoCapitalize="none" autoCorrect={false} maxLength={500} />
               </View>
-              <Text style={styles.helperText}>Live PDF preview will automatically appear in the feed.</Text>
+              <Text style={styles.helperText}>Live preview will automatically appear in the feed.</Text>
             </Animated.View>
           )}
 
@@ -373,11 +358,12 @@ export default function CreatePostScreen() {
 
               <Text style={styles.label}>Deck Title</Text>
               <TextInput 
-                style={styles.resourceInput} 
+                style={[styles.resourceInput, noOutlineStyle]} 
                 placeholder="e.g. Physics Formula Master" 
                 placeholderTextColor="#94a3b8" 
                 value={flashcardTitle} 
-                onChangeText={setFlashcardTitle} 
+                onChangeText={setFlashcardTitle}
+                maxLength={150}
               />
 
               <Text style={[styles.label, { marginTop: 20 }]}>Cards</Text>
@@ -390,21 +376,23 @@ export default function CreatePostScreen() {
                     </TouchableOpacity>
                   </View>
                   <TextInput 
-                    style={styles.flashcardInput} 
+                    style={[styles.flashcardInput, noOutlineStyle]} 
                     placeholder="Question (Front)" 
                     placeholderTextColor="#94a3b8" 
                     value={card.q} 
                     onChangeText={(val) => updateFlashcard(val, idx, 'q')} 
                     multiline
+                    maxLength={400}
                   />
                   <View style={styles.dividerLine} />
                   <TextInput 
-                    style={styles.flashcardInput} 
+                    style={[styles.flashcardInput, noOutlineStyle]} 
                     placeholder="Answer (Back)" 
                     placeholderTextColor="#94a3b8" 
                     value={card.a} 
                     onChangeText={(val) => updateFlashcard(val, idx, 'a')} 
                     multiline
+                    maxLength={400}
                   />
                 </View>
               ))}
@@ -416,19 +404,20 @@ export default function CreatePostScreen() {
             </Animated.View>
           )}
 
-          {/* 🔥 UNIVERSAL TAGS SECTION 🔥 */}
+          {/* 🔥 UNIVERSAL TAGS SECTION (Bottom Only) 🔥 */}
           <Animated.View entering={FadeIn} style={styles.universalTagsSection}>
             <Text style={styles.label}>Add Filter Tags (Max 5)</Text>
             <View style={styles.tagInputWrapper}>
               <Ionicons name="pricetag-outline" size={18} color="#94a3b8" style={{marginLeft: 12}} />
               <TextInput 
-                style={styles.tagInput} 
+                style={[styles.tagInput, noOutlineStyle]} 
                 placeholder="Type tag & press '+'..." 
                 placeholderTextColor="#94a3b8" 
                 value={currentTag} 
                 onChangeText={setCurrentTag} 
                 onSubmitEditing={() => handleAddTag(currentTag)} 
                 blurOnSubmit={false} 
+                maxLength={30}
               />
               <TouchableOpacity onPress={() => handleAddTag(currentTag)} style={styles.addTagBtn}>
                 <Ionicons name="add" size={20} color="#fff" />
@@ -458,7 +447,7 @@ export default function CreatePostScreen() {
               </>
             )}
 
-            {/* Selected Tags Display */}
+            {/* Selected Tags Display (Pehle se 'general' dikhega) */}
             {tags.length > 0 && (
               <View style={styles.selectedTagsContainer}>
                 {tags.map((tag, idx) => (
@@ -485,16 +474,16 @@ export default function CreatePostScreen() {
               <TouchableOpacity style={[styles.toolBtn, postType === 'image' && styles.toolBtnActive]} onPress={pickImage}>
                 <Ionicons name="image" size={22} color={postType === 'image' ? '#4f46e5' : '#64748b'} />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.toolBtn, postType === 'poll' && styles.toolBtnActive]} onPress={() => {setPostType('poll'); setCategory('General');}}>
+              <TouchableOpacity style={[styles.toolBtn, postType === 'poll' && styles.toolBtnActive]} onPress={() => setPostType('poll')}>
                 <Ionicons name="stats-chart" size={22} color={postType === 'poll' ? '#4f46e5' : '#64748b'} />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.toolBtn, postType === 'code' && styles.toolBtnActive]} onPress={() => {setPostType('code'); setCategory('Coding Group');}}>
+              <TouchableOpacity style={[styles.toolBtn, postType === 'code' && styles.toolBtnActive]} onPress={() => setPostType('code')}>
                 <Ionicons name="code-slash" size={22} color={postType === 'code' ? '#4f46e5' : '#64748b'} />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.toolBtn, postType === 'resource' && styles.toolBtnActive]} onPress={() => {setPostType('resource'); setCategory('Resources');}}>
+              <TouchableOpacity style={[styles.toolBtn, postType === 'resource' && styles.toolBtnActive]} onPress={() => setPostType('resource')}>
                 <Ionicons name="book" size={22} color={postType === 'resource' ? '#4f46e5' : '#64748b'} />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.toolBtn, postType === 'flashcard' && { backgroundColor: '#fce7f3' }]} onPress={() => {setPostType('flashcard'); setCategory('Resources');}}>
+              <TouchableOpacity style={[styles.toolBtn, postType === 'flashcard' && { backgroundColor: '#fce7f3' }]} onPress={() => setPostType('flashcard')}>
                 <Ionicons name="layers" size={22} color={postType === 'flashcard' ? '#ec4899' : '#64748b'} />
               </TouchableOpacity>
               <TouchableOpacity style={{ padding: 8, borderRadius: 20 }} onPress={() => router.push('/create-test')}>
@@ -518,15 +507,9 @@ const styles = StyleSheet.create({
   publishBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   scrollContent: { padding: 15, paddingBottom: 100 },
   mainContentCard: { backgroundColor: '#fff', borderRadius: 20, padding: 20, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, zIndex: 10 },
-  authorSection: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 }, 
+  authorSection: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 }, 
   authorAvatar: { width: 48, height: 48, borderRadius: 24, marginRight: 15, backgroundColor: '#e2e8f0' }, 
   authorName: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
-  categorySelector: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef2ff', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, marginTop: 4, alignSelf: 'flex-start' }, 
-  categoryText: { fontSize: 12, color: '#4f46e5', fontWeight: '800' },
-  categoryDropdown: { backgroundColor: '#fff', borderRadius: 16, padding: 10, position: 'absolute', top: 70, left: 60, right: 10, zIndex: 100, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 10, borderWidth: 1, borderColor: '#f1f5f9' }, 
-  categoryOption: { paddingVertical: 12, paddingHorizontal: 15, borderRadius: 10, marginBottom: 2 }, 
-  categoryOptionActive: { backgroundColor: '#4f46e5' }, 
-  categoryOptionText: { fontSize: 14, fontWeight: '700', color: '#334155' },
   mainInput: { fontSize: 18, color: '#1e293b', lineHeight: 28, minHeight: 120, textAlignVertical: 'top', marginTop: 10 },
   
   imagePreviewContainer: { marginTop: 15, borderRadius: 20, overflow: 'hidden', shadowColor: '#000', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 },

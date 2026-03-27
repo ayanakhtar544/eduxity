@@ -37,7 +37,7 @@ export default function CreateStoryScreen() {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [9, 16], // Story format (Vertical)
-        quality: 0.7, // Fast upload
+        quality: 0.3, // Fast upload
       });
 
       if (!result.canceled) {

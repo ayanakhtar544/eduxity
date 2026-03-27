@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { auth, db } from '../firebaseConfig'; // path check kar lena (agar folder ke andar hai toh ../../firebaseConfig)
+import { auth, db } from '../firebaseConfig'; 
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, writeBatch, deleteDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
@@ -40,10 +40,10 @@ export default function NotificationScreen() {
   
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeFilter, setActiveFilter] = useState<'All' | 'Unread' | 'Mentions' | 'Doubts'>('All');
+  const [activeFilter, setActiveFilter] = useState<'All' | 'Unread' | 'Doubts'>('All');
 
   // ==========================================
-  // 📡 FETCH REAL-TIME NOTIFICATIONS (FIXED)
+  // 📡 FETCH REAL-TIME NOTIFICATIONS
   // ==========================================
   useEffect(() => {
     if (!currentUid) {
@@ -65,7 +65,7 @@ export default function NotificationScreen() {
       },
       (error) => {
         console.error("Firebase Query Error:", error.message);
-        setLoading(false); // Error aane par bhi loader band karo
+        setLoading(false); 
         alert("Firestore Index Error! Check your computer terminal.");
       }
     );
@@ -82,10 +82,17 @@ export default function NotificationScreen() {
       try { await updateDoc(doc(db, 'notifications', item.id), { isRead: true }); } 
       catch (error) { console.log(error); }
     }
-    // Smart Navigation
+    // Smart Navigation for Post Context
     if (item.type === 'doubt_solved') router.push('/doubts');
     else if (item.postId) router.push(`/post/${item.postId}`);
-    else if (item.senderId) router.push(`/user/${item.senderId}`);
+    else if (item.senderId) router.push(`/user/${item.senderId}`); // Fallback
+  };
+
+  const handleAvatarPress = (senderId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (senderId) {
+      router.push(`/user/${senderId}`);
+    }
   };
 
   const deleteNotification = async (id: string) => {
@@ -135,11 +142,9 @@ export default function NotificationScreen() {
     }
   };
 
-  // 🗂️ FILTER LOGIC
   const filteredNotifications = notifications.filter(notif => {
     if (activeFilter === 'All') return true;
     if (activeFilter === 'Unread') return !notif.isRead;
-    if (activeFilter === 'Mentions') return notif.type === 'mention' || notif.type === 'comment';
     if (activeFilter === 'Doubts') return notif.type === 'doubt_solved';
     return true;
   });
@@ -154,17 +159,25 @@ export default function NotificationScreen() {
       <Animated.View entering={FadeInDown.delay(index * 40).springify()} layout={Layout.springify()} exiting={SlideOutRight.duration(300)}>
         <View style={[styles.notificationCard, { borderLeftColor: meta.border }, !item.isRead && styles.unreadCardBg]}>
           
-          <TouchableOpacity style={styles.cardClickArea} activeOpacity={0.7} onPress={() => handleNotificationPress(item)}>
-            {/* Avatar & Icon Badge */}
-            <View style={styles.avatarContainer}>
+          <View style={styles.cardLayout}>
+            {/* 🔥 NEW: Touchable Avatar Area for Profile Navigation */}
+            <TouchableOpacity 
+              activeOpacity={0.8} 
+              onPress={() => handleAvatarPress(item.senderId)}
+              style={styles.avatarContainer}
+            >
               <Image source={{ uri: item.senderAvatar || DEFAULT_AVATAR }} style={styles.avatar} />
               <View style={[styles.typeIconBadge, { backgroundColor: meta.color }]}>
                 <Ionicons name={meta.name as any} size={12} color="#fff" />
               </View>
-            </View>
+            </TouchableOpacity>
             
-            {/* Content Area */}
-            <View style={styles.textContainer}>
+            {/* 🔥 NEW: Touchable Text Area for Post/Doubt Navigation */}
+            <TouchableOpacity 
+              activeOpacity={0.7} 
+              onPress={() => handleNotificationPress(item)}
+              style={styles.textContainer}
+            >
               <View style={styles.textHeaderRow}>
                 <Text style={styles.boldText} numberOfLines={1}>{item.senderName}</Text>
                 <Text style={styles.timeText}>{timeAgo(item.createdAt)}</Text>
@@ -181,24 +194,24 @@ export default function NotificationScreen() {
               {/* ⚡ INLINE QUICK ACTIONS */}
               {item.type === 'follow' && (
                 <View style={styles.quickActionRow}>
-                  <TouchableOpacity style={styles.quickActionBtn} onPress={() => router.push(`/user/${item.senderId}`)}>
+                  <View style={styles.quickActionBtn}>
                     <Text style={styles.quickActionText}>View Profile</Text>
-                  </TouchableOpacity>
+                  </View>
                 </View>
               )}
               {item.type === 'doubt_solved' && (
                 <View style={styles.quickActionRow}>
-                  <TouchableOpacity style={[styles.quickActionBtn, {backgroundColor: '#fefce8', borderColor: '#fef08a'}]} onPress={() => router.push('/doubts')}>
+                  <View style={[styles.quickActionBtn, {backgroundColor: '#fefce8', borderColor: '#fef08a'}]}>
                     <Ionicons name="bulb" size={12} color="#ca8a04" style={{marginRight: 4}}/>
                     <Text style={[styles.quickActionText, {color: '#ca8a04'}]}>View Solution</Text>
-                  </TouchableOpacity>
+                  </View>
                 </View>
               )}
-            </View>
+            </TouchableOpacity>
 
             {/* Unread Indicator */}
             {!item.isRead && <View style={[styles.unreadDot, {backgroundColor: meta.color}]} />}
-          </TouchableOpacity>
+          </View>
 
           {/* Delete Swipe Area */}
           <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteNotification(item.id)}>
@@ -230,7 +243,7 @@ export default function NotificationScreen() {
       {/* 🗂️ SMART FILTERS */}
       <View style={styles.filterContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal: 15, paddingVertical: 10}}>
-          {['All', 'Unread', 'Mentions', 'Doubts'].map((filter) => (
+          {['All', 'Unread', 'Doubts'].map((filter) => (
             <TouchableOpacity 
               key={filter} 
               style={[styles.filterPill, activeFilter === filter && styles.activeFilterPill]} 
@@ -297,15 +310,15 @@ const styles = StyleSheet.create({
   listContent: { padding: 15, paddingBottom: 100 },
   
   notificationCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#e2e8f0', borderLeftWidth: 5, shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, overflow: 'hidden' },
-  unreadCardBg: { backgroundColor: '#f4f6ff' }, // Very subtle blue tint for unread
+  unreadCardBg: { backgroundColor: '#f4f6ff' }, 
   
-  cardClickArea: { flex: 1, flexDirection: 'row', padding: 15 },
+  cardLayout: { flex: 1, flexDirection: 'row', padding: 15, paddingRight: 10 },
   
-  avatarContainer: { position: 'relative', marginRight: 15, alignSelf: 'flex-start' },
+  avatarContainer: { position: 'relative', marginRight: 15, alignSelf: 'flex-start', padding: 2 }, // Added padding for touch area
   avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#e2e8f0', borderWidth: 1, borderColor: '#e2e8f0' },
-  typeIconBadge: { position: 'absolute', bottom: -4, right: -4, width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff', elevation: 2 },
+  typeIconBadge: { position: 'absolute', bottom: -2, right: -2, width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff', elevation: 2 },
   
-  textContainer: { flex: 1 },
+  textContainer: { flex: 1, justifyContent: 'center' },
   textHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
   boldText: { fontSize: 15, fontWeight: '800', color: '#0f172a', flex: 1, marginRight: 10 },
   timeText: { fontSize: 11, color: '#94a3b8', fontWeight: '700' },
@@ -320,14 +333,12 @@ const styles = StyleSheet.create({
   
   deleteBtn: { paddingHorizontal: 15, height: '100%', justifyContent: 'center', alignItems: 'center', borderLeftWidth: 1, borderColor: '#f1f5f9', backgroundColor: '#fef2f2' },
 
-  // 💀 SKELETON STYLES
   skeletonCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 15, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#e2e8f0' },
   skeletonAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#e2e8f0', marginRight: 15 },
   skeletonTextContainer: { flex: 1 },
   skeletonTextLine1: { width: '60%', height: 14, backgroundColor: '#e2e8f0', borderRadius: 4, marginBottom: 8 },
   skeletonTextLine2: { width: '90%', height: 12, backgroundColor: '#f1f5f9', borderRadius: 4 },
 
-  // 📭 EMPTY STATE
   emptyState: { alignItems: 'center', marginTop: 80, paddingHorizontal: 40 },
   emptyIconBg: { backgroundColor: '#f1f5f9', padding: 25, borderRadius: 50, marginBottom: 20 },
   emptyText: { fontSize: 20, fontWeight: '900', color: '#0f172a', marginBottom: 8, textAlign: 'center' },

@@ -1,37 +1,41 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeAuth, getReactNativePersistence, browserLocalPersistence, getAuth } from 'firebase/auth';
+import { getAuth, initializeAuth, getReactNativePersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-// 🔥 TERI .ENV FILE SE KEYS YAHAN AAYENGI 🔥
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// 🔥 1. APP INITIALIZATION FIX (Fast Refresh Error ke liye)
+// Initialize Firebase safely
 let app;
-if (getApps().length === 0) {
+if (!getApps().length) {
   app = initializeApp(firebaseConfig);
 } else {
   app = getApp();
 }
 
-// 🔥 2. AUTH INITIALIZATION FIX 
+// 🔐 Initialize Auth specifically for React Native Persistence
 let auth;
-try {
+if (Platform.OS !== 'web') {
   auth = initializeAuth(app, {
-    persistence: Platform.OS === 'web' ? browserLocalPersistence : getReactNativePersistence(AsyncStorage)
+    persistence: getReactNativePersistence(AsyncStorage),
   });
-} catch (error) {
+} else {
   auth = getAuth(app);
 }
 
 const db = getFirestore(app);
+const storage = getStorage(app);
 
-export { auth, db };
+// 🔥 Yahan se connectAuthEmulator hata diya hai taaki production me signup fail na ho!
+
+export { app, auth, db, storage };

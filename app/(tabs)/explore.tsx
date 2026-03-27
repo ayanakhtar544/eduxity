@@ -13,6 +13,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInUp, FadeInDown, Layout, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
+// 🔥 TERI BRAND LOGO IMPORT KIYI HAI YAHAN
+import BrandLogo from '../../components/BrandLogo';
+
 const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 
 // 🕒 SMART TIME FORMATTER (WhatsApp Style)
@@ -126,7 +129,7 @@ export default function ChatListScreen() {
     const groupsData = rawGroups.map(group => ({
       id: group.id,
       name: group.name,
-      avatar: group.avatar,
+      avatar: group.avatar || group.icon, // 🔥 Fallback for older groups
       type: 'group',
       lastMessage: group.lastMessage || `Tap to see latest updates in ${group.name}`,
       timestamp: getSafeTime(group.lastMessageTime) || getSafeTime(group.createdAt) || 1,
@@ -192,8 +195,12 @@ export default function ChatListScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       
+      {/* 🔥 LOGO AUR TITLE YAHAN HAIN */}
       <View style={styles.headerArea}>
-        <Text style={styles.mainTitle}>Messages</Text>
+        <View style={styles.titleRow}>
+          <BrandLogo variant="medium" />
+          <Text style={styles.mainTitle}>Messages</Text>
+        </View>
         <TouchableOpacity style={styles.headerIcon} onPress={() => router.push('/find-groups')}>
           <Ionicons name="search" size={24} color="#0f172a" />
         </TouchableOpacity>
@@ -272,7 +279,10 @@ export default function ChatListScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  
+  // 🔥 HEADER STYLES UPDATED FOR LOGO
   headerArea: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 10 : 20, paddingBottom: 10, backgroundColor: '#fff' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   mainTitle: { fontSize: 28, fontWeight: '900', color: '#0f172a', letterSpacing: -0.5 },
   headerIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center' },
   

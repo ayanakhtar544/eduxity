@@ -1,233 +1,174 @@
+// Location: app/edit-profile.tsx
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, TextInput, TouchableOpacity, 
-  SafeAreaView, StatusBar, ScrollView, ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform
+  ActivityIndicator, ScrollView, Alert, KeyboardAvoidingView, Platform 
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import { auth, db, storage } from '../firebaseConfig';
-import { updateProfile } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInUp } from 'react-native-reanimated';
-
-const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker'; 
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { updateProfile } from 'firebase/auth'; // Auth profile update ke liye
+import { db, auth } from '../firebaseConfig';
+import * as Haptics from 'expo-haptics';
+import { useUserStore } from '../store/useUserStore';
 
 export default function EditProfileScreen() {
   const router = useRouter();
-  const user = auth.currentUser;
+  const currentUid = auth.currentUser?.uid;
+  const setUserData = useUserStore((state) => state.setUserData); // Zustand update ke liye
 
-  // 🧠 UI States
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  // 📦 Form Data States
-  const [imageUri, setImageUri] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
-  
-  // Demographics
-  const [city, setCity] = useState('');
-  const [stateName, setStateName] = useState('');
-  const [institution, setInstitution] = useState('');
-  const [dob, setDob] = useState('');
-  
-  // Social Links
-  const [github, setGithub] = useState('');
-  const [linkedin, setLinkedin] = useState('');
-  const [instagram, setInstagram] = useState('');
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [existingAvatar, setExistingAvatar] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
 
-  // 🚀 FETCH EXISTING DATA (From Onboarding & Previous Edits)
+  // Load existing user data
   useEffect(() => {
-    fetchUserData();
-  }, []);
-
-  const fetchUserData = async () => {
-    if (!user) return;
-    try {
-      setName(user.displayName || '');
-      setImageUri(user.photoURL || DEFAULT_AVATAR);
-
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDocSnap = await getDoc(userDocRef);
-      
-      if (userDocSnap.exists()) {
-        const data = userDocSnap.data();
-        setBio(data.bio || '');
-        setCity(data.city || '');
-        setStateName(data.state || '');
-        setInstitution(data.institutionName || '');
-        setDob(data.dob || '');
-        setGithub(data.githubLink || '');
-        setLinkedin(data.linkedinLink || '');
-        setInstagram(data.instagramLink || '');
+    const fetchProfile = async () => {
+      if (!currentUid) return;
+      try {
+        const docRef = doc(db, 'users', currentUid);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setName(data.displayName || data.name || '');
+          setBio(data.bio || '');
+          setExistingAvatar(data.photoURL || data.avatar || '');
+        }
+      } catch (error) {
+        console.log(error);
+      } finally {
+        setFetching(false);
       }
+    };
+    fetchProfile();
+  }, [currentUid]);
+
+  // ==========================================
+  // 📸 PICK AVATAR WITH LOW RES LIMIT
+  // ==========================================
+  const pickAvatar = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true, 
+      aspect: [1, 1], // Square dp
+      quality: 0.2, // 🔥 Sirf 20% quality! Super fast load hoga feed me
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setAvatarUri(result.assets[0].uri);
+    }
+  };
+
+  const uploadAvatarAsync = async (uri: string) => {
+    const storage = getStorage();
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const filename = `profile_pictures/${currentUid}_dp.jpg`; // Overwrites old dp
+    const storageRef = ref(storage, filename);
+    
+    await uploadBytes(storageRef, blob);
+    return await getDownloadURL(storageRef);
+  };
+
+  // ==========================================
+  // ✅ SAVE PROFILE
+  // ==========================================
+  const handleSaveProfile = async () => {
+    if (!name.trim()) {
+      Alert.alert('Required', 'Name cannot be empty.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      let finalAvatarUrl = existingAvatar;
+
+      if (avatarUri) {
+        finalAvatarUrl = await uploadAvatarAsync(avatarUri);
+      }
+
+      // 1. Update Firestore
+      const updateData = {
+        displayName: name.trim(),
+        name: name.trim(), // fallback
+        bio: bio.trim(),
+        photoURL: finalAvatarUrl,
+        avatar: finalAvatarUrl // fallback
+      };
+      
+      await updateDoc(doc(db, 'users', currentUid as string), updateData);
+
+      // 2. Update Firebase Auth Profile
+      if (auth.currentUser) {
+        await updateProfile(auth.currentUser, {
+          displayName: name.trim(),
+          photoURL: finalAvatarUrl
+        });
+      }
+
+      // 3. Update Zustand Store Locally
+      setUserData((prev: any) => ({ ...prev, ...updateData }));
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Success', 'Profile updated successfully!');
+      router.back();
+      
     } catch (error) {
-      console.log("Error fetching profile details:", error);
+      console.log(error);
+      Alert.alert('Error', 'Could not update profile.');
     } finally {
       setLoading(false);
     }
   };
 
-  // 📸 IMAGE PICKER ENGINE
-  const pickImage = async () => {
-    try {
-      let result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.5,
-      });
+  if (fetching) return <View style={styles.center}><ActivityIndicator color="#4f46e5" /></View>;
 
-      if (!result.canceled) {
-        setImageUri(result.assets[0].uri);
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to pick image.');
-    }
-  };
-
-  // 💾 SAVE MASTER FUNCTION
-  const handleSave = async () => {
-    if (!user) return;
-    if (!name.trim()) {
-      Alert.alert("Missing Info", "Name cannot be empty.");
-      return;
-    }
-
-    setSaving(true);
-    try {
-      let finalImageUrl = imageUri;
-
-      if (imageUri && !imageUri.startsWith('http')) {
-        const response = await fetch(imageUri);
-        const blob = await response.blob();
-        const storageRef = ref(storage, `avatars/${user.uid}_${Date.now()}.jpg`);
-        await uploadBytes(storageRef, blob);
-        finalImageUrl = await getDownloadURL(storageRef);
-      }
-
-      await updateProfile(user, {
-        displayName: name.trim(),
-        photoURL: finalImageUrl,
-      });
-
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        displayName: name.trim(),
-        photoURL: finalImageUrl,
-        bio: bio.trim(),
-        city: city.trim(),
-        state: stateName.trim(),
-        institutionName: institution.trim(),
-        dob: dob.trim(),
-        githubLink: github.trim(),
-        linkedinLink: linkedin.trim(),
-        instagramLink: instagram.trim()
-      });
-
-      setSaving(false);
-      Alert.alert("Success", "Profile updated successfully!", [
-        { text: "Awesome", onPress: () => router.back() }
-      ]);
-
-    } catch (error) {
-      console.error("Save Error:", error);
-      Alert.alert("Error", "Could not save profile changes.");
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#2563eb" /></View>;
-  }
+  const displayAvatar = avatarUri || existingAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=0f172a&color=fff&size=200`;
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      
-      {/* 🔝 HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} disabled={saving}>
-          <Ionicons name="close" size={28} color="#0f172a" />
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="close" size={26} color="#0f172a" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Edit Profile</Text>
-        <TouchableOpacity onPress={handleSave} disabled={saving}>
-          {saving ? <ActivityIndicator size="small" color="#2563eb" /> : <Text style={styles.saveBtnText}>Save</Text>}
+        <TouchableOpacity onPress={handleSaveProfile} disabled={loading} style={styles.saveBtn}>
+          {loading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.saveBtnText}>Save</Text>}
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           
-          {/* 📸 AVATAR SECTION */}
-          <Animated.View entering={FadeInUp} style={styles.avatarSection}>
-            <TouchableOpacity onPress={pickImage} style={styles.avatarWrapper}>
-              <Image source={{ uri: imageUri || DEFAULT_AVATAR }} style={styles.avatar} />
-              <View style={styles.cameraBadge}><Ionicons name="camera" size={16} color="#fff" /></View>
-            </TouchableOpacity>
-          </Animated.View>
-
-          {/* 📝 BASIC INFO */}
-          <Animated.View entering={FadeInUp.delay(100)} style={styles.formSection}>
-            <Text style={styles.sectionTitle}>Basic Info</Text>
-            
-            <Text style={styles.inputLabel}>Full Name</Text>
-            <TextInput style={styles.input} value={name} onChangeText={setName} />
-
-            <Text style={styles.inputLabel}>Bio (Tell the community about yourself)</Text>
-            <TextInput
-              style={[styles.input, styles.bioInput]}
-              placeholder="I am passionate about..."
-              value={bio}
-              onChangeText={setBio}
-              multiline
-              maxLength={200}
-            />
-          </Animated.View>
-
-          {/* 📍 EDUCATION & LOCATION */}
-          <Animated.View entering={FadeInUp.delay(200)} style={styles.formSection}>
-            <Text style={styles.sectionTitle}>Education & Location</Text>
-            
-            <Text style={styles.inputLabel}>School/College/Institute</Text>
-            <TextInput style={styles.input} value={institution} onChangeText={setInstitution} placeholder="e.g. IIT Delhi, DPS..." />
-
-            <View style={{ flexDirection: 'row', gap: 15 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.inputLabel}>City</Text>
-                <TextInput style={styles.input} value={city} onChangeText={setCity} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.inputLabel}>State</Text>
-                <TextInput style={styles.input} value={stateName} onChangeText={setStateName} />
-              </View>
+          <View style={styles.avatarSection}>
+            <View style={styles.avatarWrapper}>
+              <Image source={{ uri: displayAvatar }} style={styles.avatarImg} />
+              <TouchableOpacity style={styles.editAvatarBtn} onPress={pickAvatar}>
+                <Ionicons name="pencil" size={16} color="#fff" />
+              </TouchableOpacity>
             </View>
+            <Text style={styles.avatarHint}>We optimize image size automatically.</Text>
+          </View>
 
-            <Text style={styles.inputLabel}>Date of Birth (DD/MM/YYYY)</Text>
-            <TextInput style={styles.input} value={dob} onChangeText={setDob} placeholder="e.g. 15/08/2005" />
-          </Animated.View>
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Display Name</Text>
+            <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Your full name" placeholderTextColor="#94a3b8" />
+          </View>
 
-          {/* 🔗 SOCIAL LINKS */}
-          <Animated.View entering={FadeInUp.delay(300)} style={styles.formSection}>
-            <Text style={styles.sectionTitle}>Social Presence</Text>
-            
-            <View style={styles.socialInputRow}>
-              <Ionicons name="logo-github" size={24} color="#0f172a" style={styles.socialIcon} />
-              <TextInput style={styles.socialInput} value={github} onChangeText={setGithub} placeholder="GitHub Username/Link" autoCapitalize="none" />
-            </View>
-
-            <View style={styles.socialInputRow}>
-              <Ionicons name="logo-linkedin" size={24} color="#0077b5" style={styles.socialIcon} />
-              <TextInput style={styles.socialInput} value={linkedin} onChangeText={setLinkedin} placeholder="LinkedIn Profile Link" autoCapitalize="none" />
-            </View>
-
-            <View style={styles.socialInputRow}>
-              <Ionicons name="logo-instagram" size={24} color="#e1306c" style={styles.socialIcon} />
-              <TextInput style={styles.socialInput} value={instagram} onChangeText={setInstagram} placeholder="Instagram Handle" autoCapitalize="none" />
-            </View>
-          </Animated.View>
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Bio (About You)</Text>
+            <TextInput style={[styles.input, styles.textArea]} value={bio} onChangeText={setBio} placeholder="Targeting IIT Bombay | Dropper" placeholderTextColor="#94a3b8" multiline numberOfLines={3} maxLength={100} />
+            <Text style={styles.charCount}>{bio.length}/100</Text>
+          </View>
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -235,33 +176,26 @@ export default function EditProfileScreen() {
   );
 }
 
-// ==========================================
-// 🎨 PREMIUM STYLES
-// ==========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
-  iconBtn: { padding: 4 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
+  backBtn: { padding: 5 },
   headerTitle: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
-  saveBtnText: { fontSize: 16, fontWeight: '800', color: '#2563eb' },
+  saveBtn: { backgroundColor: '#0f172a', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  saveBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   
-  scrollContent: { padding: 20, paddingBottom: 50 },
+  scrollContent: { padding: 20 },
   
-  avatarSection: { alignItems: 'center', marginBottom: 25 },
+  avatarSection: { alignItems: 'center', marginBottom: 35, marginTop: 10 },
   avatarWrapper: { position: 'relative' },
-  avatar: { width: 110, height: 110, borderRadius: 55, backgroundColor: '#e2e8f0', borderWidth: 3, borderColor: '#fff' },
-  cameraBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#2563eb', width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#fff' },
+  avatarImg: { width: 110, height: 110, borderRadius: 55, backgroundColor: '#e2e8f0', borderWidth: 3, borderColor: '#fff' },
+  editAvatarBtn: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#4f46e5', width: 34, height: 34, borderRadius: 17, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#fff' },
+  avatarHint: { fontSize: 11, color: '#94a3b8', marginTop: 12, fontWeight: '600' },
 
-  formSection: { backgroundColor: '#fff', padding: 20, borderRadius: 16, marginBottom: 20, borderWidth: 1, borderColor: '#e2e8f0' },
-  sectionTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a', marginBottom: 15, borderBottomWidth: 1, borderColor: '#f1f5f9', paddingBottom: 10 },
-  
-  inputLabel: { fontSize: 13, fontWeight: '800', color: '#64748b', marginBottom: 8 },
-  input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, fontSize: 15, color: '#0f172a', marginBottom: 15 },
-  bioInput: { minHeight: 90, textAlignVertical: 'top' },
-
-  socialInputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, paddingHorizontal: 15, marginBottom: 15 },
-  socialIcon: { marginRight: 10 },
-  socialInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: '#0f172a' },
+  formGroup: { marginBottom: 25 },
+  label: { fontSize: 13, fontWeight: '800', color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+  input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, paddingHorizontal: 15, height: 50, fontSize: 16, color: '#0f172a', fontWeight: '600' },
+  textArea: { height: 90, paddingTop: 15, textAlignVertical: 'top' },
+  charCount: { textAlign: 'right', fontSize: 11, color: '#94a3b8', marginTop: 5, fontWeight: '600' },
 });

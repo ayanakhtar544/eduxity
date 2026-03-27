@@ -28,7 +28,7 @@ export default function ResourcePreview({ url }: { url: string }) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Ionicons name={videoId ? "logo-youtube" : "logo-google-drive"} size={18} color={videoId ? "#ef4444" : "#15803d"} />
+          <Ionicons name={videoId ? "logo-youtube" : "cloud"} size={18} color={videoId ? "#ef4444" : "#15803d"} />
           <Text style={styles.headerText}>{videoId ? "YouTube Video" : "Drive Preview"}</Text>
         </View>
         
@@ -51,7 +51,7 @@ export default function ResourcePreview({ url }: { url: string }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Ionicons name={videoId ? "logo-youtube" : "logo-google-drive"} size={18} color={videoId ? "#ef4444" : "#15803d"} />
+        <Ionicons name={videoId ? "logo-youtube" : "cloud"} size={18} color={videoId ? "#ef4444" : "#15803d"} />
         <Text style={styles.headerText}>{videoId ? "YouTube Video" : "Drive Preview"}</Text>
       </View>
       <View style={styles.webviewWrapper}>

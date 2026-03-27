@@ -63,13 +63,6 @@ export default function Step4Publish({ examData, sections, questions, settings, 
           </View>
         </View>
 
-        <View style={styles.rowItem}>
-          <View>
-            <Text style={styles.labelDark}>Pricing Model</Text>
-            <Text style={styles.helperText}>{settings.isPaid ? 'Paid Test Series' : 'Free for all students'}</Text>
-          </View>
-          <Switch value={settings.isPaid || false} onValueChange={(val) => updateSetting('isPaid', val)} trackColor={{true: '#10b981'}} />
-        </View>
 
         {settings.isPaid && (
           <View style={styles.priceBox}>

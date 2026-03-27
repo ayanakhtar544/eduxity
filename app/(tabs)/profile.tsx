@@ -1,3 +1,4 @@
+// Location: app/(tabs)/profile.tsx
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, ActivityIndicator, FlatList, Alert, Dimensions, ScrollView, Platform
@@ -10,13 +11,11 @@ import { collection, query, where, getDocs, doc, onSnapshot, deleteDoc } from 'f
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
-// 🛑 IMPORTANT: Tumhara BADGES_LIST import hai, make sure path correct ho. 
-// Agar abhi file nahi hai toh temporarily is line ko comment kar dena aur niche empty array pass kar dena.
+// 🛑 IMPORTANT: Tumhara BADGES_LIST import
 import { BADGES_LIST } from '../../helpers/gamificationEngine'; 
 
 const { width } = Dimensions.get('window');
 const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
-
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -32,7 +31,7 @@ export default function ProfileScreen() {
   const [loadingTests, setLoadingTests] = useState(true);
 
   // ==========================================
-  // 1. FETCH MY CREATED TESTS (Fix #3)
+  // 1. FETCH MY CREATED TESTS
   // ==========================================
   useEffect(() => {
     const fetchMyCreatedTests = async () => {
@@ -45,7 +44,6 @@ export default function ProfileScreen() {
         const querySnapshot = await getDocs(q);
         const testsArray = querySnapshot.docs.map(doc => ({
           id: doc.id,
-          // Adding a type flag so we know it's a test when rendering
           isExamEngineTest: true, 
           ...doc.data()
         }));
@@ -84,14 +82,12 @@ export default function ProfileScreen() {
   const fetchProfileData = async () => {
     setLoading(true);
     try {
-      // Fetch normal posts
       const postsQuery = query(collection(db, 'posts'), where('authorId', '==', user?.uid));
       const postsSnapshot = await getDocs(postsQuery);
       let fetchedMyPosts = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       fetchedMyPosts.sort((a: any, b: any) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
       setMyPosts(fetchedMyPosts);
 
-      // Fetch saved posts
       const savedQuery = query(collection(db, 'posts'), where('savedBy', 'array-contains', user?.uid));
       const savedSnapshot = await getDocs(savedQuery);
       let fetchedSavedPosts = savedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -105,7 +101,7 @@ export default function ProfileScreen() {
   };
 
   // ==========================================
-  // 4. LOGOUT LOGIC (Fix #2)
+  // 4. LOGOUT LOGIC
   // ==========================================
   const handleLogout = async () => {
     Alert.alert("Logout", "Are you sure you want to exit?", [
@@ -116,7 +112,7 @@ export default function ProfileScreen() {
         onPress: async () => {
           try {
             await signOut(auth);
-            router.replace('/login'); // Make sure your login route is correct
+            router.replace('/login'); 
           } catch (error) {
             Alert.alert("Error", "Logout failed, please try again.");
             console.error(error);
@@ -127,45 +123,51 @@ export default function ProfileScreen() {
   };
 
   // ==========================================
-  // 5. DELETE POST LOGIC
+  // 5A. DELETE NORMAL POST LOGIC (ADDED)
   // ==========================================
   const handleDeleteFromProfile = async (postId: string) => {
-    if (Platform.OS === 'web') {
-      const confirmDelete = window.confirm("Delete Post? This will permanently remove it.");
-      if (confirmDelete) {
-        try {
-          await deleteDoc(doc(db, 'posts', postId));
-          setMyPosts(prev => prev.filter(p => p.id !== postId));
-        } catch (error) {
-          alert("Could not delete post.");
-        }
-      }
-    } else {
-      Alert.alert("Delete Post?", "This will permanently remove the post from Eduxity.", [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Delete", 
-          style: "destructive", 
-          onPress: async () => {
-            try {
-              await deleteDoc(doc(db, 'posts', postId));
-              setMyPosts(prev => prev.filter(p => p.id !== postId));
-            } catch (error) {
-              Alert.alert("Error", "Could not delete post.");
-            }
+    Alert.alert("Delete Post", "Are you sure you want to delete this post forever?", [
+      { text: "Cancel", style: "cancel" },
+      { 
+        text: "Delete", 
+        style: "destructive", 
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, 'posts', postId));
+            setMyPosts(prev => prev.filter(p => p.id !== postId));
+          } catch (error) {
+            Alert.alert("Error", "Could not delete the post.");
           }
         }
-      ]);
-    }
+      }
+    ]);
   };
 
   // ==========================================
-  // 6. RENDERERS FOR LIST (Mixes Posts & Tests)
+  // 5B. DELETE TEST LOGIC
   // ==========================================
-  
-  // Create a combined list of posts and tests for the "My Posts" tab
+  const handleDeleteTest = async (testId: string) => {
+    Alert.alert("Delete Exam?", "This will permanently remove the test and all its responses.", [
+      { text: "Cancel", style: "cancel" },
+      { 
+        text: "Delete", 
+        style: "destructive", 
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, 'exams_enterprise', testId));
+            setMyTests(prev => prev.filter(t => t.id !== testId));
+          } catch (error) {
+            Alert.alert("Error", "Could not delete test.");
+          }
+        }
+      }
+    ]);
+  };
+
+  // ==========================================
+  // 6. RENDERERS FOR LIST
+  // ==========================================
   const combinedFeed = [...myTests, ...myPosts].sort((a: any, b: any) => {
-    // Basic sorting if timestamps exist
     const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
     const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
     return timeB - timeA;
@@ -179,14 +181,24 @@ export default function ProfileScreen() {
         <Animated.View entering={FadeInDown.delay(index * 100).springify()} style={styles.testCard}>
           <TouchableOpacity 
             activeOpacity={0.8}
-            onPress={() => router.push(`/test-analytics/${item.id}`)}
+            // 🔥 FIXED ROUTE HERE: test-analysis 
+            onPress={() => router.push(`/test-analysis/${item.id}`)}
+            style={{ flex: 1 }}
           >
             <View style={styles.testCardHeader}>
-              <View style={styles.testBadgeContainer}>
-                <Ionicons name="school" size={14} color="#10b981" />
-                <Text style={styles.testBadgeTxt}>CBT EXAM</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={styles.testBadgeContainer}>
+                  <Ionicons name="school" size={14} color="#10b981" />
+                  <Text style={styles.testBadgeTxt}>CBT EXAM</Text>
+                </View>
+                <Text style={[styles.testCategory, { marginLeft: 10 }]}>{item.category || 'TEST'}</Text>
               </View>
-              <Text style={styles.testCategory}>{item.category || 'TEST'}</Text>
+              
+              {activeTab === 'posts' && (
+                <TouchableOpacity onPress={() => handleDeleteTest(item.id)} style={styles.deleteMiniBtn}>
+                  <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                </TouchableOpacity>
+              )}
             </View>
             
             <Text style={styles.testCardTitle} numberOfLines={2}>{item.title}</Text>
@@ -198,12 +210,12 @@ export default function ProfileScreen() {
               </View>
               <View style={styles.testFooterStat}>
                 <Ionicons name="time" size={14} color="#64748b" />
-                <Text style={styles.testFooterTxt}>{item.rules?.globalDuration || 0} Mins</Text>
+                <Text style={styles.testFooterTxt}>{item.rules?.globalDuration || item.settings?.totalDuration || 0} Mins</Text>
               </View>
               <View style={[styles.testFooterStat, {backgroundColor: '#dcfce7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6}]}>
-                <Ionicons name="people" size={14} color="#16a34a" />
-                <Text style={[styles.testFooterTxt, {color: '#16a34a', fontWeight: 'bold'}]}>
-                  {Object.keys(item.responses || {}).length} Attempts
+                <Ionicons name="analytics-outline" size={14} color="#16a34a" />
+                <Text style={[styles.testFooterTxt, {color: '#16a34a', fontWeight: 'bold', marginLeft: 4}]}>
+                  View Analytics ({Object.keys(item.responses || {}).length})
                 </Text>
               </View>
             </View>
@@ -215,27 +227,39 @@ export default function ProfileScreen() {
     // --- RENDER NORMAL POST CARD ---
     return (
       <Animated.View entering={FadeInDown.delay(index * 100).springify()} style={styles.miniPostCard}>
-        <View style={styles.miniPostHeader}>
-          <View style={{flexDirection: 'row', alignItems: 'center'}}>
-            <View style={styles.badgeContainer}>
-              <Ionicons 
-                name={item.type === 'code' ? 'code-slash' : item.type === 'poll' ? 'stats-chart' : item.type === 'resource' ? 'book' : item.type === 'image' ? 'image' : 'text'} 
-                size={14} color="#4f46e5" 
-              />
-              <Text style={styles.miniPostType}>{item.type?.toUpperCase() || 'POST'}</Text>
+        <TouchableOpacity activeOpacity={0.8} onPress={() => router.push(`/post/${item.id}`)}>
+          <View style={styles.miniPostHeader}>
+            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+              <View style={styles.badgeContainer}>
+                <Ionicons 
+                  name={item.type === 'code' ? 'code-slash' : item.type === 'poll' ? 'stats-chart' : item.type === 'resource' ? 'book' : item.type === 'image' ? 'image' : 'text'} 
+                  size={14} color="#4f46e5" 
+                />
+                <Text style={styles.miniPostType}>{item.type?.toUpperCase() || 'POST'}</Text>
+              </View>
+              <Text style={styles.miniPostLikes}>❤️ {item.likes?.length || item.boosts?.length || 0}</Text>
             </View>
-            <Text style={styles.miniPostLikes}>❤️ {item.likes?.length || 0}</Text>
+
+            {activeTab === 'posts' && (
+              <TouchableOpacity onPress={() => handleDeleteFromProfile(item.id)} style={styles.deleteMiniBtn}>
+                <Ionicons name="trash-outline" size={18} color="#ef4444" />
+              </TouchableOpacity>
+            )}
           </View>
 
-          {activeTab === 'posts' && (
-            <TouchableOpacity onPress={() => handleDeleteFromProfile(item.id)} style={styles.deleteMiniBtn}>
-              <Ionicons name="trash-outline" size={18} color="#ef4444" />
-            </TouchableOpacity>
+          {item.title ? <Text style={styles.miniPostTitle} numberOfLines={1}>{item.title}</Text> : null}
+          
+          <Text style={styles.miniPostText} numberOfLines={3}>
+            {item.text || item.codeSnippet || "Media Post..."}
+          </Text>
+
+          {item.imageUrl && (
+            <View style={styles.miniImageContainer}>
+              <Image source={{ uri: item.imageUrl }} style={styles.miniImage} />
+            </View>
           )}
-        </View>
-        <Text style={styles.miniPostText} numberOfLines={2}>
-          {item.title || item.text || item.codeSnippet || "Media Post..."}
-        </Text>
+
+        </TouchableOpacity>
       </Animated.View>
     );
   };
@@ -255,7 +279,6 @@ export default function ProfileScreen() {
   const xpPercentage = Math.min(Math.max((xpEarnedInCurrentLevel / xpNeededForNextLevel) * 100, 0), 100);
 
   const userBadgeIds = gami.badges || [];
-  // Note: if BADGES_LIST is not available, replace with []
   const unlockedBadges = BADGES_LIST ? BADGES_LIST.filter((b:any) => userBadgeIds.includes(b.id)) : [];
 
   const currentStreak = gami.currentStreak || 0;
@@ -270,11 +293,9 @@ export default function ProfileScreen() {
       <View style={styles.topBar}>
         <Text style={styles.username}>@{user?.displayName?.replace(/\s/g, '').toLowerCase() || 'student'}</Text>
         <View style={styles.topIcons}>
-          {/* 🔥 EDIT ICON FIX (#1) */}
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/edit-profile')}>
             <Ionicons name="pencil-outline" size={24} color="#0f172a" />
           </TouchableOpacity>
-          {/* 🔥 LOGOUT ICON FIX (#2) */}
           <TouchableOpacity style={styles.iconBtn} onPress={handleLogout}>
             <Ionicons name="log-out-outline" size={26} color="#ef4444" />
           </TouchableOpacity>
@@ -332,7 +353,10 @@ export default function ProfileScreen() {
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgesScroll}>
                   {unlockedBadges.map((badge:any, idx:number) => (
                     <Animated.View entering={FadeIn.delay(idx * 100)} key={badge.id} style={styles.badgeItem}>
-                      <Text style={styles.badgeEmoji}>{badge.icon}</Text>
+                      
+                      {/* 🔥 YAHAN CHANGE HUA HAI: Text ki jagah Image aagaya */}
+                      <Image source={badge.icon} style={styles.badgeImage} />
+                      
                       <Text style={styles.badgeName}>{badge.name}</Text>
                     </Animated.View>
                   ))}
@@ -441,7 +465,6 @@ const styles = StyleSheet.create({
 
   headerWrapper: { backgroundColor: '#f8fafc', paddingBottom: 10 },
 
-  // Profile Header
   profileSection: { flexDirection: 'row', padding: 20, alignItems: 'center', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#f1f5f9' },
   avatarWrapper: { position: 'relative', marginRight: 20 },
   profileAvatar: { width: 90, height: 90, borderRadius: 45, borderWidth: 3, borderColor: '#e2e8f0' },
@@ -453,7 +476,6 @@ const styles = StyleSheet.create({
   roleContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4, marginBottom: 12 },
   roleText: { fontSize: 13, color: '#4f46e5', fontWeight: '800', marginLeft: 6 },
   
-  // Real XP Bar
   xpContainer: { width: '100%', backgroundColor: '#f8fafc', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
   xpHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   xpText: { fontSize: 11, fontWeight: '800', color: '#64748b', textTransform: 'uppercase' },
@@ -461,26 +483,24 @@ const styles = StyleSheet.create({
   xpBarBackground: { height: 8, backgroundColor: '#e2e8f0', borderRadius: 4, overflow: 'hidden' },
   xpBarFill: { height: '100%', backgroundColor: '#4f46e5', borderRadius: 4 },
 
-  // Real Stats Cards
   highlightCardsContainer: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 15, marginTop: 15 },
   highlightCard: { width: (width - 50) / 3, paddingVertical: 15, borderRadius: 16, alignItems: 'center', borderWidth: 1 },
   highlightEmoji: { fontSize: 26, marginBottom: 5 },
   highlightValue: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
   highlightLabel: { fontSize: 11, fontWeight: '800', color: '#64748b', marginTop: 2, textTransform: 'uppercase' },
 
-  // Badges Vault
   badgesCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 15, paddingVertical: 15, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 15, marginBottom: 10 },
   cardTitle: { fontSize: 16, fontWeight: '900', color: '#0f172a' },
   badgeCount: { fontSize: 12, fontWeight: '800', color: '#4f46e5', backgroundColor: '#e0e7ff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   badgesScroll: { paddingHorizontal: 15, gap: 12 },
-  badgeItem: { alignItems: 'center', backgroundColor: '#f8fafc', padding: 12, borderRadius: 14, borderWidth: 1, borderColor: '#f1f5f9', width: 80 },
+  badgeItem: { alignItems: 'center', backgroundColor: '#f8fafc', padding: 12, borderRadius: 14, borderWidth: 1, borderColor: '#f1f5f9', width: 85 },
   badgeEmoji: { fontSize: 28, marginBottom: 6 },
+  badgeImage: { width: 45, height: 45, marginBottom: 8, resizeMode: 'contain' },
   badgeName: { fontSize: 10, fontWeight: '800', color: '#475569', textAlign: 'center' },
   noBadgesContainer: { alignItems: 'center', paddingVertical: 10 },
   noBadgesText: { fontSize: 13, color: '#94a3b8', fontWeight: '600', marginTop: 8 },
 
-  // About Card
   aboutCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 15, padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
   bioText: { fontSize: 14, color: '#334155', lineHeight: 22, marginTop: 10, marginBottom: 15, fontWeight: '500' },
   infoRowGrid: { gap: 10, marginBottom: 15 },
@@ -492,23 +512,23 @@ const styles = StyleSheet.create({
   interestTag: { backgroundColor: '#e0e7ff', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   interestTagText: { fontSize: 12, fontWeight: '800', color: '#4f46e5' },
 
-  // Tabs
   tabContainer: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', marginTop: 15 },
   tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 15 },
   activeTabBtn: { borderBottomWidth: 3, borderBottomColor: '#4f46e5' },
   tabText: { fontSize: 14, fontWeight: '800', color: '#64748b', marginLeft: 8 },
   activeTabText: { color: '#4f46e5' },
 
-  // Mini Posts List (For Normal Posts)
   miniPostCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 12, padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: {width: 0, height: 1}, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
   miniPostHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   badgeContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef2ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   miniPostType: { fontSize: 10, fontWeight: '900', color: '#4f46e5', marginLeft: 6 },
   miniPostLikes: { fontSize: 12, fontWeight: '800', color: '#475569', marginLeft: 10 },
-  deleteMiniBtn: { backgroundColor: '#fef2f2', padding: 6, borderRadius: 10 },
-  miniPostText: { fontSize: 15, color: '#1e293b', lineHeight: 22, fontWeight: '500' },
-
-  // New Test Card UI
+  deleteMiniBtn: { backgroundColor: '#fef2f2', padding: 6, borderRadius: 10, zIndex: 10 },
+  miniPostTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginBottom: 4 },
+  miniPostText: { fontSize: 14, color: '#334155', lineHeight: 20, fontWeight: '500', marginBottom: 8 },
+  miniImageContainer: { width: '100%', height: 120, borderRadius: 12, overflow: 'hidden', marginTop: 8, backgroundColor: '#f1f5f9' },
+  miniImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  
   testCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 12, padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#4f46e5', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
   testCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   testBadgeContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ecfdf5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },

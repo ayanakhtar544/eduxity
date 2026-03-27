@@ -147,7 +147,7 @@ export default function SettingsScreen() {
           <View style={styles.groupContent}>
             <SettingsItem icon="mail-outline" label="Email" rightElement={<Text style={styles.valueText}>{user?.email || 'N/A'}</Text>} />
             <View style={styles.divider} />
-            <SettingsItem icon="key-outline" label="Change Password" onPress={() => Alert.alert("Reset", "Password reset link sent to your email.")} />
+            <SettingsItem icon="key-outline" label="Change Password" onPress={() => router.push('/change-password')} />
           </View>
         </View>
 
@@ -157,7 +157,7 @@ export default function SettingsScreen() {
           <View style={styles.groupContent}>
             <SettingsItem icon="help-buoy-outline" label="FAQs & Help Center" onPress={() => router.push('/help-center')} />
             <View style={styles.divider} />
-            <SettingsItem icon="bug-outline" label="Report a Bug" onPress={() => Alert.alert("Report", "Feature coming soon!")} />
+             <SettingsItem icon="bug-outline" label="Report a Bug" onPress={() => router.push('/report-bug')} />
           </View>
         </View>
 
@@ -231,7 +231,7 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f1f5f9' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 45 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 20 },
   headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
   backBtn: { padding: 8, backgroundColor: '#f8fafc', borderRadius: 10 },
   scrollContent: { padding: 15, paddingBottom: 50 },

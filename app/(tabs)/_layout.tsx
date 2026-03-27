@@ -4,6 +4,7 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics'; 
+import EduxityLoader from '../../components/EduxityLoader'; 
 import Animated, { 
   useSharedValue, useAnimatedStyle, withSpring, withTiming 
 } from 'react-native-reanimated';

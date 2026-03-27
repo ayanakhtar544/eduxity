@@ -1,123 +1,166 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  View, Text, TextInput, TouchableOpacity, FlatList, 
-  StyleSheet, KeyboardAvoidingView, Platform, StatusBar, Image
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, 
+  TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Image, Alert 
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '../../firebaseConfig'; 
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { StatusBar } from 'expo-status-bar';
 
-export default function ChatScreen() {
-  const { id, name } = useLocalSearchParams(); 
-  const [messages, setMessages] = useState<any[]>([]);
-  const [inputText, setInputText] = useState('');
+import EduxityLoader from '../../components/EduxityLoader'; 
+
+// Firebase
+import { db, auth } from '../../firebaseConfig';
+import { doc, getDoc, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
+
+// Components
+import PostCard from '../../components/FeedPost';
+
+export default function SinglePostScreen() {
+  const { id } = useLocalSearchParams();
   const router = useRouter();
-  
-  const currentUserUid = auth.currentUser?.uid;
+  const currentUid = auth.currentUser?.uid;
 
-  // 📡 FIREBASE LISTENER (DESCENDING ORDER FOR SPEED)
+  const [post, setPost] = useState<any>(null);
+  const [comments, setComments] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 1. Fetch Post & Comments
   useEffect(() => {
     if (!id) return;
 
-    // orderBy('timestamp', 'desc') zaroori hai inverted list ke liye
-    const messagesRef = collection(db, 'messages');
-    const q = query(messagesRef, where('connectionId', '==', id), orderBy('timestamp', 'desc'));
+    // Fetch Post Data
+    const fetchPost = async () => {
+      const docRef = doc(db, 'posts', id as string);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        setPost({ id: docSnap.id, ...docSnap.data() });
+      } else {
+        // Check in exams if not in posts
+        const examRef = doc(db, 'exams_enterprise', id as string);
+        const examSnap = await getDoc(examRef);
+        if (examSnap.exists()) {
+            setPost({ id: examSnap.id, ...examSnap.data(), type: 'live_test' });
+        }
+      }
+      setLoading(false);
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMessages(msgs);
+    fetchPost();
+
+    // Listen to Comments Real-time
+    const commentsRef = collection(db, 'posts', id as string, 'comments');
+    const q = query(commentsRef, orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setComments(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    return () => unsubscribe();
+    return () => unsub();
   }, [id]);
 
-  // ✉️ SEND MESSAGE (Instant UI feedback)
-  const handleSend = async () => {
-    const textToSend = inputText.trim();
-    if (!textToSend) return;
-    
-    setInputText(''); // Turant input khali karo typing feel ke liye
+  // 2. Handle Comment Post
+  const handlePostComment = async () => {
+    if (!newComment.trim() || isSubmitting) return;
+    setIsSubmitting(true);
 
     try {
-      await addDoc(collection(db, 'messages'), {
-        connectionId: id,
-        senderId: currentUserUid,
-        text: textToSend,
-        timestamp: serverTimestamp(),
+      await addDoc(collection(db, 'posts', id as string, 'comments'), {
+        text: newComment.trim(),
+        authorId: currentUid,
+        authorName: auth.currentUser?.displayName || 'User',
+        authorAvatar: auth.currentUser?.photoURL || '',
+        createdAt: serverTimestamp(),
       });
-    } catch (error) {
-      console.log("Error sending message:", error);
+
+      // Update count on main post
+      const postRef = doc(db, 'posts', id as string);
+      await updateDoc(postRef, { commentsCount: increment(1) });
+      
+      setNewComment("");
+    } catch (e) {
+      Alert.alert("Error", "Could not post comment.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const renderMessage = ({ item }: { item: any }) => {
-    const isMe = item.senderId === currentUserUid;
-    
-    // Time formatting fallback
-    const time = item.timestamp ? new Date(item.timestamp.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...';
-
-    return (
-      <View style={[styles.messageWrapper, isMe ? styles.messageWrapperMe : styles.messageWrapperThem]}>
-        <View style={[styles.messageBubble, isMe ? styles.myBubble : styles.theirBubble]}>
-          <Text style={[styles.messageText, isMe ? styles.myText : styles.theirText]}>{item.text}</Text>
-          <Text style={[styles.timeText, isMe ? {color: '#bfdbfe'} : {color: '#94a3b8'}]}>{time}</Text>
-        </View>
-      </View>
-    );
-  };
+  if (loading) return <EduxityLoader />;
+  if (!post) return <View style={styles.center}><Text>Post not found.</Text></View>;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <StatusBar style="dark" />
       
-      {/* 🔝 HEADER */}
+      {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#0f172a" />
         </TouchableOpacity>
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerName}>{name || "Study Buddy"}</Text>
-          <Text style={styles.headerStatus}>Online</Text>
-        </View>
+        <Text style={styles.headerTitle}>Discussion</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      {/* 💬 PERFECT KEYBOARD HANDLING */}
       <KeyboardAvoidingView 
-        style={styles.chatArea} 
+        style={{ flex: 1 }} 
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        {/* 🔥 INVERTED FLATLIST (The WhatsApp Secret) */}
-        <FlatList
-          data={messages}
-          keyExtractor={(item) => item.id}
-          renderItem={renderMessage}
-          inverted={true} // Naye messages hamesha neeche ayenge bina scroll kiye!
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        />
+        <ScrollView showsVerticalScrollIndicator={false}>
+          {/* THE POST CARD (Reuse existing component) */}
+          <PostCard 
+            item={post} 
+            currentUid={currentUid} 
+            // In single view, comments modal is not needed as it's inline
+            onOpenComments={() => {}} 
+          />
 
-        {/* ⌨️ INPUT AREA */}
-        <View style={styles.inputContainer}>
+          {/* COMMENTS SECTION */}
+          <View style={styles.commentsWrapper}>
+            <Text style={styles.commentsTitle}>Comments ({comments.length})</Text>
+            
+            {comments.map((comment, index) => (
+              <View key={comment.id} style={styles.commentItem}>
+                <Image 
+                  source={{ uri: comment.authorAvatar || 'https://cdn-icons-png.flaticon.com/512/149/149071.png' }} 
+                  style={styles.commentAvatar} 
+                />
+                <View style={styles.commentContent}>
+                  <Text style={styles.commentAuthor}>{comment.authorName}</Text>
+                  <Text style={styles.commentText}>{comment.text}</Text>
+                  <Text style={styles.commentTime}>
+                    {comment.createdAt ? new Date(comment.createdAt.toMillis()).toLocaleDateString() : 'Just now'}
+                  </Text>
+                </View>
+              </View>
+            ))}
+            
+            {comments.length === 0 && (
+              <View style={styles.emptyComments}>
+                <Ionicons name="chatbubbles-outline" size={40} color="#cbd5e1" />
+                <Text style={styles.emptyText}>No comments yet. Start the conversation!</Text>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+
+        {/* INLINE INPUT BAR */}
+        <View style={styles.inputBar}>
           <TextInput
-            style={styles.textInput}
-            placeholder="Type a message..."
-            placeholderTextColor="#94a3b8"
-            value={inputText}
-            onChangeText={setInputText}
+            style={styles.input}
+            placeholder="Write a comment..."
+            value={newComment}
+            onChangeText={setNewComment}
             multiline
           />
           <TouchableOpacity 
-            style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]} 
-            onPress={handleSend}
-            disabled={!inputText.trim()}
+            style={[styles.sendBtn, !newComment.trim() && { opacity: 0.5 }]} 
+            onPress={handlePostComment}
+            disabled={!newComment.trim() || isSubmitting}
           >
-            <LinearGradient colors={['#3b82f6', '#2563eb']} style={styles.sendGradient}>
-              <Ionicons name="send" size={18} color="#fff" style={{ marginLeft: 2 }} />
-            </LinearGradient>
+            {isSubmitting ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="send" size={20} color="#fff" />}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -125,29 +168,26 @@ export default function ChatScreen() {
   );
 }
 
-// CHAT STYLES
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', elevation: 2 },
-  backBtn: { padding: 5, marginRight: 10 },
-  headerInfo: { flex: 1 },
-  headerName: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
-  headerStatus: { fontSize: 12, color: '#10b981', fontWeight: '600', marginTop: 2 },
-  chatArea: { flex: 1 },
-  listContent: { paddingHorizontal: 15, paddingVertical: 15 },
-  messageWrapper: { marginBottom: 12, flexDirection: 'row' },
-  messageWrapperMe: { justifyContent: 'flex-end' },
-  messageWrapperThem: { justifyContent: 'flex-start' },
-  messageBubble: { maxWidth: '80%', paddingHorizontal: 15, paddingVertical: 10, elevation: 1 },
-  myBubble: { backgroundColor: '#3b82f6', borderTopLeftRadius: 18, borderTopRightRadius: 18, borderBottomLeftRadius: 18, borderBottomRightRadius: 4 },
-  theirBubble: { backgroundColor: '#ffffff', borderTopLeftRadius: 18, borderTopRightRadius: 18, borderBottomRightRadius: 18, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: '#e2e8f0' },
-  messageText: { fontSize: 15, lineHeight: 22 },
-  myText: { color: '#ffffff' },
-  theirText: { color: '#1e293b' },
-  timeText: { fontSize: 10, marginTop: 4, alignSelf: 'flex-end' },
-  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 12, backgroundColor: '#ffffff', borderTopWidth: 1, borderColor: '#e2e8f0', paddingBottom: Platform.OS === 'ios' ? 25 : 12 },
-  textInput: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 24, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, fontSize: 15, maxHeight: 100, color: '#0f172a' },
-  sendBtn: { marginLeft: 10, borderRadius: 24, overflow: 'hidden', height: 45, width: 45 },
-  sendBtnDisabled: { opacity: 0.5 },
-  sendGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  backBtn: { padding: 8, backgroundColor: '#f1f5f9', borderRadius: 12 },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+  
+  commentsWrapper: { padding: 15, paddingBottom: 100 },
+  commentsTitle: { fontSize: 16, fontWeight: '800', color: '#1e293b', marginBottom: 20 },
+  commentItem: { flexDirection: 'row', marginBottom: 20 },
+  commentAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 12, backgroundColor: '#e2e8f0' },
+  commentContent: { flex: 1, backgroundColor: '#fff', padding: 12, borderRadius: 16, borderWidth: 1, borderColor: '#f1f5f9' },
+  commentAuthor: { fontSize: 13, fontWeight: '800', color: '#0f172a', marginBottom: 4 },
+  commentText: { fontSize: 14, color: '#475569', lineHeight: 20 },
+  commentTime: { fontSize: 10, color: '#94a3b8', marginTop: 8, fontWeight: '600' },
+  
+  emptyComments: { alignItems: 'center', marginTop: 30 },
+  emptyText: { color: '#94a3b8', marginTop: 10, fontWeight: '600' },
+
+  inputBar: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  input: { flex: 1, backgroundColor: '#f8fafc', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, fontSize: 15, maxHeight: 100 },
+  sendBtn: { marginLeft: 12, backgroundColor: '#4f46e5', width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' }
 });

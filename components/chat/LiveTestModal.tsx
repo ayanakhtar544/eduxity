@@ -1,64 +1,96 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, StyleSheet, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../firebaseConfig';
 import { doc, updateDoc } from 'firebase/firestore';
 import { awardXP } from '../../helpers/gamificationEngine';
+import * as Haptics from 'expo-haptics';
 
 export default function LiveTestModal({ activeTest, onClose, groupId }: any) {
   const [testAnswers, setTestAnswers] = useState<number[]>([]);
   const [timeLeft, setTimeLeft] = useState(0);
-  const [hasStarted, setHasStarted] = useState(false); // 🔥 BUG FIX: Naya Flag
+  const [hasStarted, setHasStarted] = useState(false);
 
-  // 1. Initialize Test
   useEffect(() => {
     if (activeTest) {
+      // Shuru mein sabhi answers -1 (Unattempted) hain
       setTestAnswers(new Array(activeTest.questions.length).fill(-1));
-      setTimeLeft(activeTest.duration * 60); // Time set karo
-      setHasStarted(true); // Flag ko true karo (ab timer check kar sakta hai)
+      setTimeLeft(activeTest.duration * 60); 
+      setHasStarted(true); 
     } else {
       setHasStarted(false);
     }
   }, [activeTest]);
 
-  // 2. The Timer Engine
   useEffect(() => {
     let timer: NodeJS.Timeout;
-    
-    // 🔥 FIX: Ab timer tabhi submit karega jab hasStarted true hoga
     if (hasStarted && timeLeft > 0) {
       timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
     } else if (hasStarted && timeLeft === 0) {
       submitTest();
-      setHasStarted(false); // Multiple submit block karne ke liye
+      setHasStarted(false);
     }
-    
     return () => clearInterval(timer);
   }, [hasStarted, timeLeft]);
 
+  const toggleOption = (qIdx: number, oIdx: number) => {
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const newAns = [...testAnswers];
+    // Agar same option dobara dabaya toh clear/unattempt kar do
+    if (newAns[qIdx] === oIdx) {
+      newAns[qIdx] = -1;
+    } else {
+      newAns[qIdx] = oIdx;
+    }
+    setTestAnswers(newAns);
+  };
+
   const submitTest = async () => {
     if (!activeTest || !auth.currentUser) return;
-    let score = 0;
     
-    // 🔥 SAFE CHECK: Number comparison taaki bug na aaye
+    // 🔥 NAYA ADVANCED MARKING ENGINE
+    let score = 0;
+    let correctCount = 0;
+    let wrongCount = 0;
+    let skippedCount = 0;
+    
     activeTest.questions.forEach((q: any, idx: number) => { 
-      if (Number(testAnswers[idx]) === Number(q.correct)) {
-        score++; 
+      const posMarks = parseInt(q.posMarks) || 4;
+      const negMarks = parseInt(q.negMarks) || 0;
+      
+      const selectedAns = Number(testAnswers[idx]);
+      
+      if (selectedAns === -1) {
+        skippedCount++;
+      } else if (selectedAns === Number(q.correct)) {
+        score += posMarks; 
+        correctCount++;
+      } else {
+        score -= negMarks; // Negative Marking Applied
+        wrongCount++;
       }
     });
+
+    const maxMarks = activeTest.questions.reduce((sum: number, q: any) => sum + (parseInt(q.posMarks) || 4), 0);
     
     await updateDoc(doc(db, 'groups', groupId, 'messages', activeTest.id), { 
-      [`responses.${auth.currentUser.uid}`]: { score, answers: testAnswers } 
+      [`responses.${auth.currentUser.uid}`]: { 
+        score, 
+        correctCount,
+        wrongCount,
+        skippedCount,
+        answers: testAnswers 
+      } 
     });
     
-    const earnedXP = score * 15;
-    const reward = await awardXP(auth.currentUser.uid, earnedXP, "Test Submitted");
+    const earnedXP = correctCount * 20; // Correct questions pe XP
+    const reward = await awardXP(auth.currentUser.uid, earnedXP, "Premium Test Submitted");
     
     if (reward?.leveledUp) {
-      Alert.alert("🎉 TEST SUBMITTED & LEVEL UP!", `Score: ${score}/${activeTest.questions.length}\nLevel Reached: ${reward.newLevel} ⭐`);
+      Alert.alert("🎉 EXAM SUBMITTED & LEVEL UP!", `Score: ${score}/${maxMarks}\nCorrect: ${correctCount} | Wrong: ${wrongCount}\nNew Level: ${reward.newLevel}`);
     } else {
-      Alert.alert("Test Submitted! 🎉", `Your score is ${score} out of ${activeTest.questions.length}\nYou earned +${earnedXP} XP!`);
+      Alert.alert("Exam Submitted! 📝", `Your score is ${score} out of ${maxMarks}.\nCorrect: ${correctCount} | Wrong: ${wrongCount}\nYou earned +${earnedXP} XP!`);
     }
     onClose();
   };
@@ -67,29 +99,66 @@ export default function LiveTestModal({ activeTest, onClose, groupId }: any) {
 
   return (
     <Modal visible={!!activeTest} animationType="slide">
-      <SafeAreaView style={{flex: 1, backgroundColor: '#f8fafc'}}>
+      <SafeAreaView style={{flex: 1, backgroundColor: '#f1f5f9'}}>
+        
+        {/* PREMIUM HEADER */}
         <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>{activeTest.title}</Text>
+          <View style={{flex: 1}}>
+            <Text style={styles.modalTitle} numberOfLines={1}>{activeTest.title}</Text>
+            {activeTest.ntaFormat && <Text style={styles.ntaSub}>NTA Strict Marking Enabled</Text>}
+          </View>
           <View style={styles.timerBadge}>
+            <Ionicons name="time" size={16} color="#ef4444" style={{marginRight: 4}}/>
             <Text style={styles.timerText}>{Math.floor(timeLeft / 60)}:{('0' + (timeLeft % 60)).slice(-2)}</Text>
           </View>
         </View>
-        <ScrollView style={{padding: 20}}>
-          {activeTest.questions.map((q: any, qIdx: number) => (
-            <View key={qIdx} style={styles.questionCard}>
-              <Text style={styles.questionText}>{qIdx + 1}. {q.q}</Text>
-              {q.options.map((opt: string, oIdx: number) => (
-                <TouchableOpacity key={oIdx} style={[styles.mcqOption, testAnswers[qIdx] === oIdx && styles.mcqOptionActive]} 
-                  onPress={() => { const newAns = [...testAnswers]; newAns[qIdx] = oIdx; setTestAnswers(newAns); }}>
-                  <Ionicons name={testAnswers[qIdx] === oIdx ? "radio-button-on" : "radio-button-off"} size={20} color={testAnswers[qIdx] === oIdx ? "#2563eb" : "#94a3b8"} style={{marginRight: 10}} />
-                  <Text style={styles.optionText}>{opt}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ))}
-          <TouchableOpacity style={styles.submitBtn} onPress={submitTest}>
-            <Text style={styles.submitBtnText}>Submit Test</Text>
+
+        <ScrollView style={{padding: 20}} showsVerticalScrollIndicator={false}>
+          {activeTest.questions.map((q: any, qIdx: number) => {
+            const isAttempted = testAnswers[qIdx] !== -1;
+            return (
+              <View key={qIdx} style={[styles.questionCard, isAttempted && {borderColor: '#c7d2fe'}]}>
+                <View style={styles.qHeader}>
+                  <Text style={styles.qNumber}>Question {qIdx + 1}</Text>
+                  <View style={styles.markingPill}>
+                    <Text style={styles.markPos}>+{q.posMarks || 4}</Text>
+                    <Text style={styles.markNeg}>-{q.negMarks || 0}</Text>
+                  </View>
+                </View>
+                
+                <Text style={styles.questionText}>{q.q}</Text>
+                
+                {q.options.map((opt: string, oIdx: number) => {
+                  const isSelected = testAnswers[qIdx] === oIdx;
+                  return (
+                    <TouchableOpacity 
+                      key={oIdx} 
+                      activeOpacity={0.7}
+                      style={[styles.mcqOption, isSelected && styles.mcqOptionActive]} 
+                      onPress={() => toggleOption(qIdx, oIdx)}
+                    >
+                      <View style={[styles.radioCircle, isSelected && styles.radioCircleActive]}>
+                        {isSelected && <View style={styles.radioInner} />}
+                      </View>
+                      <Text style={[styles.optionText, isSelected && {color: '#1e3a8a', fontWeight: '800'}]}>{opt}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                
+                {/* CLEAR SELECTION BUTTON */}
+                {isAttempted && (
+                  <TouchableOpacity onPress={() => toggleOption(qIdx, testAnswers[qIdx])} style={styles.clearBtn}>
+                    <Text style={styles.clearBtnText}>Clear Selection</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            );
+          })}
+          
+          <TouchableOpacity style={styles.submitBtn} onPress={submitTest} activeOpacity={0.9}>
+            <Text style={styles.submitBtnText}>FINISH EXAM</Text>
           </TouchableOpacity>
+          <View style={{height: 40}}/>
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -97,15 +166,31 @@ export default function LiveTestModal({ activeTest, onClose, groupId }: any) {
 }
 
 const styles = StyleSheet.create({
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
-  modalTitle: { fontSize: 22, fontWeight: '800', color: '#0f172a', flex: 1 },
-  timerBadge: { backgroundColor: '#fee2e2', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, marginLeft: 10 },
-  timerText: { color: '#ef4444', fontWeight: '900', fontSize: 16 },
-  questionCard: { marginBottom: 30, backgroundColor: '#fff', padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
-  questionText: { fontSize: 16, fontWeight: '800', color: '#1e293b', marginBottom: 15 },
-  mcqOption: { backgroundColor: '#f1f5f9', padding: 12, borderRadius: 12, marginBottom: 8, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0' },
-  mcqOptionActive: { backgroundColor: '#dbeafe', borderColor: '#3b82f6' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 18, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset:{width:0, height:2}, shadowOpacity: 0.05, shadowRadius: 5, elevation: 3 },
+  modalTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a' },
+  ntaSub: { fontSize: 11, fontWeight: '700', color: '#f59e0b', marginTop: 2, textTransform: 'uppercase' },
+  timerBadge: { backgroundColor: '#fef2f2', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, marginLeft: 10, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#fecaca' },
+  timerText: { color: '#ef4444', fontWeight: '900', fontSize: 16, fontVariant: ['tabular-nums'] },
+  
+  questionCard: { marginBottom: 25, backgroundColor: '#fff', padding: 20, borderRadius: 20, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 },
+  qHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, paddingBottom: 15, borderBottomWidth: 1, borderColor: '#f1f5f9' },
+  qNumber: { fontSize: 14, fontWeight: '900', color: '#64748b', textTransform: 'uppercase' },
+  markingPill: { flexDirection: 'row', backgroundColor: '#f8fafc', borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#e2e8f0' },
+  markPos: { backgroundColor: '#dcfce7', color: '#059669', fontWeight: '900', fontSize: 12, paddingHorizontal: 8, paddingVertical: 4 },
+  markNeg: { backgroundColor: '#fee2e2', color: '#dc2626', fontWeight: '900', fontSize: 12, paddingHorizontal: 8, paddingVertical: 4 },
+  
+  questionText: { fontSize: 17, fontWeight: '800', color: '#0f172a', marginBottom: 20, lineHeight: 24 },
+  
+  mcqOption: { backgroundColor: '#f8fafc', padding: 15, borderRadius: 14, marginBottom: 10, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0' },
+  mcqOptionActive: { backgroundColor: '#eef2ff', borderColor: '#818cf8' },
+  radioCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#cbd5e1', marginRight: 15, justifyContent: 'center', alignItems: 'center' },
+  radioCircleActive: { borderColor: '#4f46e5' },
+  radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#4f46e5' },
   optionText: { fontSize: 15, color: '#334155', fontWeight: '600', flex: 1 },
-  submitBtn: { backgroundColor: '#2563eb', paddingVertical: 15, borderRadius: 12, alignItems: 'center', marginTop: 10, marginBottom: 50 },
-  submitBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }
+  
+  clearBtn: { alignSelf: 'flex-end', marginTop: 10 },
+  clearBtnText: { color: '#94a3b8', fontSize: 12, fontWeight: '700' },
+
+  submitBtn: { backgroundColor: '#4f46e5', paddingVertical: 18, borderRadius: 16, alignItems: 'center', marginTop: 15, shadowColor: '#4f46e5', shadowOffset: {width: 0, height: 6}, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
+  submitBtnText: { color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 1 }
 });

@@ -42,7 +42,14 @@
       "expo-video"
     ],
     "ios": {
+      "supportsTablet": true,
       "bundleIdentifier": "com.abushahma.eduxity"
+    },
+
+    "web": {
+      "favicon": "./assets/images/favicon.png", 
+      "bundler": "metro"
     }
+
   }
 }

@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useKeepAwake } from 'expo-keep-awake';
-import { Audio } from 'expo-av'; // 🔥 Audio Player Library
+import { Audio } from 'expo-av'; 
 import { auth, db } from '../../firebaseConfig';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { collection, doc, setDoc, deleteDoc, addDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from 'firebase/firestore';
@@ -19,17 +19,17 @@ function KeepScreenOn() {
   return null;
 }
 
-// 🎵 Music Tracks (Safe to use streaming links for testing)
+// 🎵 100% RELIABLE TRACKS (Fixed URLs)
 const TRACKS = [
-  { id: 1, name: "Deep Focus Lo-Fi", uri: "https://www.bensound.com/bensound-music/bensound-relaxing.mp3" },
-  { id: 2, name: "Chill Study Beats", uri: "https://www.bensound.com/bensound-music/bensound-slowmotion.mp3" },
-  { id: 3, name: "Cyberpunk Ambient", uri: "https://www.bensound.com/bensound-music/bensound-scifi.mp3" }
+  { id: 1, name: "Deep Focus Lo-Fi", uri: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" },
+  { id: 2, name: "Chill Study Beats", uri: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3" },
+  { id: 3, name: "Cyberpunk Ambient", uri: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3" }
 ];
 
 export default function GrindRoomScreen() {
   const router = useRouter();
-  const { width } = useWindowDimensions(); // 🔥 Responsive Hook
-  const isDesktop = width > 768; // Laptop screen check
+  const { width } = useWindowDimensions();
+  const isDesktop = width > 768; 
 
   const currentUid = auth.currentUser?.uid;
   const myName = auth.currentUser?.displayName || "Scholar";
@@ -56,24 +56,26 @@ export default function GrindRoomScreen() {
   // ==========================================
   async function playMusic(index: number) {
     try {
-      if (sound) await sound.unloadAsync(); // Unload previous
+      if (sound) {
+         await sound.unloadAsync();
+         setSound(null);
+      }
       
       const { sound: newSound } = await Audio.Sound.createAsync(
         { uri: TRACKS[index].uri },
-        { shouldPlay: true, isLooping: true }
+        { shouldPlay: true, isLooping: true, volume: 0.7 }
       );
       setSound(newSound);
       setIsPlaying(true);
       setCurrentTrackIndex(index);
     } catch (error) {
       console.log("Audio Play Error:", error);
-      Alert.alert("Music Error", "Could not load the track.");
     }
   }
 
   async function togglePlayPause() {
     if (!sound) {
-      playMusic(currentTrackIndex); // Start first track
+      await playMusic(currentTrackIndex); 
       return;
     }
     if (isPlaying) {
@@ -92,11 +94,13 @@ export default function GrindRoomScreen() {
 
   // Cleanup Audio when leaving screen
   useEffect(() => {
-    return sound ? () => { sound.unloadAsync(); } : undefined;
+    return () => { 
+        if (sound) sound.unloadAsync(); 
+    };
   }, [sound]);
 
   // ==========================================
-  // 🕒 TIMERS & FIREBASE (Previous Logic intact)
+  // 🕒 TIMERS & FIREBASE
   // ==========================================
   useEffect(() => {
     const clockInterval = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -146,6 +150,9 @@ export default function GrindRoomScreen() {
     return () => subscription.remove();
   }, [isGrinding, myName, currentUid, personalSeconds]);
 
+  // ==========================================
+  // 🔥 FIXED: WEB-COMPATIBLE ACTIONS
+  // ==========================================
   const toggleGrind = async () => {
     if (!currentUid) return;
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -153,25 +160,71 @@ export default function GrindRoomScreen() {
     try {
       if (!isGrinding) {
         setPersonalSeconds(0); setIsGrinding(true);
-        if (!isPlaying) playMusic(currentTrackIndex); // Auto-start music
+        if (!isPlaying) await playMusic(currentTrackIndex); // Auto-start music safely
         await setDoc(doc(db, 'grind_sessions', currentUid), { uid: currentUid, name: myName, startedAt: serverTimestamp() });
         await addDoc(collection(db, 'grind_logs'), { uid: currentUid, type: 'join', text: `🚀 ${myName} entered the Grind Room!`, createdAt: serverTimestamp() });
       } else {
-        Alert.alert("End Grind Session?", "Stopping now will record your time.", [
-          { text: "Keep Grinding", style: "cancel" },
-          { text: "End Session", style: "destructive", onPress: async () => {
-              setIsGrinding(false);
-              if (isPlaying) togglePlayPause(); // Auto-pause music
-              const totalMins = Math.floor(personalSeconds / 60);
-              const earnedCoins = Math.floor(personalSeconds / 300);
-              await deleteDoc(doc(db, 'grind_sessions', currentUid));
-              await addDoc(collection(db, 'grind_logs'), { uid: currentUid, type: 'exit', text: `✅ ${myName} completed a ${totalMins}m deep focus session.`, createdAt: serverTimestamp() });
-              if (earnedCoins > 0) Alert.alert("Session Complete!", `You focused for ${totalMins} mins and earned ${earnedCoins} EduCoins! 🪙`);
-            } 
-          }
-        ]);
+        
+        // 🚀 End Session Function (Web & Mobile safe)
+        const performEndSession = async () => {
+            setIsGrinding(false);
+            if (sound && isPlaying) {
+                await sound.pauseAsync();
+                setIsPlaying(false);
+            }
+            const totalMins = Math.floor(personalSeconds / 60);
+            const earnedCoins = Math.floor(personalSeconds / 300);
+            
+            await deleteDoc(doc(db, 'grind_sessions', currentUid));
+            await addDoc(collection(db, 'grind_logs'), { uid: currentUid, type: 'exit', text: `✅ ${myName} completed a ${totalMins}m deep focus session.`, createdAt: serverTimestamp() });
+            
+            if (earnedCoins > 0) {
+               if (Platform.OS === 'web') window.alert(`Session Complete! You focused for ${totalMins} mins and earned ${earnedCoins} EduCoins! 🪙`);
+               else Alert.alert("Session Complete!", `You focused for ${totalMins} mins and earned ${earnedCoins} EduCoins! 🪙`);
+            }
+        };
+
+        if (Platform.OS === 'web') {
+           const confirm = window.confirm("End Grind Session? Stopping now will record your time.");
+           if (confirm) performEndSession();
+        } else {
+           Alert.alert("End Grind Session?", "Stopping now will record your time.", [
+             { text: "Keep Grinding", style: "cancel" },
+             { text: "End Session", style: "destructive", onPress: performEndSession }
+           ]);
+        }
       }
     } catch (error) { console.log("Firebase Error:", error); }
+  };
+
+  // 🚀 Safe Top-Left Exit Button
+  const handleSafeExit = async () => {
+      if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      
+      const performExit = async () => {
+          if (isGrinding && currentUid) {
+             setIsGrinding(false);
+             try {
+               await deleteDoc(doc(db, 'grind_sessions', currentUid));
+               await addDoc(collection(db, 'grind_logs'), { uid: currentUid, type: 'exit', text: `🏃 ${myName} left the room.`, createdAt: serverTimestamp() });
+             } catch(e){}
+          }
+          if (sound) { await sound.unloadAsync(); setSound(null); }
+          router.back();
+      };
+
+      if (isGrinding) {
+          if (Platform.OS === 'web') {
+             if (window.confirm("Leave Room? Your active timer will stop.")) performExit();
+          } else {
+             Alert.alert("Leave Room?", "Your active timer will stop.", [
+               { text: "Cancel", style: "cancel" },
+               { text: "Leave", style: "destructive", onPress: performExit }
+             ]);
+          }
+      } else {
+          performExit();
+      }
   };
 
   const getFocusRank = (secs: number) => {
@@ -199,7 +252,7 @@ export default function GrindRoomScreen() {
 
       {/* 🔝 TOP HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}><Ionicons name="chevron-down" size={24} color="#f8fafc" /></TouchableOpacity>
+        <TouchableOpacity onPress={handleSafeExit} style={styles.backBtn}><Ionicons name="chevron-down" size={24} color="#f8fafc" /></TouchableOpacity>
         <View style={styles.liveIndicator}>
           <View style={styles.greenDot} />
           <Text style={styles.liveText}>{liveUsersCount} GRINDING</Text>

@@ -64,7 +64,7 @@ export default function StudyVaultScreen() {
           {/* Left Icon Base */}
           <View style={[styles.iconBox, { backgroundColor: isDriveLink ? '#e0f2fe' : '#fce7f3' }]}>
             <Ionicons 
-               name={isDriveLink ? "logo-google-drive" : "sparkles"} 
+               name={isDriveLink ? "cloud" : "sparkles"} 
                size={28} 
                color={isDriveLink ? "#0284c7" : "#db2777"} 
             />
@@ -186,7 +186,7 @@ export default function StudyVaultScreen() {
       <TouchableOpacity 
         style={styles.fab} 
         activeOpacity={0.9} 
-        onPress={() => router.push('/resources/upload')}
+        onPress={() => router.push('/create-post?type=resource')}
       >
         <Ionicons name="cloud-upload" size={24} color="#fff" />
         <Text style={styles.fabText}>Add Notes</Text>

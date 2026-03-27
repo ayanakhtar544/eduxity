@@ -199,7 +199,7 @@ export default function GlobalSearchScreen() {
           <View style={styles.searchContainer}>
             <Ionicons name="search" size={20} color="#64748b" style={styles.searchIcon} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { outlineStyle: 'none' } as any]}
               placeholder="Search users, notes, posts..."
               placeholderTextColor="#94a3b8"
               value={searchQuery}
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
   
   searchContainer: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 14, paddingHorizontal: 12, height: 46, borderWidth: 1, borderColor: '#e2e8f0' },
   searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 15, color: '#0f172a', fontWeight: '500' },
+  searchInput: { flex: 1, fontSize: 15, color: '#0f172a', fontWeight: '500'},
   clearBtn: { padding: 4 },
 
   tabScroll: { paddingHorizontal: 15, paddingBottom: 12, marginTop: 5 },

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity,
-  Dimensions, Alert, Image, ScrollView, Platform, AppState, AppStateStatus, ActivityIndicator
+  Dimensions, Alert, Image, ScrollView, Platform, AppState, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -21,30 +21,28 @@ import { LinearGradient } from 'expo-linear-gradient';
 const { width, height } = Dimensions.get('window');
 
 // ==========================================
-// 🎧 PREMIUM LO-FI PLAYLIST & CONFIG
+// 🎧 100% RELIABLE LO-FI PLAYLIST (Fixed URLs)
 // ==========================================
 const LOFI_TRACKS = [
-  { id: 1, title: 'Deep Focus Ambient', artist: 'Zenity', url: 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3' },
-  { id: 2, title: 'Rainy Cafe Vibes', artist: 'Chillhop', url: 'https://cdn.pixabay.com/download/audio/2022/01/18/audio_d0a13f69d2.mp3' },
-  { id: 3, title: 'Midnight Study', artist: 'Lofi Girl', url: 'https://cdn.pixabay.com/download/audio/2021/11/23/audio_03d2e9e623.mp3' },
-  { id: 4, title: 'Morning Dew', artist: 'Aesthetic Sounds', url: 'https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8b82ec4f1.mp3' }
+  { id: 1, title: 'Deep Focus Ambient', artist: 'Zenity', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
+  { id: 2, title: 'Rainy Cafe Vibes', artist: 'Chillhop', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
+  { id: 3, title: 'Midnight Study', artist: 'Lofi Girl', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3' },
+  { id: 4, title: 'Morning Dew', artist: 'Aesthetic Sounds', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3' }
 ];
 
 // ==========================================
 // 🎛️ MICRO-INTERACTION BUTTON COMPONENT
 // ==========================================
-const AnimatedPressable = ({ children, onPress, style, onLongPress, delayLongPress, disabled }: any) => {
+const AnimatedPressable = ({ children, onPress, style, disabled }: any) => {
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   return (
     <TouchableOpacity
       activeOpacity={1}
       disabled={disabled}
-      onPressIn={() => { scale.value = withSpring(0.92); if(!disabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+      onPressIn={() => { scale.value = withSpring(0.92); if(!disabled && Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
       onPressOut={() => { scale.value = withSpring(1); }}
       onPress={onPress}
-      onLongPress={onLongPress}
-      delayLongPress={delayLongPress}
     >
       <Animated.View style={[style, animatedStyle]}>{children}</Animated.View>
     </TouchableOpacity>
@@ -113,7 +111,7 @@ export default function AdvancedStudyRoom() {
       }
     };
     joinRoom();
-  }, [sessionData === null]); // Runs only on initial load
+  }, [sessionData === null]);
 
   // ==========================================
   // 🚨 2. ANTI-CHEAT: APP BACKGROUND TRACKER
@@ -126,7 +124,6 @@ export default function AdvancedStudyRoom() {
         isSessionLive && 
         auth.currentUser
       ) {
-        // User minimized the app during a live session! SHAME THEM! 🔔
         const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         try {
           await updateDoc(doc(db, 'groups', id as string, 'messages', sessionId as string), {
@@ -147,7 +144,6 @@ export default function AdvancedStudyRoom() {
     if (!sessionData) return;
     
     const interval = setInterval(() => {
-      // Logic for Paused State
       if (sessionData.isPaused) {
         setTimeLeft(sessionData.pausedRemainingTime || 0);
         setIsSessionLive(false);
@@ -156,7 +152,6 @@ export default function AdvancedStudyRoom() {
         return;
       }
 
-      // Logic for Live State
       if (!sessionData.endTime) return;
       const remaining = Math.max(0, Math.floor((sessionData.endTime - Date.now()) / 1000));
       setTimeLeft(remaining);
@@ -169,7 +164,6 @@ export default function AdvancedStudyRoom() {
           bgProgress.value = withRepeat(withTiming(1, { duration: 15000, easing: Easing.linear }), -1, true);
         }
       } else {
-        // Session Finished
         setIsSessionLive(false);
         pulseAnim1.value = withTiming(1);
         pulseAnim2.value = withTiming(1);
@@ -185,17 +179,18 @@ export default function AdvancedStudyRoom() {
   }, [sessionData?.endTime, sessionData?.isPaused]);
 
   const handleSessionComplete = async () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const reward = await processAction(auth.currentUser!.uid, 'STUDY_SESSION');
     Alert.alert("Target Achieved! 🎯", `You stayed disciplined.\nEarned +${reward?.xpEarned || 50} XP & ${reward?.coinsEarned || 5} Coins!`);
   };
 
   // ==========================================
-  // 🎛️ 4. ADVANCED HOST SUPERPOWERS
+  // 🎛️ 4. ADVANCED HOST SUPERPOWERS (WEB COMPATIBLE)
   // ==========================================
   const handleHostAction = async (actionType: 'add' | 'sub' | 'pause' | 'end') => {
     if (!isHost) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
     const docRef = doc(db, 'groups', id as string, 'messages', sessionId as string);
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -211,33 +206,40 @@ export default function AdvancedStudyRoom() {
       }
       else if (actionType === 'pause') {
         if (sessionData.isPaused) {
-          // Resume
           const newEndTime = Date.now() + (sessionData.pausedRemainingTime * 1000);
           await updateDoc(docRef, { isPaused: false, endTime: newEndTime, pausedRemainingTime: deleteField(), logs: arrayUnion(`▶️ Host resumed the session at ${timeStr}`) });
         } else {
-          // Pause
           await updateDoc(docRef, { isPaused: true, pausedRemainingTime: timeLeft, logs: arrayUnion(`⏸️ Host paused the session at ${timeStr}`) });
         }
       }
       else if (actionType === 'end') {
-        Alert.alert("End Session?", "Stop the timer for everyone?", [
-          { text: "Cancel", style: "cancel" },
-          { text: "End Now", style: "destructive", onPress: async () => {
-            await updateDoc(docRef, { endTime: Date.now(), isPaused: false, logs: arrayUnion(`🛑 Host ended the session early.`) });
-          }}
-        ]);
+        // 🔥 WEB COMPATIBLE ALERT
+        const performEnd = async () => {
+          await updateDoc(docRef, { endTime: Date.now(), isPaused: false, logs: arrayUnion(`🛑 Host ended the session early.`) });
+          if (sound) { await sound.unloadAsync(); setSound(null); }
+          router.back();
+        };
+
+        if (Platform.OS === 'web') {
+          if (window.confirm("Stop the timer for everyone and end session?")) performEnd();
+        } else {
+          Alert.alert("End Session?", "Stop the timer for everyone?", [
+            { text: "Cancel", style: "cancel" },
+            { text: "End Now", style: "destructive", onPress: performEnd }
+          ]);
+        }
       }
     } catch (e) { Alert.alert("Error", "Action failed."); }
   };
 
   // ==========================================
-  // 🎵 5. PROFESSIONAL AUDIO ENGINE
+  // 🎵 5. PROFESSIONAL AUDIO ENGINE (FIXED)
   // ==========================================
   const configureAudio = async () => {
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
       staysActiveInBackground: true,
-      interruptionModeIOS: InterruptionModeIOS.DuckOthers, // Drops volume if call comes
+      interruptionModeIOS: InterruptionModeIOS.DuckOthers,
       playsInSilentModeIOS: true,
       shouldDuckAndroid: true,
       interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
@@ -255,23 +257,36 @@ export default function AdvancedStudyRoom() {
       );
       setSound(newSound);
       if (autoPlay) setIsPlayingMusic(true);
-    } catch (error) { console.log("Audio error:", error); }
+    } catch (error) { 
+      console.log("Audio error:", error); 
+    }
   }, [sound]);
 
   useEffect(() => {
     loadAudio(0, false);
     return () => { if (sound) sound.unloadAsync(); };
-  }, []); // Run once
+  }, []); 
 
   const toggleMusic = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (!sound) return;
-    if (isPlayingMusic) { await sound.pauseAsync(); setIsPlayingMusic(false); } 
-    else { await sound.playAsync(); setIsPlayingMusic(true); }
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    if (!sound) {
+       // If sound failed to load initially, try loading it now
+       await loadAudio(currentTrackIndex, true);
+       return;
+    }
+    
+    if (isPlayingMusic) { 
+      await sound.pauseAsync(); 
+      setIsPlayingMusic(false); 
+    } else { 
+      await sound.playAsync(); 
+      setIsPlayingMusic(true); 
+    }
   };
 
   const changeTrack = (direction: 'next' | 'prev') => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     let newIdx = direction === 'next' ? currentTrackIndex + 1 : currentTrackIndex - 1;
     if (newIdx >= LOFI_TRACKS.length) newIdx = 0;
     if (newIdx < 0) newIdx = LOFI_TRACKS.length - 1;
@@ -280,27 +295,40 @@ export default function AdvancedStudyRoom() {
   };
 
   // ==========================================
-  // 🚪 6. EXIT LOGIC (WITH HOLD-TO-LEAVE)
+  // 🚪 6. EXIT LOGIC (WEB COMPATIBLE FIX)
   // ==========================================
   const handleExitRoom = async () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert("Leave Focus Zone?", "You can rejoin later if the session is still active.", [
-      { text: "Cancel", style: "cancel" },
-      { 
-        text: "Leave", 
-        style: "destructive", 
-        onPress: async () => {
-          if (auth.currentUser && sessionId) {
-            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            await updateDoc(doc(db, 'groups', id as string, 'messages', sessionId as string), {
-              [`activeParticipants.${auth.currentUser.uid}`]: deleteField(),
-              logs: arrayUnion(`🔴 ${myName} left the room at ${timeStr}`)
-            });
-          }
-          router.back();
-        } 
+    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    
+    // Core function to leave safely
+    const performLeave = async () => {
+      if (auth.currentUser && sessionId) {
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        try {
+          await updateDoc(doc(db, 'groups', id as string, 'messages', sessionId as string), {
+            [`activeParticipants.${auth.currentUser.uid}`]: deleteField(),
+            logs: arrayUnion(`🔴 ${myName} left the room at ${timeStr}`)
+          });
+        } catch (e) { console.log(e); }
       }
-    ]);
+      
+      if (sound) {
+         await sound.unloadAsync();
+         setSound(null);
+      }
+      router.back();
+    };
+
+    // 🔥 WEB ALERT FIX
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm("Are you sure you want to leave this session?");
+      if (confirmed) performLeave();
+    } else {
+      Alert.alert("Leave Focus Zone?", "Are you sure you want to leave this session?", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Leave", style: "destructive", onPress: performLeave }
+      ]);
+    }
   };
 
   // ==========================================
@@ -323,6 +351,7 @@ export default function AdvancedStudyRoom() {
     if (text.includes('🟢')) return <Text style={{color: '#10b981', width: 20}}>🟢</Text>;
     if (text.includes('🔴')) return <Text style={{color: '#ef4444', width: 20}}>🔴</Text>;
     if (text.includes('⚠️')) return <Text style={{color: '#f59e0b', width: 20}}>⚠️</Text>;
+    if (text.includes('🛑')) return <Text style={{color: '#ef4444', width: 20}}>🛑</Text>;
     return <Text style={{color: '#a78bfa', width: 20}}>⚡</Text>;
   };
 
@@ -342,7 +371,6 @@ export default function AdvancedStudyRoom() {
     <Animated.View style={[styles.container, bgAnimatedStyle]}>
       <StatusBar style="light" />
 
-      {/* --- 🔝 HEADER & AVATARS --- */}
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <View>
@@ -353,7 +381,7 @@ export default function AdvancedStudyRoom() {
           <View style={styles.avatarsContainer}>
             {activeUsers.slice(0, 4).map((u: any, i) => (
               <View key={i} style={[styles.avatarWrapper, { right: i * 22, zIndex: 10 - i }]}>
-                <Image source={{ uri: u.avatar }} style={styles.avatar} />
+                <Image source={{ uri: u.avatar || 'https://cdn-icons-png.flaticon.com/512/149/149071.png' }} style={styles.avatar} />
                 <View style={styles.onlineDot} />
               </View>
             ))}
@@ -365,7 +393,6 @@ export default function AdvancedStudyRoom() {
           </View>
         </View>
 
-        {/* --- ⏱️ MASSIVE GLOWING TIMER --- */}
         <View style={styles.timerWrapper}>
           <Animated.View style={[styles.timerRing, timerAnimatedStyle2, sessionData.isPaused ? styles.ringPaused : (isSessionLive ? styles.ringLive : styles.ringEnded), { width: width * 0.95, height: width * 0.95 }]} />
           <Animated.View style={[styles.timerRing, timerAnimatedStyle1, sessionData.isPaused ? styles.ringPaused : (isSessionLive ? styles.ringLive : styles.ringEnded), { width: width * 0.75, height: width * 0.75 }]} />
@@ -383,7 +410,6 @@ export default function AdvancedStudyRoom() {
           </View>
         </View>
 
-        {/* --- 🎛️ HOST CONTROL PANEL --- */}
         {isHost && (
           <View style={styles.hostControls}>
             <Text style={styles.hostBadgeText}>👑 HOST CONTROLS</Text>
@@ -405,7 +431,6 @@ export default function AdvancedStudyRoom() {
           </View>
         )}
 
-        {/* --- 🎵 PREMIUM MUSIC PLAYER --- */}
         <View style={styles.musicController}>
           <LinearGradient colors={['rgba(30, 27, 75, 0.8)', 'rgba(15, 23, 42, 0.9)']} style={StyleSheet.absoluteFill} borderRadius={24} />
           
@@ -426,7 +451,6 @@ export default function AdvancedStudyRoom() {
           </View>
         </View>
 
-        {/* --- 📜 LIVE MULTIPLAYER LOGS (Auto Scrolling) --- */}
         <View style={styles.logsContainer}>
           <View style={styles.logsHeader}>
             <Ionicons name="radio-outline" size={16} color="#10b981" />
@@ -450,19 +474,14 @@ export default function AdvancedStudyRoom() {
           </ScrollView>
         </View>
 
-        {/* --- 🚪 ANTI-DISTRACTION EXIT --- */}
         <View style={styles.footer}>
+          {/* 🔥 NEW CLEAN EXIT BUTTON (Cross-Platform Safe) 🔥 */}
           <AnimatedPressable 
             style={styles.exitBtn} 
-            delayLongPress={1500} // Requires strict 1.5 seconds hold
-            onLongPress={handleExitRoom}
-            onPress={() => {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-              Alert.alert("Hold Required 🛡️", "You cannot exit accidentally. Press and HOLD the button to leave the focus zone.");
-            }}
+            onPress={handleExitRoom}
           >
-            <Ionicons name="shield-checkmark" size={18} color="#ef4444" />
-            <Text style={styles.exitBtnText}>Hold 2s to Exit</Text>
+            <Ionicons name="exit-outline" size={20} color="#ef4444" />
+            <Text style={styles.exitBtnText}>Exit Session</Text>
           </AnimatedPressable>
         </View>
 
@@ -471,9 +490,6 @@ export default function AdvancedStudyRoom() {
   );
 }
 
-// ==========================================
-// 🎨 PIXEL-PERFECT STYLES
-// ==========================================
 const styles = StyleSheet.create({
   container: { flex: 1 }, 
   safeArea: { flex: 1, justifyContent: 'space-between' },
@@ -489,7 +505,6 @@ const styles = StyleSheet.create({
   moreAvatar: { backgroundColor: '#334155', justifyContent: 'center', alignItems: 'center' },
   moreAvatarText: { color: '#fff', fontSize: 12, fontWeight: '900' },
 
-  // Massive Timer
   timerWrapper: { alignItems: 'center', justifyContent: 'center', flex: 1, marginTop: 10 },
   timerRing: { position: 'absolute', borderRadius: 1000 },
   ringLive: { backgroundColor: '#4f46e5' },
@@ -505,7 +520,6 @@ const styles = StyleSheet.create({
   statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#10b981', marginRight: 8 },
   statusText: { color: '#10b981', fontSize: 12, fontWeight: '800', letterSpacing: 2 },
 
-  // Host Panel
   hostControls: { alignItems: 'center', marginBottom: 15 },
   hostBadgeText: { color: '#fbbf24', fontSize: 10, fontWeight: '900', letterSpacing: 1.5, marginBottom: 8 },
   hostButtonsRow: { paddingHorizontal: 20, gap: 10 },
@@ -517,7 +531,6 @@ const styles = StyleSheet.create({
   hostBtnTextSecondary: { color: '#cbd5e1', fontWeight: '800', marginLeft: 6, fontSize: 13 },
   hostBtnTextDanger: { color: '#ef4444', fontWeight: '800', marginLeft: 6, fontSize: 13 },
 
-  // Music Player
   musicController: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 20, padding: 15, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' },
   musicInfo: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 },
   musicIconBg: { backgroundColor: 'rgba(167, 139, 250, 0.15)', padding: 12, borderRadius: 16 },
@@ -527,7 +540,6 @@ const styles = StyleSheet.create({
   skipBtn: { padding: 8, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 20 },
   musicPlayBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#4f46e5', justifyContent: 'center', alignItems: 'center', shadowColor: '#4f46e5', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10 },
 
-  // Logs
   logsContainer: { height: 110, marginHorizontal: 20, marginTop: 15, backgroundColor: 'rgba(15, 23, 42, 0.6)', borderRadius: 20, padding: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
   logsHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)', paddingBottom: 8 },
   logsTitle: { color: '#cbd5e1', fontWeight: '800', fontSize: 11, textTransform: 'uppercase', marginLeft: 6, letterSpacing: 1 },
@@ -535,7 +547,6 @@ const styles = StyleSheet.create({
   logRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 },
   logText: { color: '#94a3b8', fontSize: 12, fontWeight: '500', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', flex: 1, lineHeight: 18 },
   
-  // Footer
   footer: { alignItems: 'center', paddingBottom: Platform.OS === 'ios' ? 30 : 20, paddingTop: 15 },
   exitBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(239, 68, 68, 0.1)', paddingHorizontal: 25, paddingVertical: 14, borderRadius: 30, borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)' },
   exitBtnText: { color: '#ef4444', fontSize: 14, fontWeight: '800', marginLeft: 8, letterSpacing: 0.5 }

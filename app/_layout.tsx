@@ -1,11 +1,14 @@
 // Location: app/_layout.tsx
 import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
-// 🔥 FIrebase & Store Imports
+// 🔥 Naya Loader Import
+import EduxityLoader from '../components/EduxityLoader';
+
+// 🔥 Firebase & Store Imports
 import { auth, db } from '../firebaseConfig'; // Apne path ke hisaab se check kar lena
 import { useUserStore } from '../store/useUserStore';
 import RewardOverlay from '../components/RewardOverlay'; // Reward component
@@ -48,7 +51,7 @@ export default function RootLayout() {
   // 🛡️ 2. ROUTE PROTECTION (THE GATEKEEPER)
   // ============================================================================
   useEffect(() => {
-    if (initializing) return;
+    if (initializing) return; // Do nothing while initializing is true
 
     const user = auth.currentUser;
     // Check if user is on an auth screen (login, signup, or root)
@@ -69,7 +72,8 @@ export default function RootLayout() {
   if (initializing) {
     return (
       <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#4f46e5" />
+        {/* Sasta spinner hata diya, Advance loader laga diya 🔥 */}
+        <EduxityLoader />
       </View>
     );
   }
@@ -94,6 +98,6 @@ const styles = StyleSheet.create({
     flex: 1, 
     justifyContent: 'center', 
     alignItems: 'center', 
-    backgroundColor: '#f8fafc'
+    backgroundColor: '#f8fafc' // Solid background so the loader pops
   }
 });

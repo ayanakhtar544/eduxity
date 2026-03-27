@@ -16,21 +16,21 @@ const ACTION_MAP = {
 export type ActionType = keyof typeof ACTION_MAP;
 
 // ==========================================
-// 🎖️ 2. THE 12 DYNAMIC BADGES SYSTEM
+// 🎖️ 2. THE 12 DYNAMIC BADGES SYSTEM (UPDATED WITH CUSTOM ICONS)
 // ==========================================
 export const BADGES_LIST = [
-  { id: 'b1', name: 'First Step', icon: '🚶', condition: (stats: any) => stats.postsCreated >= 1 },
-  { id: 'b2', name: 'Content Creator', icon: '✍️', condition: (stats: any) => stats.postsCreated >= 10 },
-  { id: 'b3', name: 'Scholar', icon: '📖', condition: (stats: any) => stats.notesUploaded >= 1 },
-  { id: 'b4', name: 'Library Master', icon: '📚', condition: (stats: any) => stats.notesUploaded >= 10 },
-  { id: 'b5', name: 'Voter', icon: '🗳️', condition: (stats: any) => stats.pollsAnswered >= 5 },
-  { id: 'b6', name: 'Quiz Whiz', icon: '🧠', condition: (stats: any) => stats.pollsCorrect >= 10 },
-  { id: 'b7', name: 'Getting Noticed', icon: '👍', condition: (stats: any) => stats.likesReceived >= 10 },
-  { id: 'b8', name: 'Famous', icon: '🌟', condition: (stats: any) => stats.likesReceived >= 100 },
-  { id: 'b9', name: 'Consistent', icon: '🔥', condition: (stats: any) => stats.currentStreak >= 3 },
-  { id: 'b10', name: 'Unstoppable', icon: '⚡', condition: (stats: any) => stats.currentStreak >= 7 },
-  { id: 'b11', name: 'Addict', icon: '🚀', condition: (stats: any) => stats.currentStreak >= 30 },
-  { id: 'b12', name: 'Eduxity Pro', icon: '👑', condition: (stats: any, level: number) => level >= 10 },
+  { id: 'b1', name: 'First Step', icon: require('../assets/images/badges/b1.png'), condition: (stats: any) => stats.postsCreated >= 1 },
+  { id: 'b2', name: 'Content Creator', icon: require('../assets/images/badges/b2.png'), condition: (stats: any) => stats.postsCreated >= 10 },
+  { id: 'b3', name: 'Scholar', icon: require('../assets/images/badges/b3.png'), condition: (stats: any) => stats.notesUploaded >= 1 },
+  { id: 'b4', name: 'Library Master', icon: require('../assets/images/badges/b4.png'), condition: (stats: any) => stats.notesUploaded >= 10 },
+  { id: 'b5', name: 'Voter', icon: require('../assets/images/badges/b5.png'), condition: (stats: any) => stats.pollsAnswered >= 5 },
+  { id: 'b6', name: 'Quiz Whiz', icon: require('../assets/images/badges/b6.png'), condition: (stats: any) => stats.pollsCorrect >= 10 },
+  { id: 'b7', name: 'Getting Noticed', icon: require('../assets/images/badges/b7.png'), condition: (stats: any) => stats.likesReceived >= 10 },
+  { id: 'b8', name: 'Famous', icon: require('../assets/images/badges/b8.png'), condition: (stats: any) => stats.likesReceived >= 100 },
+  { id: 'b9', name: 'Consistent', icon: require('../assets/images/badges/b9.png'), condition: (stats: any) => stats.currentStreak >= 3 },
+  { id: 'b10', name: 'Unstoppable', icon: require('../assets/images/badges/b10.png'), condition: (stats: any) => stats.currentStreak >= 7 },
+  { id: 'b11', name: 'Addict', icon: require('../assets/images/badges/b11.png'), condition: (stats: any) => stats.currentStreak >= 30 },
+  { id: 'b12', name: 'Eduxity Pro', icon: require('../assets/images/badges/b12.png'), condition: (stats: any, level: number) => level >= 10 },
 ];
 
 // ==========================================

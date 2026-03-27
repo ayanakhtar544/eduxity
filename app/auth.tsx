@@ -1,141 +1,165 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   View, Text, StyleSheet, TextInput, TouchableOpacity, 
- StatusBar,ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform
+  ActivityIndicator, KeyboardAvoidingView, Platform, 
+  ScrollView 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import Animated, { FadeOutUp, SlideInUp } from 'react-native-reanimated';
+
+// 🔥 Firebase Services
 import { auth, db } from '../firebaseConfig';
+
+import BrandLogo from '../components/BrandLogo';
+
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
-  updateProfile 
+  updateProfile,
+  GoogleAuthProvider, 
+  FacebookAuthProvider, 
+  signInWithPopup 
 } from 'firebase/auth';
-import { doc, getDoc, collection, query, where, getDocs, setDoc } from 'firebase/firestore';
-import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function AuthScreen() {
   const router = useRouter();
   
-  // 🧠 Toggle State: true = Login, false = Sign Up
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
-
-  // 📝 Form States
-  const [name, setName] = useState('');
-  const [username, setUsername] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  
+  // 🍞 Custom Toast State
+  const [toastMessage, setToastMessage] = useState('');
+  const [isError, setIsError] = useState(false);
 
-  // 🔍 Real-Time Username Checker States
-  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
-
-  // 🚀 SMART DEBOUNCE LOGIC FOR USERNAME CHECK
-  useEffect(() => {
-    // Agar login page par hai, ya username 3 character se chota hai toh check mat karo
-    if (isLogin || username.trim().length < 3) {
-      setUsernameStatus('idle');
-      return;
+  const showToast = (message: string, error: boolean = false) => {
+    setToastMessage(message);
+    setIsError(error);
+    if (Platform.OS !== 'web') {
+      if (error) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      else Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
+    setTimeout(() => setToastMessage(''), 4000);
+  };
 
-    // Username mein space ya special characters na hon
-    const usernameRegex = /^[a-zA-Z0-9_]+$/;
-    if (!usernameRegex.test(username.trim())) {
-      setUsernameStatus('taken'); // Invalid format ko taken maankar red dikhayenge
-      return;
-    }
-
-    // Har key press par Firebase hit na ho, isliye 500ms ka Debounce lagaya hai
-    const delayDebounceFn = setTimeout(async () => {
-      setUsernameStatus('checking');
-      try {
-        const q = query(
-          collection(db, 'users'), 
-          where('username', '==', username.toLowerCase().trim())
-        );
-        const querySnapshot = await getDocs(q);
-        
-        if (querySnapshot.empty) {
-          setUsernameStatus('available');
-        } else {
-          setUsernameStatus('taken');
-        }
-      } catch (error) {
-        console.log("Username check error:", error);
-        setUsernameStatus('idle');
-      }
-    }, 500);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [username, isLogin]);
-
-
-  // 🚀 CORE AUTHENTICATION ENGINE
+  // 🚀 1. EMAIL/PASSWORD AUTH LOGIC
   const handleAuth = async () => {
-    if (!email || !password) {
-      Alert.alert("Missing Fields", "Email aur Password dono daalna zaroori hai bhai!");
+    if (!email.trim() || !password.trim() || (!isLogin && !fullName.trim())) {
+      showToast('Please fill all the required fields.', true);
       return;
     }
-    
-    // Naye account ke validations
-    if (!isLogin) {
-      if (!name) {
-        Alert.alert("Missing Name", "Apna naam toh batao!");
-        return;
-      }
-      if (usernameStatus !== 'available') {
-        Alert.alert("Invalid Username", "Kripya ek unique aur valid username chunein.");
-        return;
-      }
+    if (password.length < 6) {
+      showToast('Password must be at least 6 characters.', true);
+      return;
     }
 
     setLoading(true);
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     try {
       if (isLogin) {
-        // 🔐 1. LOGIN SYSTEM
-        const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-        
-        // Check if user has completed Onboarding
-        const userDocRef = doc(db, 'users', userCredential.user.uid);
-        const userDocSnap = await getDoc(userDocRef);
-        
-        if (userDocSnap.exists() && userDocSnap.data().onboardingCompleted) {
-          router.replace('/(tabs)'); 
-        } else {
-          router.replace('/onboarding'); 
-        }
-
+        // LOGIN (Existing User -> Goes to Tabs)
+        await signInWithEmailAndPassword(auth, email.trim(), password);
+        showToast('Welcome back!', false);
+        router.replace('/(tabs)');
       } else {
-        // 🚀 2. SIGN UP (CREATE ACCOUNT) SYSTEM
-        const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        // SIGNUP (New User -> Goes to Onboarding)
+        const userCred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        const user = userCred.user;
         
-        // Update Name in Firebase Auth
-        await updateProfile(userCredential.user, {
-          displayName: name.trim()
+        await updateProfile(user, { displayName: fullName.trim() });
+        
+        // 💾 Save to Firestore database
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          fullName: fullName.trim(),
+          email: user.email,
+          photoURL: '',
+          bio: 'Eduxity Learner',
+          interests: [],
+          eduCoins: 50, // Welcome bonus
+          xp: 100,
+          level: 1,
+          streak: 0,
+          joinedAt: serverTimestamp(),
+          followers: 0,
+          following: 0,
         });
 
-        // 💾 Pehli baar Database mein User ko initialize karo with UNIQUE USERNAME
-        await setDoc(doc(db, 'users', userCredential.user.uid), {
-          uid: userCredential.user.uid,
-          email: email.trim(),
-          displayName: name.trim(),
-          username: username.toLowerCase().trim(), // Handle hamesha lowercase mein
-          onboardingCompleted: false
-        });
-
-        // Naya account ban gaya, ab aage ki deep detail ke liye Onboarding pe bhejo
-        router.replace('/onboarding');
+        showToast('Account created successfully!', false);
+        // 🔥 FIX: Naye user ko Onboarding page pe bhejo
+        router.replace({ pathname: '/onboarding', params: { name: fullName.trim() } });
       }
     } catch (error: any) {
-      console.log("Auth Error:", error);
-      let errorMsg = "Kuch galat ho gaya. Dobara try karo.";
-      if (error.code === 'auth/email-already-in-use') errorMsg = "Ye email pehle se registered hai. Niche se Login select karo!";
-      if (error.code === 'auth/wrong-password') errorMsg = "Password galat hai bhai.";
-      if (error.code === 'auth/user-not-found') errorMsg = "Account nahi mila. Pehle Create Account karo.";
-      Alert.alert("Authentication Failed", errorMsg);
+      console.error(error);
+      let msg = "Something went wrong. Please try again.";
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        msg = "Invalid email or password.";
+      } else if (error.code === 'auth/email-already-in-use') {
+        msg = "This email is already registered.";
+      } else if (error.code === 'auth/invalid-email') {
+        msg = "Invalid email format.";
+      }
+      showToast(msg, true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 🌐 2. GOOGLE & FACEBOOK LOGIC
+  const handleSocialAuth = async (providerType: 'google' | 'facebook') => {
+    try {
+      setLoading(true);
+      if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      
+      const provider = providerType === 'google' ? new GoogleAuthProvider() : new FacebookAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      // Check if user already exists in our database
+      const userRef = doc(db, 'users', user.uid);
+      const snap = await getDoc(userRef);
+      
+      if (!snap.exists()) {
+        // 🔥 NEW USER: Create Profile & Send to Onboarding
+        const fetchedName = user.displayName || 'Eduxity User'; // Google se naam liya
+        
+        await setDoc(userRef, {
+          uid: user.uid,
+          fullName: fetchedName,
+          email: user.email,
+          photoURL: user.photoURL || '',
+          bio: 'Eduxity Learner',
+          eduCoins: 50,
+          xp: 100,
+          level: 1,
+          streak: 0,
+          joinedAt: serverTimestamp(),
+          followers: 0,
+          following: 0,
+        });
+
+        showToast(`Welcome ${fetchedName}! Let's set up your profile.`, false);
+        // Naye user ko params ke sath onboarding bhej diya taaki wahan naam dikh sake
+        router.replace({ pathname: '/onboarding', params: { name: fetchedName } });
+        
+      } else {
+        // 🔥 EXISTING USER: Seedha App ke andar bhejo
+        showToast(`Welcome back ${user.displayName || ''}!`, false);
+        router.replace('/(tabs)');
+      }
+
+    } catch (error: any) {
+      console.error(error);
+      showToast(`${providerType} login failed.`, true);
     } finally {
       setLoading(false);
     }
@@ -143,149 +167,118 @@ export default function AuthScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
-      
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex1}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      {/* 🍞 SLEEK NOTIFICATION */}
+      {toastMessage !== '' && (
+        <Animated.View entering={SlideInUp.springify().damping(15)} exiting={FadeOutUp} style={styles.toastContainer}>
+          <View style={[styles.toastPill, isError ? styles.toastError : styles.toastSuccess]}>
+            <Ionicons name={isError ? "warning" : "checkmark-circle"} size={20} color={isError ? "#ef4444" : "#10b981"} />
+            <Text style={styles.toastText}>{toastMessage}</Text>
+          </View>
+        </Animated.View>
+      )}
+
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           
-          {/* 🎓 LOGO & HEADER */}
-          <Animated.View entering={FadeInDown.delay(100)} style={styles.headerContainer}>
-            <View style={styles.logoBox}>
-              <Ionicons name="school" size={40} color="#fff" />
-            </View>
-            <Text style={styles.appName}>Eduxity</Text>
-            <Text style={styles.tagline}>
-              {isLogin ? 'Welcome back! Ready to learn?' : 'Join the fastest growing student network!'}
+          <View style={styles.headerArea}>
+            <View style={styles.header}>
+  <View style={styles.logoWrapper}>
+  <BrandLogo variant="large" withGlow={true} />
+</View>
+  <Text style={styles.title}>Welcome Back</Text>
+</View>
+            <Text style={styles.subtitle}>
+              {isLogin ? "Log in to access your study materials" : "Join Eduxity and start learning today"}
             </Text>
-          </Animated.View>
+          </View>
 
-          {/* 📝 FORM CONTAINER */}
-          <Animated.View entering={FadeInUp.delay(200)} style={styles.formContainer}>
-            
-            {/* 🆕 Create Account Fields */}
+          <View style={styles.formArea}>
+            {/* SIGNUP ONLY FIELD */}
             {!isLogin && (
-              <>
-                {/* Full Name Input */}
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="person-outline" size={20} color="#64748b" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Full Name (e.g. Ayaan Akhtar)"
-                    placeholderTextColor="#94a3b8"
-                    value={name}
-                    onChangeText={setName}
-                  />
-                </View>
-
-                {/* Unique Username Input */}
-                <View style={[
-                  styles.inputWrapper, 
-                  usernameStatus === 'available' && { borderColor: '#10b981', borderWidth: 1.5 },
-                  usernameStatus === 'taken' && { borderColor: '#ef4444', borderWidth: 1.5 }
-                ]}>
-                  <Text style={styles.atSymbol}>@</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="unique_username"
-                    placeholderTextColor="#94a3b8"
-                    value={username}
-                    onChangeText={setUsername}
-                    autoCapitalize="none"
-                    maxLength={15}
-                  />
-                  
-                  {/* Real-time Indicator Icons */}
-                  {usernameStatus === 'checking' && <ActivityIndicator size="small" color="#2563eb" />}
-                  {usernameStatus === 'available' && <Ionicons name="checkmark-circle" size={20} color="#10b981" />}
-                  {usernameStatus === 'taken' && <Ionicons name="close-circle" size={20} color="#ef4444" />}
-                </View>
-                
-                {/* Username helper text */}
-                {!isLogin && username.length > 0 && (
-                  <Text style={[
-                    styles.usernameHelper, 
-                    usernameStatus === 'taken' ? { color: '#ef4444' } : { color: '#10b981' }
-                  ]}>
-                    {usernameStatus === 'checking' && 'Checking availability...'}
-                    {usernameStatus === 'available' && 'Awesome! Username is available.'}
-                    {usernameStatus === 'taken' && 'Oops! Taken or invalid format.'}
-                  </Text>
-                )}
-              </>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="person-outline" size={20} color="#94a3b8" style={styles.inputIcon} />
+                <TextInput 
+                  style={styles.input} 
+                  placeholder="Full Name" 
+                  placeholderTextColor="#94a3b8" 
+                  value={fullName} 
+                  onChangeText={setFullName} 
+                  autoCapitalize="words" 
+                />
+              </View>
             )}
 
-            {/* Email Input */}
             <View style={styles.inputWrapper}>
-              <Ionicons name="mail-outline" size={20} color="#64748b" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Email Address"
-                placeholderTextColor="#94a3b8"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
+              <Ionicons name="mail-outline" size={20} color="#94a3b8" style={styles.inputIcon} />
+              <TextInput 
+                style={styles.input} 
+                placeholder="Email Address" 
+                placeholderTextColor="#94a3b8" 
+                value={email} 
+                onChangeText={setEmail} 
+                keyboardType="email-address" 
+                autoCapitalize="none" 
+                autoCorrect={false} 
               />
             </View>
 
-            {/* Password Input */}
             <View style={styles.inputWrapper}>
-              <Ionicons name="lock-closed-outline" size={20} color="#64748b" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor="#94a3b8"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
+              <Ionicons name="lock-closed-outline" size={20} color="#94a3b8" style={styles.inputIcon} />
+              <TextInput 
+                style={styles.input} 
+                placeholder="Password" 
+                placeholderTextColor="#94a3b8" 
+                value={password} 
+                onChangeText={setPassword} 
+                secureTextEntry={!showPassword} 
+                autoCapitalize="none" 
               />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#64748b" />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 10 }}>
+                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#94a3b8" />
               </TouchableOpacity>
             </View>
 
             {isLogin && (
-              <TouchableOpacity style={styles.forgotBtn}>
-                <Text style={styles.forgotText}>Forgot Password?</Text>
+              <TouchableOpacity style={styles.forgotPassBtn}>
+                <Text style={styles.forgotPassText}>Forgot Password?</Text>
               </TouchableOpacity>
             )}
 
-            {/* 🚀 MAIN ACTION BUTTON */}
-            <TouchableOpacity 
-              style={[
-                styles.actionBtn, 
-                (!isLogin && usernameStatus !== 'available') && { opacity: 0.6 } // Disable look if username is not available
-              ]} 
-              onPress={handleAuth}
-              disabled={loading || (!isLogin && usernameStatus !== 'available')}
-            >
-              {loading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.actionBtnText}>
-                  {isLogin ? 'Login' : 'Create Account'}
-                </Text>
+            <TouchableOpacity style={styles.mainBtn} onPress={handleAuth} disabled={loading}>
+              {loading ? <ActivityIndicator color="#fff" /> : (
+                <Text style={styles.mainBtnText}>{isLogin ? "Log In" : "Sign Up"}</Text>
               )}
             </TouchableOpacity>
+          </View>
 
-          </Animated.View>
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
+            <View style={styles.dividerLine} />
+          </View>
 
-          {/* 🔄 TOGGLE BUTTON */}
-          <Animated.View entering={FadeInDown.delay(300)} style={styles.footer}>
+          {/* SOCIAL LOGIN BUTTONS */}
+          <View style={styles.socialRow}>
+            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialAuth('google')} disabled={loading}>
+              <Ionicons name="logo-google" size={22} color="#db4437" />
+              <Text style={styles.socialBtnText}>Google</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialAuth('facebook')} disabled={loading}>
+              <Ionicons name="logo-facebook" size={22} color="#1877f2" />
+              <Text style={[styles.socialBtnText, {color: '#1877f2'}]}>Facebook</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* BOTTOM TOGGLE */}
+          <View style={styles.footerArea}>
             <Text style={styles.footerText}>
               {isLogin ? "Don't have an account? " : "Already have an account? "}
             </Text>
-            <TouchableOpacity onPress={() => {
-              setIsLogin(!isLogin);
-              setName(''); 
-              setUsername(''); // Reset handle
-              setUsernameStatus('idle');
-            }}>
-              <Text style={styles.toggleText}>
-                {isLogin ? 'Sign Up' : 'Login'}
-              </Text>
+            <TouchableOpacity onPress={() => { setIsLogin(!isLogin); setEmail(''); setPassword(''); setFullName(''); }}>
+              <Text style={styles.footerLink}>{isLogin ? "Sign Up" : "Log In"}</Text>
             </TouchableOpacity>
-          </Animated.View>
+          </View>
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -293,54 +286,47 @@ export default function AuthScreen() {
   );
 }
 
-// Firebase login success ke baad ye code chalana:
-const syncUserToPostgres = async (firebaseUser: any) => {
-  try {
-    await fetch('/api/auth/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        name: firebaseUser.displayName,
-      })
-    });
-    console.log("User successfully synced to PostgreSQL!");
-  } catch (error) {
-    console.error("Failed to sync user:", error);
-  }
-};
-
-// ==========================================
-// 🎨 PREMIUM AUTHENTICATION STYLES
-// ==========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  flex1: { flex: 1 },
-  scrollContent: { flexGrow: 1, paddingHorizontal: 25, justifyContent: 'center', paddingVertical: 40 },
+  toastContainer: { position: 'absolute', top: Platform.OS === 'ios' ? 50 : 30, left: 0, right: 0, alignItems: 'center', zIndex: 100, elevation: 100 },
+  toastPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 30, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5, borderWidth: 1 },
+  toastError: { borderColor: '#fecaca' },
+  toastSuccess: { borderColor: '#a7f3d0' },
+  toastText: { marginLeft: 8, fontSize: 14, fontWeight: '700', color: '#0f172a' },
+
+  scrollContent: { flexGrow: 1, paddingHorizontal: 25, paddingBottom: 40, justifyContent: 'center' },
   
-  headerContainer: { alignItems: 'center', marginBottom: 35 },
-  logoBox: { width: 80, height: 80, backgroundColor: '#2563eb', borderRadius: 25, justifyContent: 'center', alignItems: 'center', shadowColor: '#2563eb', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 15, marginBottom: 15 },
-  appName: { fontSize: 32, fontWeight: '900', color: '#0f172a', marginBottom: 5 },
-  tagline: { fontSize: 15, color: '#64748b', textAlign: 'center', fontWeight: '500' },
+  headerArea: { alignItems: 'center', marginBottom: 35, marginTop: Platform.OS === 'web' ? 40 : 10 },
+  logoBox: { width: 80, height: 80, borderRadius: 24, backgroundColor: '#eef2ff', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+  title: { fontSize: 28, fontWeight: '900', color: '#0f172a', marginBottom: 8, letterSpacing: -0.5 },
+  subtitle: { fontSize: 15, color: '#64748b', textAlign: 'center', paddingHorizontal: 20 },
 
-  formContainer: { backgroundColor: '#fff', padding: 25, borderRadius: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.05, shadowRadius: 20, elevation: 5 },
+  formArea: { width: '100%', marginBottom: 25 },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 16, marginBottom: 16, height: 56 },
+  inputIcon: { marginLeft: 16, marginRight: 10 },
+  input: { flex: 1, fontSize: 15, color: '#0f172a', fontWeight: '500', height: '100%', outlineStyle: 'none' } as any, 
   
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 15, marginBottom: 15, paddingHorizontal: 15, height: 55, borderWidth: 1, borderColor: '#e2e8f0' },
-  inputIcon: { marginRight: 10 },
-  atSymbol: { fontSize: 18, fontWeight: '700', color: '#64748b', marginRight: 5 },
-  input: { flex: 1, fontSize: 16, color: '#0f172a' },
-  eyeIcon: { padding: 5 },
+  forgotPassBtn: { alignSelf: 'flex-end', marginBottom: 20 },
+  forgotPassText: { fontSize: 13, color: '#4f46e5', fontWeight: '700' },
 
-  usernameHelper: { fontSize: 12, fontWeight: '600', marginTop: -10, marginBottom: 15, marginLeft: 5 },
+  mainBtn: { backgroundColor: '#4f46e5', height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', shadowColor: '#4f46e5', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 5 },
+  mainBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
 
-  forgotBtn: { alignSelf: 'flex-end', marginBottom: 20 },
-  forgotText: { color: '#2563eb', fontSize: 13, fontWeight: '700' },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 25 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#e2e8f0' },
+  dividerText: { fontSize: 12, fontWeight: '800', color: '#94a3b8', marginHorizontal: 15, letterSpacing: 1 },
 
-  actionBtn: { backgroundColor: '#2563eb', borderRadius: 15, height: 55, justifyContent: 'center', alignItems: 'center', shadowColor: '#2563eb', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 10, marginTop: 10 },
-  actionBtnText: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  socialRow: { flexDirection: 'row', gap: 15, marginBottom: 40 },
+  socialBtn: { flex: 1, height: 56, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
+  socialBtnText: { fontSize: 15, fontWeight: '800', color: '#334155', marginLeft: 10 },
 
-  footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 30 },
-  footerText: { fontSize: 15, color: '#64748b', fontWeight: '500' },
-  toggleText: { fontSize: 15, color: '#2563eb', fontWeight: '800' }
+  footerArea: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 'auto' },
+  footerText: { fontSize: 14, color: '#64748b', fontWeight: '500' },
+  footerLink: { fontSize: 14, color: '#4f46e5', fontWeight: '800' }, 
+  logoWrapper: {
+  alignItems: 'center', // Ye logo ko horizontal center karega
+  justifyContent: 'center',
+  marginBottom: 20, // Title aur logo ke beech thoda gap
+  width: '100%', // Poori screen ki width lega taaki center properly ho
+},
 });

@@ -1,15 +1,17 @@
+// Location: app/find-groups.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  View, Text, StyleSheet, FlatList, Image, TouchableOpacity, 
+  View, Text, StyleSheet, FlatList, TouchableOpacity, 
   StatusBar, TextInput, ActivityIndicator, Alert, ScrollView 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { auth, db } from '../firebaseConfig'; // Ensure correct path
+import { auth, db } from '../firebaseConfig'; // Check if path is correct
 import { collection, query, where, onSnapshot, updateDoc, doc, arrayUnion } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInRight, Layout } from 'react-native-reanimated';
-import { useUserStore } from '../store/useUserStore'; // User data for recommendations
+import { Image } from 'expo-image'; // Use expo-image for better performance
+import { useUserStore } from '../store/useUserStore'; 
 
 // 🏷️ Categories for manual filtering
 const CATEGORIES = ['All', 'JEE', 'NEET', 'Coding', 'Boards', 'UPSC', 'Gaming'];
@@ -31,7 +33,9 @@ export default function FindGroupsScreen() {
   useEffect(() => {
     if (!currentUserUid) return;
     
-    const q = query(collection(db, 'groups'), where('type', '==', 'public'));
+    // Yahan ensure karo ki tumhare groups me 'type' property set ho, ya is query ko hata do agar sab public hain
+    // Filhal main normal fetch de raha hu saare groups ka taaki koi data miss na ho
+    const q = query(collection(db, 'groups')); 
 
     const unsubscribe = onSnapshot(q, (snap) => {
       const groupList = snap.docs.map(doc => ({
@@ -56,7 +60,8 @@ export default function FindGroupsScreen() {
     try {
       const groupRef = doc(db, 'groups', groupId);
       await updateDoc(groupRef, {
-        members: arrayUnion(currentUserUid)
+        members: arrayUnion(currentUserUid),
+        participants: arrayUnion(currentUserUid) // Support both schemas
       });
       
       Alert.alert("Welcome! 🎉", `Tum ab ${groupName} ka hissa ho.`);
@@ -77,6 +82,7 @@ export default function FindGroupsScreen() {
       filtered = filtered.filter(g => (g.name || '').toLowerCase().includes(searchQuery.toLowerCase()));
     } else if (activeCategory !== 'All') {
       filtered = filtered.filter(g => 
+        (g.category === activeCategory) ||
         (g.tags && g.tags.includes(activeCategory)) || 
         (g.name || '').toLowerCase().includes(activeCategory.toLowerCase())
       );
@@ -91,7 +97,7 @@ export default function FindGroupsScreen() {
     const userTarget = userData?.targetExam || 'JEE'; // Default fallback
     const recommended = allGroups.filter(g => 
       !g.members?.includes(currentUserUid) && // Don't recommend already joined groups
-      ((g.tags && g.tags.includes(userTarget)) || (g.name || '').includes(userTarget))
+      ((g.category === userTarget) || (g.tags && g.tags.includes(userTarget)) || (g.name || '').includes(userTarget))
     ).slice(0, 5);
 
     return { 
@@ -108,10 +114,11 @@ export default function FindGroupsScreen() {
 
   const renderHorizontalCard = (item: any, isRecommended = false) => {
     const isMember = item.members?.includes(currentUserUid);
+    const groupAvatar = item.icon || item.avatar || `https://ui-avatars.com/api/?name=${item.name}&background=4f46e5&color=fff&size=200`;
 
     return (
       <Animated.View entering={FadeInRight} key={item.id} style={[styles.hCard, isRecommended && styles.hCardPremium]}>
-        <Image source={{ uri: item.avatar || 'https://cdn-icons-png.flaticon.com/512/149/149071.png' }} style={styles.hCardAvatar} />
+        <Image source={{ uri: groupAvatar }} style={styles.hCardAvatar} />
         <View style={styles.hCardInfo}>
           <Text style={[styles.hCardName, isRecommended && {color: '#fff'}]} numberOfLines={1}>{item.name}</Text>
           <Text style={[styles.hCardMembers, isRecommended && {color: '#e0e7ff'}]}>
@@ -138,15 +145,23 @@ export default function FindGroupsScreen() {
 
   const renderVerticalCard = ({ item, index }: any) => {
     const isMember = item.members?.includes(currentUserUid);
+    const groupAvatar = item.icon || item.avatar || `https://ui-avatars.com/api/?name=${item.name}&background=4f46e5&color=fff&size=200`;
 
     return (
       <Animated.View entering={FadeInDown.delay(index * 50)} layout={Layout.springify()} style={styles.vCard}>
-        <Image source={{ uri: item.avatar || 'https://cdn-icons-png.flaticon.com/512/149/149071.png' }} style={styles.vCardAvatar} />
+        <Image source={{ uri: groupAvatar }} style={styles.vCardAvatar} />
         <View style={styles.vCardInfo}>
           <Text style={styles.vCardName} numberOfLines={1}>{item.name}</Text>
           <Text style={styles.vCardDesc} numberOfLines={1}>{item.description || 'A great community to learn and grow.'}</Text>
           <View style={styles.tagRow}>
-            <View style={styles.tag}><Text style={styles.tagText}>{item.members?.length || 1} Members</Text></View>
+            <View style={styles.tag}>
+              <Text style={styles.tagText}>{item.members?.length || 1} Members</Text>
+            </View>
+            {item.category && (
+              <View style={[styles.tag, {marginLeft: 8, backgroundColor: '#eef2ff'}]}>
+                <Text style={[styles.tagText, {color: '#4f46e5'}]}>{item.category}</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -171,7 +186,6 @@ export default function FindGroupsScreen() {
     );
   };
 
-  // 📦 This wraps the horizontal sections so they scroll perfectly inside the FlatList
   const ListHeader = () => (
     <View>
       {/* Search Bar */}
@@ -203,7 +217,7 @@ export default function FindGroupsScreen() {
         </ScrollView>
       )}
 
-      {/* ✨ RECOMMENDED SECTION (Only show if not searching/filtering) */}
+      {/* ✨ RECOMMENDED SECTION */}
       {!searchQuery && activeCategory === 'All' && recommendedGroups.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>

@@ -22,7 +22,6 @@ export default function TestBubble({ message, isMe, groupId, timeString, onOpenT
 
   return (
     <Animated.View entering={FadeInUp.duration(400).springify()} layout={Layout.springify()} style={[styles.wrapper, isMe ? styles.wrapperMe : styles.wrapperOther]}>
-      {!isMe && <Image source={{ uri: message.senderAvatar || DEFAULT_AVATAR }} style={styles.avatar} />}
       <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleOther]}>
         
         {/* PREMIUM GRADIENT HEADER */}
@@ -97,4 +96,5 @@ const styles = StyleSheet.create({
   
   time: { fontSize: 11, marginTop: 12, textAlign: 'center', fontWeight: '600' }, 
   timeMe: { color: '#64748b' }, timeOther: { color: '#94a3b8' },
+  card: { backgroundColor: '#fff', borderWidth: 1}
 });

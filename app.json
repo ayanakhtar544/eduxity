@@ -39,17 +39,16 @@
     "plugins": [
       "@react-native-google-signin/google-signin",
       "expo-audio",
-      "expo-video"
+      "expo-video",
+      "@react-native-community/datetimepicker"
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.abushahma.eduxity"
     },
-
     "web": {
-      "favicon": "./assets/images/favicon.png", 
+      "favicon": "./assets/images/favicon.png",
       "bundler": "metro"
     }
-
   }
 }

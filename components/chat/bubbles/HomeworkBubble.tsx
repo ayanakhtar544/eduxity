@@ -53,7 +53,6 @@ export default function HomeworkBubble({ message, isMe, groupId, timeString, ope
 
   return (
     <Animated.View entering={FadeInUp.duration(400).springify()} layout={Layout.springify()} style={[styles.wrapper, isMe ? styles.wrapperMe : styles.wrapperOther]}>
-      {!isMe && <Image source={{ uri: message.senderAvatar || DEFAULT_AVATAR }} style={styles.avatar} />}
       <View style={styles.bubble}>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}><Ionicons name="folder-open" size={24} color="#2563eb" /><Text style={{ fontSize: 16, fontWeight: '900', color: '#0f172a', marginLeft: 8 }}>{message.title}</Text></View>
         {mySubmission && <Text style={{ color: '#10b981', fontWeight: '700', fontSize: 12, marginBottom: 10 }}>✅ Submitted {mySubmission.pages.length} pages</Text>}

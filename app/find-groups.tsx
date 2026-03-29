@@ -1,344 +1,347 @@
-// Location: app/find-groups.tsx
+// Location: app/find-group.tsx (or explore.tsx)
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  View, Text, StyleSheet, FlatList, TouchableOpacity, 
-  StatusBar, TextInput, ActivityIndicator, Alert, ScrollView 
+  View, Text, StyleSheet, TextInput, TouchableOpacity, 
+  FlatList, ActivityIndicator, StatusBar, Platform, Alert 
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { auth, db } from '../firebaseConfig'; // Check if path is correct
-import { collection, query, where, onSnapshot, updateDoc, doc, arrayUnion } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInDown, FadeInRight, Layout } from 'react-native-reanimated';
-import { Image } from 'expo-image'; // Use expo-image for better performance
-import { useUserStore } from '../store/useUserStore'; 
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import Animated, { FadeInDown, FadeInUp, Layout, LinearTransition } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
-// 🏷️ Categories for manual filtering
-const CATEGORIES = ['All', 'JEE', 'NEET', 'Coding', 'Boards', 'UPSC', 'Gaming'];
+// Firebase Imports
+import { auth, db } from '../firebaseConfig';
+import { collection, getDocs, doc, updateDoc, arrayUnion } from 'firebase/firestore';
 
-export default function FindGroupsScreen() {
+const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
+
+export default function FindGroupScreen() {
   const router = useRouter();
-  const currentUserUid = auth.currentUser?.uid;
-  
-  // Get current user's data to power the recommendation engine
-  const { userData } = useUserStore(); 
+  const insets = useSafeAreaInsets();
+  const myUid = auth.currentUser?.uid;
 
-  const [allGroups, setAllGroups] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
+  const [allGroups, setAllGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [joiningId, setJoiningId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'For You' | 'Trending' | 'New'>('For You');
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
-  // 📡 1. FETCH ALL PUBLIC GROUPS
+  // ==========================================
+  // 📡 FETCH & FILTER GROUPS
+  // ==========================================
   useEffect(() => {
-    if (!currentUserUid) return;
-    
-    // Yahan ensure karo ki tumhare groups me 'type' property set ho, ya is query ko hata do agar sab public hain
-    // Filhal main normal fetch de raha hu saare groups ka taaki koi data miss na ho
-    const q = query(collection(db, 'groups')); 
+    fetchDiscoverableGroups();
+  }, []);
 
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const groupList = snap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setAllGroups(groupList);
-      setLoading(false);
-    }, (error) => {
-      console.error("Firestore Error fetching groups:", error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [currentUserUid]);
-
-  // 🤝 2. JOIN GROUP LOGIC
-  const handleJoinGroup = async (groupId: string, groupName: string) => {
-    if (!currentUserUid) return;
-    setJoiningId(groupId);
-
+  const fetchDiscoverableGroups = async () => {
+    if (!myUid) return;
     try {
-      const groupRef = doc(db, 'groups', groupId);
-      await updateDoc(groupRef, {
-        members: arrayUnion(currentUserUid),
-        participants: arrayUnion(currentUserUid) // Support both schemas
+      const snapshot = await getDocs(collection(db, 'groups'));
+      const groupsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Filter out groups where I am already a member
+      const discoverable = groupsData.filter((g: any) => {
+        const members = g.members || [];
+        return !members.includes(myUid);
       });
-      
-      Alert.alert("Welcome! 🎉", `Tum ab ${groupName} ka hissa ho.`);
+
+      setAllGroups(discoverable);
     } catch (error) {
-      console.error("Join Group Error:", error);
-      Alert.alert("Error", "Group join karne mein dikkat aayi.");
+      console.log("Error fetching groups:", error);
     } finally {
-      setJoiningId(null);
+      setLoading(false);
     }
   };
 
-  // 🧠 3. THE RECOMMENDATION ENGINE (Smart Sorting & Filtering)
-  const { recommendedGroups, trendingGroups, exploreGroups } = useMemo(() => {
-    let filtered = allGroups;
+  // ==========================================
+  // 🧠 THE RECOMMENDATION ALGORITHM
+  // ==========================================
+  const displayedGroups = useMemo(() => {
+    let filtered = [...allGroups];
 
-    // A. Apply Search & Category Filters first
-    if (searchQuery) {
-      filtered = filtered.filter(g => (g.name || '').toLowerCase().includes(searchQuery.toLowerCase()));
-    } else if (activeCategory !== 'All') {
+    // 1. Search Filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
       filtered = filtered.filter(g => 
-        (g.category === activeCategory) ||
-        (g.tags && g.tags.includes(activeCategory)) || 
-        (g.name || '').toLowerCase().includes(activeCategory.toLowerCase())
+        g.name?.toLowerCase().includes(q) || 
+        g.desc?.toLowerCase().includes(q)
       );
     }
 
-    // B. Trending Logic (Top 5 groups with most members)
-    const trending = [...allGroups]
-      .sort((a, b) => (b.members?.length || 0) - (a.members?.length || 0))
-      .slice(0, 5);
+    // 2. Algorithmic Sorting based on Tabs
+    if (activeTab === 'Trending') {
+      // Trending: Sort purely by member count (Highest first)
+      filtered.sort((a, b) => (b.members?.length || 0) - (a.members?.length || 0));
+    } 
+    else if (activeTab === 'New') {
+      // New: Sort by creation date (Newest first)
+      filtered.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+    }
+    else {
+      // 🔥 'For You' Algorithm (Telegram Style Mix)
+      // Combines moderate size with activity. (Formula: Members * 2 + Notes * 5)
+      filtered.sort((a, b) => {
+        const scoreA = (a.members?.length || 0) * 2 + (a.totalNotes || 0) * 5;
+        const scoreB = (b.members?.length || 0) * 2 + (b.totalNotes || 0) * 5;
+        return scoreB - scoreA;
+      });
+    }
 
-    // C. Recommendation Logic (Matches user's Target Exam or Class)
-    const userTarget = userData?.targetExam || 'JEE'; // Default fallback
-    const recommended = allGroups.filter(g => 
-      !g.members?.includes(currentUserUid) && // Don't recommend already joined groups
-      ((g.category === userTarget) || (g.tags && g.tags.includes(userTarget)) || (g.name || '').includes(userTarget))
-    ).slice(0, 5);
-
-    return { 
-      recommendedGroups: recommended, 
-      trendingGroups: trending, 
-      exploreGroups: filtered 
-    };
-  }, [allGroups, searchQuery, activeCategory, userData, currentUserUid]);
-
+    return filtered;
+  }, [allGroups, searchQuery, activeTab]);
 
   // ==========================================
-  // 🎨 UI COMPONENTS
+  // ⚡ STRICT JOIN / REQUEST LOGIC
   // ==========================================
+  const handleAction = async (group: any) => {
+    if (!myUid) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setProcessingId(group.id);
 
-  const renderHorizontalCard = (item: any, isRecommended = false) => {
-    const isMember = item.members?.includes(currentUserUid);
-    const groupAvatar = item.icon || item.avatar || `https://ui-avatars.com/api/?name=${item.name}&background=4f46e5&color=fff&size=200`;
+    const groupRef = doc(db, 'groups', group.id);
 
-    return (
-      <Animated.View entering={FadeInRight} key={item.id} style={[styles.hCard, isRecommended && styles.hCardPremium]}>
-        <Image source={{ uri: groupAvatar }} style={styles.hCardAvatar} />
-        <View style={styles.hCardInfo}>
-          <Text style={[styles.hCardName, isRecommended && {color: '#fff'}]} numberOfLines={1}>{item.name}</Text>
-          <Text style={[styles.hCardMembers, isRecommended && {color: '#e0e7ff'}]}>
-            <Ionicons name="people" size={12} /> {item.members?.length || 1} Members
-          </Text>
-        </View>
+    try {
+      if (group.isPrivate) {
+        // 🔒 PRIVATE: Send Request to Pending
+        await updateDoc(groupRef, {
+          pendingRequests: arrayUnion(myUid)
+        });
         
-        {isMember ? (
-          <View style={[styles.joinBtnSmall, {backgroundColor: isRecommended ? 'rgba(255,255,255,0.2)' : '#f1f5f9'}]}>
-            <Ionicons name="checkmark" size={16} color={isRecommended ? "#fff" : "#10b981"} />
-          </View>
-        ) : (
-          <TouchableOpacity 
-            style={[styles.joinBtnSmall, isRecommended ? {backgroundColor: '#fff'} : {backgroundColor: '#4f46e5'}]}
-            onPress={() => handleJoinGroup(item.id, item.name)}
-            disabled={joiningId === item.id}
-          >
-            {joiningId === item.id ? <ActivityIndicator size="small" color={isRecommended ? "#4f46e5" : "#fff"} /> : <Ionicons name="add" size={20} color={isRecommended ? "#4f46e5" : "#fff"} />}
-          </TouchableOpacity>
-        )}
-      </Animated.View>
-    );
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert("Request Sent 🔒", "The admin will review your request to join this private hub.");
+        
+        // Update Local UI instantly
+        setAllGroups(prev => prev.map(g => 
+          g.id === group.id ? { ...g, pendingRequests: [...(g.pendingRequests || []), myUid] } : g
+        ));
+
+      } else {
+        // 🌍 PUBLIC: Direct Join
+        await updateDoc(groupRef, {
+          members: arrayUnion(myUid)
+        });
+        
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        
+        // Remove from list and navigate to chat
+        setAllGroups(prev => prev.filter(g => g.id !== group.id));
+        router.push(`/chat/${group.id}`);
+      }
+    } catch (error) {
+      console.log("Action error:", error);
+      Alert.alert("Error", "Could not process your request.");
+    } finally {
+      setProcessingId(null);
+    }
   };
 
-  const renderVerticalCard = ({ item, index }: any) => {
-    const isMember = item.members?.includes(currentUserUid);
-    const groupAvatar = item.icon || item.avatar || `https://ui-avatars.com/api/?name=${item.name}&background=4f46e5&color=fff&size=200`;
+  // ==========================================
+  // 🎨 RENDER GROUP CARD
+  // ==========================================
+  const renderGroupCard = ({ item, index }: { item: any, index: number }) => {
+    const isPrivate = item.isPrivate === true;
+    const hasRequested = item.pendingRequests?.includes(myUid);
+    const memberCount = item.members?.length || 1;
 
     return (
-      <Animated.View entering={FadeInDown.delay(index * 50)} layout={Layout.springify()} style={styles.vCard}>
-        <Image source={{ uri: groupAvatar }} style={styles.vCardAvatar} />
-        <View style={styles.vCardInfo}>
-          <Text style={styles.vCardName} numberOfLines={1}>{item.name}</Text>
-          <Text style={styles.vCardDesc} numberOfLines={1}>{item.description || 'A great community to learn and grow.'}</Text>
-          <View style={styles.tagRow}>
-            <View style={styles.tag}>
-              <Text style={styles.tagText}>{item.members?.length || 1} Members</Text>
+      <Animated.View 
+        entering={FadeInUp.delay(index * 100).springify()} 
+        layout={LinearTransition.springify()} 
+        style={styles.card}
+      >
+        <TouchableOpacity 
+          style={styles.cardInfo} 
+          activeOpacity={0.7}
+          onPress={() => router.push(`/chat/info/${item.id}`)} // Let them view info before joining
+        >
+          <Image source={{ uri: item.avatar || DEFAULT_AVATAR }} style={styles.avatar} />
+          
+          <View style={styles.textData}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+              <Text style={styles.groupName} numberOfLines={1}>{item.name}</Text>
+              {isPrivate && <Ionicons name="lock-closed" size={12} color="#94a3b8" style={{marginLeft: 6}} />}
             </View>
-            {item.category && (
-              <View style={[styles.tag, {marginLeft: 8, backgroundColor: '#eef2ff'}]}>
-                <Text style={[styles.tagText, {color: '#4f46e5'}]}>{item.category}</Text>
+            
+            <Text style={styles.groupDesc} numberOfLines={2}>
+              {item.desc || 'A study hub on Eduxity for focused scholars.'}
+            </Text>
+            
+            <View style={styles.badgeRow}>
+              <View style={styles.badge}>
+                <Ionicons name="people" size={12} color="#4F46E5" />
+                <Text style={styles.badgeText}>{memberCount} Scholars</Text>
               </View>
-            )}
+              {isPrivate ? (
+                <View style={[styles.badge, { backgroundColor: '#fef2f2' }]}>
+                  <Text style={[styles.badgeText, { color: '#ef4444' }]}>Private</Text>
+                </View>
+              ) : (
+                <View style={[styles.badge, { backgroundColor: '#ecfdf5' }]}>
+                  <Text style={[styles.badgeText, { color: '#10b981' }]}>Public</Text>
+                </View>
+              )}
+            </View>
           </View>
-        </View>
+        </TouchableOpacity>
 
-        {isMember ? (
-          <TouchableOpacity style={styles.joinedBadge} disabled>
-            <Text style={styles.joinedText}>Joined</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity 
-            style={styles.joinBtn} 
-            onPress={() => handleJoinGroup(item.id, item.name)}
-            disabled={joiningId === item.id}
-          >
-            {joiningId === item.id ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.joinBtnText}>Join</Text>
-            )}
-          </TouchableOpacity>
-        )}
+        {/* 🔥 DYNAMIC ACTION BUTTON */}
+        <TouchableOpacity 
+          style={[
+            styles.actionBtn, 
+            isPrivate ? styles.btnPrivate : styles.btnPublic,
+            hasRequested && styles.btnRequested
+          ]} 
+          onPress={() => handleAction(item)}
+          disabled={hasRequested || processingId === item.id}
+        >
+          {processingId === item.id ? (
+            <ActivityIndicator color={hasRequested || isPrivate ? "#0f172a" : "#fff"} size="small" />
+          ) : hasRequested ? (
+            <>
+              <Ionicons name="time" size={16} color="#64748b" />
+              <Text style={styles.btnRequestedText}>Requested</Text>
+            </>
+          ) : isPrivate ? (
+            <>
+              <Ionicons name="hand-right" size={16} color="#0f172a" />
+              <Text style={styles.btnPrivateText}>Request</Text>
+            </>
+          ) : (
+            <>
+              <Ionicons name="flash" size={16} color="#fff" />
+              <Text style={styles.btnPublicText}>Join Hub</Text>
+            </>
+          )}
+        </TouchableOpacity>
       </Animated.View>
     );
   };
 
-  const ListHeader = () => (
-    <View>
-      {/* Search Bar */}
-      <View style={styles.searchWrapper}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color="#94a3b8" />
+  // ==========================================
+  // 📱 MAIN LAYOUT
+  // ==========================================
+  return (
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+      <StatusBar barStyle="dark-content" />
+
+      {/* 🍏 GLASS HEADER */}
+      <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? insets.top + 10 : 20 }]}>
+        {Platform.OS === 'ios' ? <BlurView intensity={90} tint="light" style={StyleSheet.absoluteFill} /> : <View style={[StyleSheet.absoluteFill, {backgroundColor: 'rgba(255,255,255,0.96)'}]} />}
+        
+        <View style={styles.headerTop}>
+          <Text style={styles.title}>Discover</Text>
+          <TouchableOpacity style={styles.scanBtn} onPress={() => router.push('/join-group')}>
+             <Ionicons name="qr-code" size={20} color="#0f172a" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.searchWrapper}>
+          <Ionicons name="search" size={20} color="#94a3b8" style={{ marginLeft: 15 }} />
           <TextInput 
             style={styles.searchInput}
-            placeholder="Search communities..."
+            placeholder="Search study groups, topics..."
             placeholderTextColor="#94a3b8"
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 10 }}>
+              <Ionicons name="close-circle" size={20} color="#cbd5e1" />
+            </TouchableOpacity>
+          )}
         </View>
-      </View>
 
-      {/* Categories Horizontal Scroll */}
-      {!searchQuery && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
-          {CATEGORIES.map(cat => (
+        <View style={styles.tabsWrapper}>
+          {['For You', 'Trending', 'New'].map((tab) => (
             <TouchableOpacity 
-              key={cat} 
-              style={[styles.catChip, activeCategory === cat && styles.catChipActive]}
-              onPress={() => setActiveCategory(cat)}
+              key={tab} 
+              style={[styles.tab, activeTab === tab && styles.tabActive]}
+              onPress={() => { setActiveTab(tab as any); Haptics.selectionAsync(); }}
             >
-              <Text style={[styles.catText, activeCategory === cat && styles.catTextActive]}>{cat}</Text>
+              <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
             </TouchableOpacity>
           ))}
-        </ScrollView>
-      )}
-
-      {/* ✨ RECOMMENDED SECTION */}
-      {!searchQuery && activeCategory === 'All' && recommendedGroups.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="sparkles" size={20} color="#4f46e5" />
-            <Text style={styles.sectionTitle}>For You ({userData?.targetExam || 'Top Picks'})</Text>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 15 }}>
-            {recommendedGroups.map(g => renderHorizontalCard(g, true))}
-          </ScrollView>
         </View>
-      )}
-
-      {/* 🔥 TRENDING SECTION */}
-      {!searchQuery && activeCategory === 'All' && trendingGroups.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="flame" size={20} color="#ef4444" />
-            <Text style={styles.sectionTitle}>Trending Now</Text>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 15 }}>
-            {trendingGroups.map(g => renderHorizontalCard(g, false))}
-          </ScrollView>
-        </View>
-      )}
-
-      {/* 🌐 EXPLORE ALL HEADER */}
-      <View style={[styles.sectionHeader, { paddingHorizontal: 20, marginTop: 10 }]}>
-        <Ionicons name="globe-outline" size={20} color="#0f172a" />
-        <Text style={styles.sectionTitle}>{searchQuery ? 'Search Results' : 'Explore All'}</Text>
-      </View>
-    </View>
-  );
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      
-      {/* 🔝 HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color="#0f172a" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Discover</Text>
-        <TouchableOpacity style={styles.backBtn}>
-          <Ionicons name="compass-outline" size={24} color="#0f172a" />
-        </TouchableOpacity>
       </View>
 
-      {/* 📜 MAIN LIST */}
-      {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color="#4f46e5" /></View>
-      ) : (
-        <FlatList
-          data={exploreGroups}
-          keyExtractor={(item) => item.id}
-          ListHeaderComponent={ListHeader}
-          renderItem={renderVerticalCard}
-          contentContainerStyle={styles.listContainer}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="planet-outline" size={80} color="#cbd5e1" />
-              <Text style={styles.emptyText}>Oops! Koi group nahi mila. Filters change karke try karo.</Text>
-            </View>
-          }
-        />
-      )}
+      {/* 📜 CONTENT LIST */}
+      <View style={{ flex: 1 }}>
+        {loading ? (
+          <View style={styles.center}><ActivityIndicator size="large" color="#2563EB" /></View>
+        ) : (
+          <FlatList 
+            data={displayedGroups}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContainer}
+            showsVerticalScrollIndicator={false}
+            renderItem={renderGroupCard}
+            ListEmptyComponent={() => (
+              <Animated.View entering={FadeInDown} style={styles.emptyState}>
+                <Image source={{ uri: 'https://cdn3d.iconscout.com/3d/premium/thumb/empty-box-4994248-4161726.png' }} style={{width: 150, height: 150}} />
+                <Text style={styles.emptyTitle}>No Hubs Found</Text>
+                <Text style={styles.emptyDesc}>Try searching for a different topic or create your own study hub!</Text>
+                <TouchableOpacity style={styles.createBtn} onPress={() => router.push('/create-group')}>
+                  <Text style={{color: '#fff', fontWeight: '800'}}>Create New Hub</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+          />
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 // ==========================================
-// 🎨 SENIOR DEV STYLES (Clean & Premium)
+// 🎨 PREMIUM STYLES
 // ==========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#f1f5f9' },
-  backBtn: { padding: 8, backgroundColor: '#f8fafc', borderRadius: 12 },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a', letterSpacing: 0.5 },
+  header: { position: 'absolute', top: 0, width: '100%', zIndex: 10, borderBottomWidth: 1, borderColor: 'rgba(226,232,240,0.8)', paddingBottom: 10 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 15 },
+  title: { fontSize: 32, fontWeight: '900', color: '#0f172a', letterSpacing: -1 },
+  scanBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0' },
   
-  searchWrapper: { paddingHorizontal: 20, paddingTop: 15, paddingBottom: 10, backgroundColor: '#fff' },
-  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', height: 50, borderRadius: 16, paddingHorizontal: 15, borderWidth: 1, borderColor: '#e2e8f0' },
-  searchInput: { flex: 1, marginLeft: 10, fontSize: 16, color: '#0f172a', fontWeight: '600' },
+  searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', marginHorizontal: 20, borderRadius: 16, height: 50, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 15 },
+  searchInput: { flex: 1, marginLeft: 10, fontSize: 16, color: '#0f172a', fontWeight: '500', height: '100%' },
   
-  categoryScroll: { paddingHorizontal: 20, paddingBottom: 15, backgroundColor: '#fff', gap: 10 },
-  catChip: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' },
-  catChipActive: { backgroundColor: '#0f172a', borderColor: '#0f172a' },
-  catText: { fontSize: 14, fontWeight: '700', color: '#64748b' },
-  catTextActive: { color: '#fff' },
+  tabsWrapper: { flexDirection: 'row', paddingHorizontal: 20, gap: 10 },
+  tab: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, backgroundColor: 'transparent' },
+  tabActive: { backgroundColor: '#0f172a' },
+  tabText: { fontSize: 14, fontWeight: '700', color: '#64748b' },
+  tabTextActive: { color: '#fff' },
 
-  section: { marginTop: 15, paddingBottom: 10 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12, gap: 8 },
-  sectionTitle: { fontSize: 16, fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: 0.5 },
-
-  // Horizontal Card Styles
-  hCard: { width: 220, backgroundColor: '#fff', padding: 15, borderRadius: 24, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 10, elevation: 2 },
-  hCardPremium: { backgroundColor: '#4f46e5', borderColor: '#4f46e5', shadowColor: '#4f46e5', shadowOpacity: 0.3 },
-  hCardAvatar: { width: 50, height: 50, borderRadius: 16, backgroundColor: '#f1f5f9', marginBottom: 12 },
-  hCardInfo: { marginBottom: 15 },
-  hCardName: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginBottom: 4 },
-  hCardMembers: { fontSize: 12, color: '#64748b', fontWeight: '600' },
-  joinBtnSmall: { alignSelf: 'flex-start', padding: 8, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-
-  // Vertical Card Styles
-  listContainer: { paddingBottom: 100 },
-  vCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 15, marginHorizontal: 20, marginBottom: 12, borderRadius: 20, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 8, elevation: 1 },
-  vCardAvatar: { width: 60, height: 60, borderRadius: 20, backgroundColor: '#f1f5f9' },
-  vCardInfo: { flex: 1, marginLeft: 15 },
-  vCardName: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginBottom: 4 },
-  vCardDesc: { fontSize: 13, color: '#64748b', fontWeight: '500', marginBottom: 8 },
-  tagRow: { flexDirection: 'row' },
-  tag: { backgroundColor: '#f1f5f9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  tagText: { fontSize: 11, fontWeight: '700', color: '#475569' },
+  listContainer: { paddingTop: 210, paddingBottom: 120, paddingHorizontal: 15 },
   
-  joinBtn: { backgroundColor: '#4f46e5', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, marginLeft: 10 },
-  joinBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
-  joinedBadge: { backgroundColor: '#f1f5f9', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, marginLeft: 10, borderWidth: 1, borderColor: '#e2e8f0' },
-  joinedText: { color: '#64748b', fontSize: 14, fontWeight: '800' },
+  card: { backgroundColor: '#fff', borderRadius: 24, padding: 15, marginBottom: 15, borderWidth: 1, borderColor: '#f1f5f9', shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  cardInfo: { flexDirection: 'row', alignItems: 'flex-start' },
+  avatar: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' },
+  textData: { flex: 1, marginLeft: 15 },
+  groupName: { fontSize: 18, fontWeight: '900', color: '#0f172a', flexShrink: 1 },
+  groupDesc: { fontSize: 13, color: '#64748b', fontWeight: '500', marginTop: 2, lineHeight: 18 },
+  
+  badgeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  badge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef2ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  badgeText: { fontSize: 11, fontWeight: '800', color: '#4F46E5', marginLeft: 4 },
 
-  emptyContainer: { alignItems: 'center', marginTop: 60, paddingHorizontal: 40 },
-  emptyText: { color: '#94a3b8', fontSize: 15, fontWeight: '600', textAlign: 'center', marginTop: 15, lineHeight: 22 }
+  actionBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', width: '100%', paddingVertical: 14, borderRadius: 16, marginTop: 15 },
+  btnPublic: { backgroundColor: '#2563EB', shadowColor: '#2563EB', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  btnPublicText: { color: '#fff', fontSize: 15, fontWeight: '900', marginLeft: 6 },
+  
+  btnPrivate: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' },
+  btnPrivateText: { color: '#0f172a', fontSize: 15, fontWeight: '800', marginLeft: 6 },
+  
+  btnRequested: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1' },
+  btnRequestedText: { color: '#64748b', fontSize: 15, fontWeight: '800', marginLeft: 6 },
+
+  emptyState: { alignItems: 'center', marginTop: 60, paddingHorizontal: 20 },
+  emptyTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a', marginTop: 20, marginBottom: 8 },
+  emptyDesc: { textAlign: 'center', color: '#64748b', fontSize: 14, lineHeight: 22, marginBottom: 25 },
+  createBtn: { backgroundColor: '#0f172a', paddingHorizontal: 25, paddingVertical: 14, borderRadius: 16 }
 });

@@ -1,25 +1,27 @@
 // Location: app/onboarding.tsx
 import React, { useState, useEffect } from 'react';
 import { 
-  View, Text, StyleSheet, TouchableOpacity, 
-  StatusBar, ScrollView, ActivityIndicator, Alert, TextInput, Platform, Modal, FlatList, Keyboard
+  View, Text, StyleSheet, TouchableOpacity, StatusBar, 
+  ScrollView, ActivityIndicator, Alert, TextInput, 
+  Platform, Modal, FlatList, Keyboard, KeyboardAvoidingView
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Image } from 'expo-image'; // 🔥 Premium Image Handling
+import { Image } from 'expo-image';
 import { auth, db } from '../firebaseConfig';
 import { doc, setDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInRight, SlideInRight, Layout, FadeIn } from 'react-native-reanimated';
+import Animated, { FadeInRight, FadeOutLeft, SlideInRight, Layout, FadeIn, ZoomIn } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
+import DateTimePicker from '@react-native-community/datetimepicker'; 
 
-// ==========================================
-// 🗄️ MASSIVE DATA DICTIONARIES (For Clean DB)
-// ==========================================
 const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 const IMGBB_API_KEY = process.env.EXPO_PUBLIC_IMGBB_API_KEY;
 
+// ==========================================
+// 🗄️ EXACT DATA DICTIONARIES (CRITICAL RULES APPLIED)
+// ==========================================
 const INDIAN_STATES = [
   "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", 
   "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli", "Daman and Diu", "Delhi", 
@@ -30,8 +32,7 @@ const INDIAN_STATES = [
   "Uttarakhand", "West Bengal"
 ];
 
-// 🔥 SMART CITY ENGINE DATABASE
-const TOP_INDIAN_CITIES = [
+const INDIAN_CITIES = [
   "Agra", "Ahmedabad", "Ajmer", "Aligarh", "Allahabad", "Amritsar", "Aurangabad", "Ayodhya", 
   "Bangalore", "Bareilly", "Belagavi", "Bhilai", "Bhiwandi", "Bhopal", "Bhubaneswar", 
   "Bikaner", "Chandigarh", "Chennai", "Coimbatore", "Cuttack", "Dehradun", "Delhi", 
@@ -48,89 +49,87 @@ const TOP_INDIAN_CITIES = [
   "Ujjain", "Vadodara", "Varanasi", "Vasai-Virar", "Vijayawada", "Visakhapatnam", "Warangal"
 ];
 
-const STUDENT_CLASSES = [
-  "Class 1", "Class 2", "Class 3", "Class 4", "Class 5", "Class 6", "Class 7", "Class 8", 
-  "Class 9", "Class 10", "Class 11", "Class 12", "Dropper (Competitive Exams)", 
-  "UG (B.Tech / B.Sc / B.A / B.Com)", "UG (Medical / MBBS)", 
-  "PG (M.Tech / M.Sc / M.A / MBA)", "PhD / Research", "Other Student"
+// EXACT ARRAYS FOR EDUTXITY ONBOARDING
+const STUDENT_CLASSES = ["Below Class 6", "Class 6", "Class 7", "Class 8", "Class 9", "Class 10", "Class 11", "Class 12", "Dropper", "BSc", "BTech", "BCA", "MCA", "MBBS", "BA", "BCom", "MBA", "MTech", "CA", "CS", "LLB"];
+const STUDENT_EXAMS = [
+  { category: 'ENGINEERING', items: ['JEE Main', 'JEE Advanced', 'BITSAT', 'VITEEE', 'SRMJEEE', 'MHT CET', 'WBJEE', 'KCET', 'COMEDK'] },
+  { category: 'MEDICAL', items: ['NEET'] },
+  { category: 'UNIVERSITY', items: ['CUET', 'CAT', 'GATE'] },
+  { category: 'GOVERNMENT', items: ['UPSC', 'SSC CGL', 'SSC CHSL', 'Banking', 'Railways', 'NDA', 'CDS', 'AFCAT', 'State Police Exams'] },
+  { category: 'LAW AND DESIGN', items: ['CLAT', 'AILET', 'NIFT', 'NID'] },
+  { category: 'PROFESSIONAL', items: ['CA', 'CS', 'CMA'] },
+  { category: 'OLYMPIADS', items: ['IMO', 'NSO', 'IEO', 'NCO'] },
+  { category: 'SPECIAL OPTION', items: ['Not decided yet'] }
 ];
+const STUDENT_INTERESTS = ["Notes", "Tests", "Doubts", "Study with friends", "Daily streaks", "Rank improvement", "Short learning content", "Community discussions"];
 
-const TEACHER_ROLES = [
-  "Primary School Teacher", "High School Teacher", "Senior Secondary Teacher (PGT)", 
-  "College Professor / Lecturer", "Principal / Vice Principal", "Director / HOD", 
-  "Coaching Institute Mentor", "Private Tutor", "Other Educator"
-];
+const TEACHER_ROLES = ["School Teacher", "Coaching Teacher", "Mentor", "Doubt Solver", "Content Creator", "Subject Expert"];
+const TEACHER_SUBJECTS = ["Physics", "Chemistry", "Maths", "Biology", "English", "Hindi", "SST", "Accounts", "Economics", "History", "Geography", "Political Science", "Computer Science"];
+const TEACHER_INTERESTS = ["Teach students", "Create test series", "Sell resources", "Build community", "Mentor batches"];
 
-const MASSIVE_INTERESTS = [
-  "JEE Advanced", "JEE Mains", "NEET", "UPSC Civil Services", "NDA", "CA / CS", "CUET",
-  "Physics", "Chemistry", "Mathematics", "Biology", "Computer Science", "Economics", "History",
-  "Web Development", "App Development", "Next.js", "React Native", "Python", "Artificial Intelligence",
-  "Machine Learning", "Data Science", "Cyber Security", "UI/UX Design", "Graphic Design",
-  "Dropshipping", "Stock Market", "Startups & Entrepreneurship", "Personal Finance",
-  "Content Creation", "Video Editing", "Public Speaking", "Literature & Poetry", "Music", "Sports"
-];
+const PARENT_CLASSES = ["Below Class 6", "Class 6", "Class 7", "Class 8", "Class 9", "Class 10", "Class 11", "Class 12"];
+const PARENT_GOALS = ["School marks", "JEE", "NEET", "Olympiad", "General improvement"];
+const PARENT_INTERESTS = ["Monitor progress", "Find resources", "Find teachers", "Find study groups"];
+
+const OTHER_INTERESTS = ["Explore resources", "Join community", "Browse study content"];
 
 export default function OnboardingScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const user = auth.currentUser;
 
-  // 🧠 Multi-Step Form Engine (5 Steps: 0 to 4)
+  // 🧠 State Architecture
   const [step, setStep] = useState(0); 
   const [loading, setLoading] = useState(false);
+  const [checkingUsername, setCheckingUsername] = useState(false);
 
-  // 📦 STEP 0: Username & Profile Pic
-  const [fullName, setFullName] = useState((params.name as string) || user?.displayName || '');
+  // Profile
   const [username, setUsername] = useState('');
   const [usernameError, setUsernameError] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState(false);
-  const [checkingUsername, setCheckingUsername] = useState(false);
   const [profilePic, setProfilePic] = useState<string | null>(user?.photoURL || null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
-
-  // 📦 STEP 1 & 2: Role & Sub-Role
-  const [primaryRole, setPrimaryRole] = useState<'Student' | 'Teacher' | 'Other' | ''>('');
-  const [subRole, setSubRole] = useState(''); 
-  const [otherRoleInput, setOtherRoleInput] = useState(''); 
-
-  // 📦 STEP 3: Interests with Search
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
-
-  // 📦 STEP 4: Deep Demographics & Smart City
+  
+  // Branching Identity
+  const [role, setRole] = useState<'Student' | 'Teacher' | 'Parent' | 'Other' | ''>('');
+  const [level, setLevel] = useState<string | string[]>(''); // Class/Job Role (String for Student/Teacher, Array for Parent)
+  const [goals, setGoals] = useState<string[]>([]); // Exams/Subjects/Goals
+  const [interests, setInterests] = useState<string[]>([]); // Interests
+  
+  // Demographics (Step 5)
   const [stateModalVisible, setStateModalVisible] = useState(false);
   const [selectedState, setSelectedState] = useState('');
   const [city, setCity] = useState('');
   const [showCitySuggestions, setShowCitySuggestions] = useState(false);
   const [institution, setInstitution] = useState('');
   const [dob, setDob] = useState('');
+  
+  // Calendar States 🔥 (The Native Date Picker Fix)
+  const [date, setDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Generate initial username suggestion
   useEffect(() => {
-    if (fullName && !username) {
-      const suggested = fullName.toLowerCase().replace(/[^a-z0-9]/g, '') + Math.floor(Math.random() * 1000);
+    if (user?.displayName && !username) {
+      const suggested = user.displayName.toLowerCase().replace(/[^a-z0-9]/g, '') + Math.floor(Math.random() * 100);
       setUsername(suggested);
       checkUsernameAvailability(suggested);
     }
-  }, [fullName]);
+  }, [user]);
 
-  // Username validation logic
   const checkUsernameAvailability = async (text: string) => {
     const cleanText = text.toLowerCase().replace(/[^a-z0-9_]/g, '');
     setUsername(cleanText);
     setUsernameAvailable(false);
     setUsernameError('');
 
-    if (cleanText.length < 3) {
-      setUsernameError('Must be at least 3 characters');
-      return;
-    }
+    if (cleanText.length < 3) { setUsernameError('Must be at least 3 characters'); return; }
 
     setCheckingUsername(true);
     try {
       const q = query(collection(db, 'users'), where('username', '==', cleanText));
       const querySnapshot = await getDocs(q);
-      
       if (!querySnapshot.empty) {
         setUsernameError('Username is already taken');
         setUsernameAvailable(false);
@@ -138,94 +137,70 @@ export default function OnboardingScreen() {
         setUsernameError('');
         setUsernameAvailable(true);
       }
-    } catch (error) {
-      console.error("Error checking username:", error);
-    } finally {
-      setCheckingUsername(false);
-    }
+    } catch (error) { console.error(error); } finally { setCheckingUsername(false); }
   };
 
-  // Image Picker Logic
   const pickImage = async () => {
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.3,
-      base64: true,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.3, base64: true,
     });
-
     if (!result.canceled && result.assets[0].base64) {
       setProfilePic(result.assets[0].uri);
       setImageBase64(result.assets[0].base64);
     }
   };
 
-  // Upload image to ImgBB
   const uploadImage = async () => {
     if (!imageBase64) return profilePic; 
     try {
-      const formData = new FormData();
-      formData.append('image', imageBase64);
-      
-      const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-        method: 'POST',
-        body: formData
-      });
+      const formData = new FormData(); formData.append('image', imageBase64);
+      const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: 'POST', body: formData });
       const data = await response.json();
       return data.success ? data.data.url : DEFAULT_AVATAR;
-    } catch (error) {
-      console.log("Image upload failed:", error);
-      return DEFAULT_AVATAR;
+    } catch (error) { return DEFAULT_AVATAR; }
+  };
+
+  // 🔥 CALENDAR HANDLER
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') setShowDatePicker(false);
+    if (selectedDate) {
+      setDate(selectedDate);
+      const day = selectedDate.getDate().toString().padStart(2, '0');
+      const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
+      const year = selectedDate.getFullYear();
+      setDob(`${day}/${month}/${year}`);
     }
   };
 
-  // 🔍 Interest & City Filter Logic
-  const filteredInterests = MASSIVE_INTERESTS.filter(item => 
-    item.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const filteredCities = TOP_INDIAN_CITIES.filter(item =>
-    item.toLowerCase().startsWith(city.toLowerCase()) || item.toLowerCase().includes(city.toLowerCase())
-  ).slice(0, 4); // Top 4 matches
-
-  const toggleInterest = (interest: string) => {
+  const toggleArrayItem = (item: string, stateArray: string[], setState: Function) => {
     if (Platform.OS !== 'web') Haptics.selectionAsync();
-    if (selectedInterests.includes(interest)) {
-      setSelectedInterests(selectedInterests.filter(i => i !== interest));
+    if (stateArray.includes(item)) {
+      setState(stateArray.filter((i) => i !== item));
     } else {
-      if (selectedInterests.length < 10) setSelectedInterests([...selectedInterests, interest]);
-      else Alert.alert("Limit Reached", "You can select up to 10 core interests.");
+      setState([...stateArray, item]);
     }
   };
 
-  // 💾 FINAL SAVE LOGIC
   const completeOnboarding = async (isSkipped = false) => {
     if (!user) return;
     setLoading(true);
 
     try {
-      let finalRoleString = primaryRole;
-      if (primaryRole === 'Student' || primaryRole === 'Teacher') {
-        finalRoleString = `${primaryRole} - ${subRole}`;
-      } else if (primaryRole === 'Other') {
-        finalRoleString = `Other - ${otherRoleInput}`;
-      }
-
       let finalAvatarUrl = profilePic || DEFAULT_AVATAR;
       if (imageBase64) finalAvatarUrl = await uploadImage();
 
       const userData = {
         uid: user.uid,
         email: user.email,
-        displayName: fullName.trim(),
+        displayName: user.displayName || 'Eduxity User',
         username: username, 
         photoURL: finalAvatarUrl,
         
-        accountType: primaryRole,
-        roleDetail: finalRoleString,
-        interests: selectedInterests,
+        accountType: role,
+        level: level, 
+        goals: goals, 
+        interests: interests,
         
         state: isSkipped ? '' : selectedState,
         city: isSkipped ? '' : city.trim(),
@@ -234,35 +209,47 @@ export default function OnboardingScreen() {
         bio: '', 
         
         onboardingCompleted: true,
-        
-        // Gamification Base Defaults
         eduCoins: 50,
         gamification: { xp: 100, level: 1, currentStreak: 1, badges: [] },
         stats: { likesReceived: 0, postsCreated: 0 },
         joinedAt: serverTimestamp(),
-        followers: [],
-        following: [],
+        followers: [], following: [],
       };
 
       await setDoc(doc(db, 'users', user.uid), userData, { merge: true });
-      
       setLoading(false);
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace('/(tabs)'); 
-
+      setStep(6); 
     } catch (error) {
-      console.log("Data Harvesting Error:", error);
-      Alert.alert("Network Error", "Data save nahi hua. Please try again.");
+      Alert.alert("Network Error", "Data save failed. Please try again.");
       setLoading(false);
     }
   };
 
+  const handleNext = () => {
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSearchQuery('');
+    if (step === 1 && role === 'Other') { setStep(4); return; }
+    setStep(prev => prev + 1);
+  };
+
+  const handleBack = () => {
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSearchQuery('');
+    if (step === 4 && role === 'Other') { setStep(1); return; }
+    setStep(prev => prev - 1);
+  };
+
+  const totalSteps = role === 'Other' ? 3 : 5;
+  const currentProgress = role === 'Other' && step === 4 ? 2 : step === 5 ? totalSteps : step;
+
   // ==========================================
-  // 🎨 STEP 0: USERNAME & PROFILE SETUP
+  // 🎨 STEP RENDERERS
   // ==========================================
+  
   const renderStep0 = () => (
-    <Animated.View entering={FadeInRight} style={styles.stepContainer}>
-      <Text style={styles.title}>Set up your profile 📸</Text>
+    <Animated.View entering={FadeInRight} exiting={FadeOutLeft} style={styles.stepContainer}>
+      <Text style={styles.title}>Create your profile</Text>
       <Text style={styles.subtitle}>Choose how you want to appear to others on Eduxity.</Text>
       
       <View style={styles.avatarSection}>
@@ -272,20 +259,12 @@ export default function OnboardingScreen() {
             <Ionicons name="camera" size={16} color="#fff" />
           </View>
         </TouchableOpacity>
+        <Text style={styles.avatarHint}>Add profile photo (optional)</Text>
       </View>
 
-      <Text style={styles.inputLabel}>Full Name</Text>
-      <TextInput 
-        style={styles.inputField} 
-        placeholder="e.g. Rahul Sharma" 
-        placeholderTextColor="#94a3b8" 
-        value={fullName} 
-        onChangeText={setFullName} 
-      />
-
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 20 }}>
-        <Text style={[styles.inputLabel, { marginTop: 0 }]}>Username <Text style={{color: '#ef4444'}}>*</Text></Text>
-        {checkingUsername && <ActivityIndicator size="small" color="#4f46e5" />}
+        <Text style={styles.inputLabel}>Username <Text style={{color: '#ef4444'}}>*</Text></Text>
+        {checkingUsername && <ActivityIndicator size="small" color="#0f172a" />}
       </View>
       
       <View style={[styles.inputWrapper, usernameError ? { borderColor: '#ef4444' } : (usernameAvailable && username ? { borderColor: '#10b981' } : {})]}>
@@ -295,9 +274,7 @@ export default function OnboardingScreen() {
           placeholder="unique_username" 
           placeholderTextColor="#94a3b8" 
           value={username} 
-          onChangeText={(text) => {
-            setUsername(text.toLowerCase().replace(/[^a-z0-9_]/g, ''));
-          }} 
+          onChangeText={(text) => setUsername(text.toLowerCase().replace(/[^a-z0-9_]/g, ''))} 
           onEndEditing={() => checkUsernameAvailability(username)}
           autoCapitalize="none"
           autoCorrect={false}
@@ -309,337 +286,393 @@ export default function OnboardingScreen() {
           </Animated.View>
         )}
       </View>
-      
-      {usernameError ? (
-        <Text style={styles.errorText}><Ionicons name="alert-circle" size={12} /> {usernameError}</Text>
-      ) : (
-        <Text style={styles.helperText}>Use lowercase letters, numbers, and underscores.</Text>
-      )}
+      {usernameError ? <Text style={styles.errorText}>{usernameError}</Text> : <Text style={styles.helperText}>Lowercase letters and numbers only.</Text>}
 
-      <View style={[styles.footerRow, { marginTop: 40 }]}>
-        <View />
-        <TouchableOpacity 
-          style={[styles.nextBtn, (!fullName || !usernameAvailable || checkingUsername) && styles.disabledBtn]} 
-          disabled={!fullName || !usernameAvailable || checkingUsername} 
-          onPress={() => { if(Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setStep(1); }}
-        >
-          <Text style={styles.nextBtnText}>Continue</Text>
-          <Ionicons name="arrow-forward" size={18} color="#fff" style={{ marginLeft: 5 }} />
-        </TouchableOpacity>
-      </View>
+      <StickyBottomCTA onNext={handleNext} disabled={!usernameAvailable || checkingUsername || !username} label="Continue" />
     </Animated.View>
   );
 
-  // ==========================================
-  // 🎨 STEP 1: PRIMARY IDENTITY
-  // ==========================================
   const renderStep1 = () => (
-    <Animated.View entering={FadeInRight} style={styles.stepContainer}>
-      <Text style={styles.title}>What defines you best? 👤</Text>
+    <Animated.View entering={FadeInRight} exiting={FadeOutLeft} style={styles.stepContainer}>
+      <Text style={styles.title}>Choose your role</Text>
       <Text style={styles.subtitle}>Select your core identity to help us tailor your experience.</Text>
       
       <View style={styles.cardsGrid}>
-        <TouchableOpacity style={[styles.bigCard, primaryRole === 'Student' && styles.activeBigCard]} onPress={() => setPrimaryRole('Student')} activeOpacity={0.8}>
-          <View style={[styles.iconBg, primaryRole === 'Student' && { backgroundColor: '#fff' }]}>
-            <Ionicons name="school" size={28} color={primaryRole === 'Student' ? "#4f46e5" : "#64748b"} />
-          </View>
-          <Text style={[styles.bigCardText, primaryRole === 'Student' && { color: '#fff' }]}>Student</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.bigCard, primaryRole === 'Teacher' && styles.activeBigCard]} onPress={() => setPrimaryRole('Teacher')} activeOpacity={0.8}>
-          <View style={[styles.iconBg, primaryRole === 'Teacher' && { backgroundColor: '#fff' }]}>
-            <Ionicons name="podium" size={28} color={primaryRole === 'Teacher' ? "#4f46e5" : "#64748b"} />
-          </View>
-          <Text style={[styles.bigCardText, primaryRole === 'Teacher' && { color: '#fff' }]}>Teacher</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.bigCard, primaryRole === 'Other' && styles.activeBigCard]} onPress={() => setPrimaryRole('Other')} activeOpacity={0.8}>
-          <View style={[styles.iconBg, primaryRole === 'Other' && { backgroundColor: '#fff' }]}>
-            <Ionicons name="people" size={28} color={primaryRole === 'Other' ? "#4f46e5" : "#64748b"} />
-          </View>
-          <Text style={[styles.bigCardText, primaryRole === 'Other' && { color: '#fff' }]}>Parent / Other</Text>
-        </TouchableOpacity>
+        {['Student', 'Teacher', 'Parent', 'Other'].map((r) => (
+          <TouchableOpacity key={r} style={[styles.roleCard, role === r && styles.roleCardActive]} onPress={() => { setRole(r as any); setLevel(''); setGoals([]); setInterests([]); }} activeOpacity={0.8}>
+            <View style={[styles.roleIconBg, role === r && { backgroundColor: '#fff' }]}>
+              <Ionicons name={r === 'Student' ? 'school' : r === 'Teacher' ? 'podium' : r === 'Parent' ? 'people' : 'compass'} size={28} color={role === r ? "#0f172a" : "#64748b"} />
+            </View>
+            <Text style={[styles.roleCardText, role === r && { color: '#fff' }]}>{r}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
-      <View style={styles.footerRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => setStep(0)}><Ionicons name="arrow-back" size={22} color="#64748b" /></TouchableOpacity>
-        <TouchableOpacity style={[styles.nextBtn, !primaryRole && styles.disabledBtn]} disabled={!primaryRole} onPress={() => setStep(2)}>
-          <Text style={styles.nextBtnText}>Continue</Text>
-          <Ionicons name="arrow-forward" size={18} color="#fff" style={{ marginLeft: 5 }} />
-        </TouchableOpacity>
-      </View>
+      <StickyBottomCTA onBack={handleBack} onNext={handleNext} disabled={!role} label="Continue" />
     </Animated.View>
   );
 
-  // ==========================================
-  // 🎨 STEP 2: DYNAMIC SUB-ROLE
-  // ==========================================
   const renderStep2 = () => {
-    let listData = primaryRole === 'Student' ? STUDENT_CLASSES : TEACHER_ROLES;
+    const isStudent = role === 'Student';
+    const isTeacher = role === 'Teacher';
+    const isParent = role === 'Parent';
+    
+    const title = isStudent ? "Select your class or course" : isTeacher ? "What best describes your work?" : "Which classes are your children studying in?";
+    const list = isStudent ? STUDENT_CLASSES : isTeacher ? TEACHER_ROLES : PARENT_CLASSES;
+
+    const handleSelect = (item: string) => {
+      if (isParent) toggleArrayItem(item, level as string[], setLevel);
+      else setLevel(item);
+    };
 
     return (
-      <Animated.View entering={SlideInRight} style={styles.stepContainer}>
-        <Text style={styles.title}>
-          {primaryRole === 'Student' ? 'Which class are you in? 📚' : primaryRole === 'Teacher' ? 'What is your designation? 👨‍🏫' : 'What is your role? 🤝'}
-        </Text>
-        <Text style={styles.subtitle}>Be precise. We use this to connect you with your peers.</Text>
-
-        {primaryRole === 'Other' ? (
-          <View style={{ marginTop: 20 }}>
-            <Text style={styles.inputLabel}>Please specify your profession/role:</Text>
-            <TextInput style={styles.inputField} placeholder="e.g. App Developer, Guardian..." placeholderTextColor="#94a3b8" value={otherRoleInput} onChangeText={setOtherRoleInput} />
-          </View>
-        ) : (
-          <View style={styles.chipGrid}>
-            {listData.map((item, idx) => (
-              <TouchableOpacity key={idx} style={[styles.subRoleChip, subRole === item && styles.activeSubRoleChip]} onPress={() => setSubRole(item)} activeOpacity={0.7}>
-                <Text style={[styles.subRoleText, subRole === item && { color: '#fff' }]}>{item}</Text>
+      <Animated.View entering={FadeInRight} exiting={FadeOutLeft} style={styles.stepContainer}>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.subtitle}>{isParent ? "Multi-select allowed" : "Single-select only"}</Text>
+        
+        <View style={styles.chipGrid}>
+          {list.map((item) => {
+            const isSelected = isParent ? (level as string[]).includes(item) : level === item;
+            return (
+              <TouchableOpacity key={item} style={[styles.chip, isSelected && styles.chipActive]} onPress={() => handleSelect(item)} activeOpacity={0.7}>
+                <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>{item}</Text>
               </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        <View style={styles.footerRow}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => { setStep(1); setSubRole(''); }}><Ionicons name="arrow-back" size={22} color="#64748b" /></TouchableOpacity>
-          <TouchableOpacity style={[styles.nextBtn, (!(subRole || otherRoleInput)) && styles.disabledBtn]} disabled={!(subRole || otherRoleInput)} onPress={() => setStep(3)}>
-            <Text style={styles.nextBtnText}>Next</Text>
-            <Ionicons name="arrow-forward" size={18} color="#fff" style={{ marginLeft: 5 }} />
-          </TouchableOpacity>
+            )
+          })}
         </View>
+
+        <StickyBottomCTA onBack={handleBack} onNext={handleNext} disabled={level.length === 0} label="Continue" />
       </Animated.View>
     );
   };
 
-  // ==========================================
-  // 🎨 STEP 3: MEGA INTERESTS
-  // ==========================================
-  const renderStep3 = () => (
-    <Animated.View entering={SlideInRight} style={styles.stepContainer}>
-      <Text style={styles.title}>What are your interests? 🎯</Text>
-      <Text style={styles.subtitle}>Select at least 3 topics. Our algorithm will build your feed around these.</Text>
+  const renderStep3 = () => {
+    const isStudent = role === 'Student';
+    const isTeacher = role === 'Teacher';
+    
+    const title = isStudent ? "What exams are you targeting?" : isTeacher ? "Which subjects do you teach?" : "Child Goals";
+    
+    const renderStudentExams = () => {
+      const filteredExams = STUDENT_EXAMS.map(cat => ({
+        ...cat,
+        items: cat.items.filter(i => i.toLowerCase().includes(searchQuery.toLowerCase()))
+      })).filter(cat => cat.items.length > 0);
 
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#64748b" />
-        <TextInput style={styles.searchInput} placeholder="Search topics (e.g. Physics, React)..." placeholderTextColor="#94a3b8" value={searchQuery} onChangeText={setSearchQuery} />
-      </View>
-
-      <View style={styles.tagsContainer}>
-        {filteredInterests.map((interest) => {
-          const isSelected = selectedInterests.includes(interest);
-          return (
-            <Animated.View key={interest} layout={Layout.springify()}>
-              <TouchableOpacity style={[styles.tagBtn, isSelected && styles.activeTagBtn]} onPress={() => toggleInterest(interest)} activeOpacity={0.8}>
-                <Text style={[styles.tagText, isSelected && styles.activeTagText]}>{interest}</Text>
-                {isSelected && <Ionicons name="checkmark" size={14} color="#fff" style={{ marginLeft: 4 }} />}
-              </TouchableOpacity>
-            </Animated.View>
-          );
-        })}
-        {filteredInterests.length === 0 && <Text style={styles.emptyText}>No matching topics found.</Text>}
-      </View>
-
-      <View style={styles.footerRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => setStep(2)}><Ionicons name="arrow-back" size={22} color="#64748b" /></TouchableOpacity>
-        <TouchableOpacity style={[styles.nextBtn, selectedInterests.length < 3 && styles.disabledBtn]} disabled={selectedInterests.length < 3} onPress={() => setStep(4)}>
-          <Text style={styles.nextBtnText}>Continue ({selectedInterests.length}/10)</Text>
-          <Ionicons name="arrow-forward" size={18} color="#fff" style={{ marginLeft: 5 }} />
-        </TouchableOpacity>
-      </View>
-    </Animated.View>
-  );
-
-  // ==========================================
-  // 🎨 STEP 4: SMART DEMOGRAPHICS (Autocomplete City)
-  // ==========================================
-  const renderStep4 = () => (
-    <Animated.View entering={SlideInRight} style={styles.stepContainer}>
-      <Text style={styles.title}>Final Details 📍</Text>
-      <Text style={styles.subtitle}>Help us connect you with people from your city and school.</Text>
-
-      <Text style={styles.inputLabel}>State / UT</Text>
-      <TouchableOpacity style={styles.dropdownBtn} onPress={() => setStateModalVisible(true)} activeOpacity={0.8}>
-        <Text style={[styles.dropdownText, !selectedState && { color: '#94a3b8' }]}>{selectedState || "Select your State"}</Text>
-        <Ionicons name="chevron-down" size={20} color="#64748b" />
-      </TouchableOpacity>
-
-      <Text style={styles.inputLabel}>City</Text>
-      <View style={{ zIndex: 10 }}>
-        <TextInput 
-          style={styles.inputField} 
-          placeholder="e.g. Mumbai, Patna, Gaya" 
-          placeholderTextColor="#94a3b8" 
-          value={city} 
-          onChangeText={(text) => {
-            setCity(text);
-            setShowCitySuggestions(text.length > 1);
-          }} 
-          onFocus={() => { if(city.length > 1) setShowCitySuggestions(true); }}
-          onBlur={() => { setTimeout(() => setShowCitySuggestions(false), 200); }}
-        />
-        
-        {/* 🔥 SMART CITY AUTOCOMPLETE DROPDOWN */}
-        {showCitySuggestions && filteredCities.length > 0 && (
-          <Animated.View entering={FadeIn} style={styles.autocompleteContainer}>
-            {filteredCities.map((cityName, idx) => (
-              <TouchableOpacity 
-                key={idx} 
-                style={styles.autocompleteItem}
-                onPress={() => { setCity(cityName); setShowCitySuggestions(false); Keyboard.dismiss(); }}
-              >
-                <Ionicons name="location" size={16} color="#4f46e5" style={{marginRight: 10}} />
-                <Text style={styles.autocompleteText}>{cityName}</Text>
-              </TouchableOpacity>
-            ))}
-          </Animated.View>
-        )}
-      </View>
-
-      <Text style={styles.inputLabel}>{primaryRole === 'Teacher' ? 'School / College / Institute Name' : 'School / College Name'}</Text>
-      <TextInput style={styles.inputField} placeholder="e.g. DPS, IIT Bombay, Allen..." placeholderTextColor="#94a3b8" value={institution} onChangeText={setInstitution} />
-
-      <Text style={styles.inputLabel}>Date of Birth (DD/MM/YYYY)</Text>
-      <TextInput style={styles.inputField} placeholder="e.g. 15/08/2005" placeholderTextColor="#94a3b8" value={dob} onChangeText={setDob} keyboardType="numbers-and-punctuation" maxLength={10} />
-
-      <View style={[styles.footerRow, { marginTop: 40, zIndex: 1 }]}>
-        <TouchableOpacity style={styles.skipBtn} onPress={() => completeOnboarding(true)}>
-          <Text style={styles.skipText}>Skip for now</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.launchBtn} disabled={loading} onPress={() => completeOnboarding(false)}>
-          {loading ? <ActivityIndicator size="small" color="#fff" /> : (
-            <>
-              <Text style={styles.launchBtnText}>Enter Eduxity</Text>
-              <Ionicons name="rocket" size={18} color="#fff" style={{ marginLeft: 6 }} />
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {/* STATE SELECTOR MODAL */}
-      <Modal visible={stateModalVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select State</Text>
-              <TouchableOpacity onPress={() => setStateModalVisible(false)}><Ionicons name="close-circle" size={30} color="#94a3b8" /></TouchableOpacity>
-            </View>
-            <FlatList
-              data={INDIAN_STATES}
-              keyExtractor={(item) => item}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <TouchableOpacity style={styles.modalItem} onPress={() => { setSelectedState(item); setStateModalVisible(false); }}>
-                  <Text style={[styles.modalItemText, selectedState === item && { color: '#4f46e5', fontWeight: '800' }]}>{item}</Text>
-                  {selectedState === item && <Ionicons name="checkmark-circle" size={22} color="#4f46e5" />}
-                </TouchableOpacity>
-              )}
-            />
+      return (
+        <>
+          <View style={styles.searchContainer}>
+            <Ionicons name="search" size={20} color="#64748b" />
+            <TextInput style={styles.searchInput} placeholder="Search exams..." placeholderTextColor="#94a3b8" value={searchQuery} onChangeText={setSearchQuery} />
           </View>
+          
+          {goals.length > 0 && (
+             <View style={styles.selectedGoalChips}>
+               {goals.map(g => (
+                 <TouchableOpacity key={g} style={styles.selectedGoalChip} onPress={() => toggleArrayItem(g, goals, setGoals)}>
+                   <Text style={styles.selectedGoalChipText}>{g}</Text>
+                   <Ionicons name="close" size={14} color="#fff" style={{marginLeft: 5}}/>
+                 </TouchableOpacity>
+               ))}
+             </View>
+          )}
+
+          {filteredExams.map(cat => (
+            <View key={cat.category} style={{marginBottom: 25}}>
+              <Text style={styles.categoryLabel}>{cat.category}</Text>
+              <View style={styles.chipGrid}>
+                {cat.items.map(item => {
+                  const isSelected = goals.includes(item);
+                  return (
+                    <TouchableOpacity key={item} style={[styles.chip, isSelected && styles.chipActive]} onPress={() => toggleArrayItem(item, goals, setGoals)}>
+                      <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>{item}</Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </View>
+            </View>
+          ))}
+        </>
+      );
+    };
+
+    return (
+      <Animated.View entering={FadeInRight} exiting={FadeOutLeft} style={styles.stepContainer}>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.subtitle}>Multi-select allowed.</Text>
+        
+        {isStudent ? renderStudentExams() : (
+          <View style={styles.chipGrid}>
+            {(isTeacher ? TEACHER_SUBJECTS : PARENT_GOALS).map(item => {
+              const isSelected = goals.includes(item);
+              return (
+                <TouchableOpacity key={item} style={[styles.chip, isSelected && styles.chipActive]} onPress={() => toggleArrayItem(item, goals, setGoals)}>
+                  <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>{item}</Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+        )}
+
+        <StickyBottomCTA onBack={handleBack} onNext={handleNext} disabled={goals.length === 0} label="Continue" />
+      </Animated.View>
+    );
+  };
+
+  const renderStep4 = () => {
+    const list = role === 'Student' ? STUDENT_INTERESTS : role === 'Teacher' ? TEACHER_INTERESTS : role === 'Parent' ? PARENT_INTERESTS : OTHER_INTERESTS;
+    const title = role === 'Other' ? "Other Interest" : role === 'Student' ? "What are you most interested in?" : role === 'Teacher' ? "How would you like to use Eduxity?" : "Parent Interests";
+
+    return (
+      <Animated.View entering={FadeInRight} exiting={FadeOutLeft} style={styles.stepContainer}>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.subtitle}>Multi-select only.</Text>
+
+        <View style={styles.cardsGrid}>
+          {list.map(item => {
+            const isSelected = interests.includes(item);
+            return (
+              <TouchableOpacity key={item} style={[styles.interestCard, isSelected && styles.interestCardActive]} onPress={() => toggleArrayItem(item, interests, setInterests)} activeOpacity={0.8}>
+                <Text style={[styles.interestCardText, isSelected && styles.interestCardTextActive]}>{item}</Text>
+                {isSelected && <Ionicons name="checkmark-circle" size={20} color="#fff" />}
+              </TouchableOpacity>
+            )
+          })}
         </View>
-      </Modal>
+
+        <StickyBottomCTA onBack={handleBack} onNext={handleNext} disabled={interests.length === 0} label="Continue" />
+      </Animated.View>
+    );
+  };
+
+  const renderStep5 = () => {
+    const filteredCities = INDIAN_CITIES.filter(item =>
+      item.toLowerCase().startsWith(city.toLowerCase()) || item.toLowerCase().includes(city.toLowerCase())
+    ).slice(0, 4);
+
+    return (
+      <Animated.View entering={FadeInRight} exiting={FadeOutLeft} style={styles.stepContainer}>
+        <Text style={styles.title}>Complete your profile</Text>
+        <Text style={styles.subtitle}>All fields are optional. We use this to connect you locally.</Text>
+
+        <Text style={styles.inputLabel}>STATE</Text>
+        <TouchableOpacity style={styles.dropdownBtn} onPress={() => setStateModalVisible(true)} activeOpacity={0.8}>
+          <Text style={[styles.dropdownText, !selectedState && { color: '#94a3b8' }]}>{selectedState || "Select your State"}</Text>
+          <Ionicons name="chevron-down" size={20} color="#64748b" />
+        </TouchableOpacity>
+
+        <Text style={styles.inputLabel}>CITY</Text>
+        <View style={{ zIndex: 10 }}>
+          <TextInput 
+            style={styles.inputField} 
+            placeholder="e.g. Mumbai, Patna, Gaya" 
+            placeholderTextColor="#94a3b8" 
+            value={city} 
+            onChangeText={(text) => { setCity(text); setShowCitySuggestions(text.length > 0); }} 
+            onFocus={() => { if(city.length > 0) setShowCitySuggestions(true); }}
+            onBlur={() => { setTimeout(() => setShowCitySuggestions(false), 200); }}
+          />
+          {showCitySuggestions && filteredCities.length > 0 && (
+            <Animated.View entering={FadeIn} style={styles.autocompleteContainer}>
+              {filteredCities.map((cityName, idx) => (
+                <TouchableOpacity key={idx} style={styles.autocompleteItem} onPress={() => { setCity(cityName); setShowCitySuggestions(false); Keyboard.dismiss(); }}>
+                  <Ionicons name="location-outline" size={16} color="#0f172a" style={{marginRight: 10}} />
+                  <Text style={styles.autocompleteText}>{cityName}</Text>
+                </TouchableOpacity>
+              ))}
+            </Animated.View>
+          )}
+        </View>
+
+        <Text style={styles.inputLabel}>SCHOOL OR COLLEGE NAME</Text>
+        <TextInput style={styles.inputField} placeholder="e.g. DPS, IIT Bombay..." placeholderTextColor="#94a3b8" value={institution} onChangeText={setInstitution} />
+
+        <Text style={styles.inputLabel}>DATE OF BIRTH</Text>
+        
+        {/* 🔥 NATIVE CALENDAR PICKER LOGIC HERE */}
+        <TouchableOpacity style={styles.dropdownBtn} onPress={() => setShowDatePicker(true)} activeOpacity={0.8}>
+          <Text style={[styles.dropdownText, !dob && { color: '#94a3b8' }]}>{dob || "Select Date of Birth"}</Text>
+          <Ionicons name="calendar-outline" size={20} color="#64748b" />
+        </TouchableOpacity>
+
+        {showDatePicker && (
+          <DateTimePicker
+            value={date}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            maximumDate={new Date()} // Future dates not allowed
+            onChange={onDateChange}
+          />
+        )}
+
+        <View style={styles.bottomNavContainer}>
+          <TouchableOpacity style={styles.skipBtn} onPress={() => completeOnboarding(true)}>
+            <Text style={styles.skipText}>Skip for now</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.finishBtn} disabled={loading} onPress={() => completeOnboarding(false)}>
+            {loading ? <ActivityIndicator size="small" color="#fff" /> : (
+              <>
+                <Text style={styles.finishBtnText}>Finish</Text>
+                <Ionicons name="checkmark-done" size={18} color="#fff" style={{ marginLeft: 6 }} />
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* STATE MODAL */}
+        <Modal visible={stateModalVisible} animationType="slide" transparent={true}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select State</Text>
+                <TouchableOpacity onPress={() => setStateModalVisible(false)}><Ionicons name="close-circle" size={30} color="#94a3b8" /></TouchableOpacity>
+              </View>
+              <FlatList
+                data={INDIAN_STATES}
+                keyExtractor={(item) => item}
+                showsVerticalScrollIndicator={false}
+                renderItem={({ item }) => (
+                  <TouchableOpacity style={styles.modalItem} onPress={() => { setSelectedState(item); setStateModalVisible(false); }}>
+                    <Text style={[styles.modalItemText, selectedState === item && { color: '#0f172a', fontWeight: '800' }]}>{item}</Text>
+                    {selectedState === item && <Ionicons name="checkmark-circle" size={22} color="#0f172a" />}
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          </View>
+        </Modal>
+      </Animated.View>
+    );
+  };
+
+  const renderStep6 = () => (
+    <Animated.View entering={ZoomIn.duration(600)} style={[styles.stepContainer, { justifyContent: 'center', alignItems: 'center' }]}>
+      <Ionicons name="rocket" size={80} color="#0f172a" style={{marginBottom: 20}} />
+      <Text style={[styles.title, {textAlign: 'center'}]}>Your personalized study space is ready</Text>
+      <Text style={[styles.subtitle, {textAlign: 'center', marginTop: 10}]}>We’ve customized your Eduxity experience based on your goals.</Text>
+      <TouchableOpacity style={[styles.finishBtn, { width: '100%', marginTop: 30 }]} onPress={() => router.replace('/(tabs)')}>
+        <Text style={styles.finishBtnText}>Enter Eduxity</Text>
+      </TouchableOpacity>
     </Animated.View>
   );
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       
-      {/* 🚀 Dynamic Progress Bar */}
-      <View style={styles.progressHeader}>
-        <View style={styles.progressBarBg}>
-          <Animated.View style={[styles.progressBarFill, { width: `${((step + 1) / 5) * 100}%` }]} />
+      {step < 6 && (
+        <View style={styles.progressHeader}>
+          <View style={styles.progressBarBg}>
+            <Animated.View style={[styles.progressBarFill, { width: `${(currentProgress / totalSteps) * 100}%` }]} />
+          </View>
+          <Text style={styles.stepIndicatorText}>Step {currentProgress} of {totalSteps}</Text>
         </View>
-        <Text style={styles.stepIndicatorText}>Step {step + 1} of 5</Text>
-      </View>
+      )}
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        {step === 0 && renderStep0()}
-        {step === 1 && renderStep1()}
-        {step === 2 && renderStep2()}
-        {step === 3 && renderStep3()}
-        {step === 4 && renderStep4()}
-      </ScrollView>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex: 1}}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          {step === 0 && renderStep0()}
+          {step === 1 && renderStep1()}
+          {step === 2 && renderStep2()}
+          {step === 3 && renderStep3()}
+          {step === 4 && renderStep4()}
+          {step === 5 && renderStep5()}
+          {step === 6 && renderStep6()}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
+// 🟢 Reusable Sticky Bottom CTA Component
+const StickyBottomCTA = ({ onBack, onNext, disabled, label }: any) => (
+  <View style={styles.bottomNavContainer}>
+    {onBack ? (
+      <TouchableOpacity style={styles.backBtn} onPress={onBack}>
+        <Ionicons name="arrow-back" size={24} color="#0f172a" />
+      </TouchableOpacity>
+    ) : <View />}
+    <TouchableOpacity style={[styles.nextBtn, disabled && styles.disabledBtn]} disabled={disabled} onPress={onNext} activeOpacity={0.9}>
+      <Text style={[styles.nextBtnText, disabled && {color: '#94a3b8'}]}>{label}</Text>
+      <Ionicons name="arrow-forward" size={20} color={disabled ? "#94a3b8" : "#fff"} style={{ marginLeft: 8 }} />
+    </TouchableOpacity>
+  </View>
+);
+
 // ==========================================
-// 🎨 ULTRA-PREMIUM STYLES
+// 🎨 PREMIUM STYLES (Rounded 24px, Clean Surfaces)
 // ==========================================
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  progressHeader: { paddingHorizontal: 25, paddingTop: Platform.OS === 'ios' ? 10 : 25, paddingBottom: 10 },
-  progressBarBg: { height: 6, backgroundColor: '#e2e8f0', borderRadius: 3, overflow: 'hidden' },
-  progressBarFill: { height: '100%', backgroundColor: '#4f46e5', borderRadius: 3 },
-  stepIndicatorText: { marginTop: 10, fontSize: 12, fontWeight: '800', color: '#64748b', textAlign: 'right', textTransform: 'uppercase', letterSpacing: 1 },
+  container: { flex: 1, backgroundColor: '#ffffff' },
+  progressHeader: { paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 10 : 20, paddingBottom: 10 },
+  progressBarBg: { height: 6, backgroundColor: '#f1f5f9', borderRadius: 3, overflow: 'hidden' },
+  progressBarFill: { height: '100%', backgroundColor: '#0f172a', borderRadius: 3 },
+  stepIndicatorText: { marginTop: 10, fontSize: 12, fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 },
   
-  scrollContent: { padding: 25, paddingBottom: 60 },
+  scrollContent: { padding: 24, paddingBottom: 100 },
   stepContainer: { flex: 1 },
   
-  title: { fontSize: 30, fontWeight: '900', color: '#0f172a', marginBottom: 10, letterSpacing: -0.5 },
-  subtitle: { fontSize: 15, color: '#475569', lineHeight: 22, marginBottom: 35, fontWeight: '500' },
+  title: { fontSize: 32, fontWeight: '900', color: '#0f172a', marginBottom: 10, letterSpacing: -1 },
+  subtitle: { fontSize: 16, color: '#64748b', lineHeight: 24, marginBottom: 35, fontWeight: '500' },
   
-  // Step 0 Styles
   avatarSection: { alignItems: 'center', marginBottom: 30 },
   avatarWrapper: { position: 'relative', shadowColor: '#000', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
-  avatarImage: { width: 110, height: 110, borderRadius: 55, backgroundColor: '#f1f5f9', borderWidth: 3, borderColor: '#fff' },
-  editAvatarBadge: { position: 'absolute', bottom: 2, right: 2, backgroundColor: '#4f46e5', width: 34, height: 34, borderRadius: 17, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#fff' },
-  avatarHint: { fontSize: 13, color: '#64748b', marginTop: 12, fontWeight: '600' },
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 14, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.03, shadowRadius: 5, elevation: 2 },
-  atSymbol: { paddingLeft: 18, fontSize: 16, color: '#64748b', fontWeight: '800' },
-  usernameInput: { flex: 1, padding: 16, paddingLeft: 8, fontSize: 16, color: '#0f172a', fontWeight: '700' },
-  errorText: { color: '#ef4444', fontSize: 12, marginTop: 8, fontWeight: '700', marginLeft: 5 },
-  helperText: { color: '#64748b', fontSize: 12, marginTop: 8, marginLeft: 5, fontWeight: '500' },
-
-  // Step 1 Cards
-  cardsGrid: { gap: 16 },
-  bigCard: { flexDirection: 'row', alignItems: 'center', padding: 18, backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
-  activeBigCard: { backgroundColor: '#4f46e5', borderColor: '#4f46e5', shadowColor: '#4f46e5', shadowOpacity: 0.3 },
-  iconBg: { backgroundColor: '#f1f5f9', padding: 12, borderRadius: 16 },
-  bigCardText: { fontSize: 18, fontWeight: '800', color: '#1e293b', marginLeft: 16 },
-
-  // Step 2 Chips
-  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  subRoleChip: { paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0', width: '48%', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 4, shadowOffset: {width: 0, height: 2} },
-  activeSubRoleChip: { backgroundColor: '#4f46e5', borderColor: '#4f46e5' },
-  subRoleText: { fontSize: 13, fontWeight: '800', color: '#475569', textAlign: 'center' },
-
-  // Step 3 Interests
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 16, paddingHorizontal: 18, height: 55, marginBottom: 25, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 5, shadowOffset: {width: 0, height: 2} },
-  searchInput: { flex: 1, fontSize: 16, color: '#0f172a', marginLeft: 12, fontWeight: '500' },
-  tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 30 },
-  tagBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 12, backgroundColor: '#fff', borderRadius: 24, borderWidth: 1, borderColor: '#e2e8f0' },
-  activeTagBtn: { backgroundColor: '#0f172a', borderColor: '#0f172a' },
-  tagText: { fontSize: 14, fontWeight: '700', color: '#475569' },
-  activeTagText: { color: '#fff' },
-  emptyText: { color: '#94a3b8', fontStyle: 'italic', marginTop: 10, fontWeight: '500' },
-
-  // Step 4 Demographics & Autocomplete
-  inputLabel: { fontSize: 14, fontWeight: '800', color: '#0f172a', marginBottom: 10, marginTop: 20 },
-  inputField: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 14, padding: 16, fontSize: 16, color: '#0f172a', fontWeight: '600', shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4, shadowOffset: {width:0, height:2} },
+  avatarImage: { width: 120, height: 120, borderRadius: 60, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0' },
+  editAvatarBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#0f172a', width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#fff' },
+  avatarHint: { fontSize: 14, color: '#94a3b8', marginTop: 12, fontWeight: '600' },
   
-  autocompleteContainer: { position: 'absolute', top: 62, left: 0, right: 0, backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: {width: 0, height: 8}, shadowOpacity: 0.15, shadowRadius: 15, elevation: 10, overflow: 'hidden' },
-  autocompleteItem: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-  autocompleteText: { fontSize: 15, fontWeight: '700', color: '#1e293b' },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 16 },
+  atSymbol: { paddingLeft: 20, fontSize: 16, color: '#64748b', fontWeight: '800' },
+  usernameInput: { flex: 1, padding: 18, paddingLeft: 8, fontSize: 16, color: '#0f172a', fontWeight: '700' },
+  errorText: { color: '#ef4444', fontSize: 13, marginTop: 8, fontWeight: '600', marginLeft: 5 },
+  helperText: { color: '#94a3b8', fontSize: 13, marginTop: 8, marginLeft: 5, fontWeight: '500' },
 
-  dropdownBtn: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 14, padding: 16, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4, shadowOffset: {width:0, height:2} },
+  cardsGrid: { gap: 16 },
+  roleCard: { flexDirection: 'row', alignItems: 'center', padding: 20, backgroundColor: '#fff', borderRadius: 24, borderWidth: 1.5, borderColor: '#f1f5f9' },
+  roleCardActive: { backgroundColor: '#0f172a', borderColor: '#0f172a' },
+  roleIconBg: { backgroundColor: '#f8fafc', padding: 14, borderRadius: 16 },
+  roleCardText: { fontSize: 18, fontWeight: '800', color: '#0f172a', marginLeft: 16 },
+
+  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  chip: { paddingHorizontal: 20, paddingVertical: 14, backgroundColor: '#fff', borderRadius: 24, borderWidth: 1.5, borderColor: '#f1f5f9', alignItems: 'center' },
+  chipActive: { backgroundColor: '#0f172a', borderColor: '#0f172a' },
+  chipText: { fontSize: 14, fontWeight: '700', color: '#475569' },
+  chipTextActive: { color: '#fff' },
+
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 16, paddingHorizontal: 18, height: 56, marginBottom: 25, borderWidth: 1, borderColor: '#f1f5f9' },
+  searchInput: { flex: 1, fontSize: 16, color: '#0f172a', marginLeft: 12, fontWeight: '500' },
+  categoryLabel: { fontSize: 13, fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
+  selectedGoalChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  selectedGoalChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0f172a', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
+  selectedGoalChipText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  interestCard: { padding: 20, backgroundColor: '#fff', borderRadius: 24, borderWidth: 1.5, borderColor: '#f1f5f9', marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  interestCardActive: { backgroundColor: '#0f172a', borderColor: '#0f172a' },
+  interestCardText: { fontSize: 16, fontWeight: '700', color: '#1e293b' },
+  interestCardTextActive: { color: '#fff' },
+
+  inputLabel: { fontSize: 12, fontWeight: '800', color: '#64748b', marginBottom: 8, marginTop: 24, textTransform: 'uppercase', letterSpacing: 1 },
+  inputField: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#f1f5f9', borderRadius: 16, padding: 18, fontSize: 16, color: '#0f172a', fontWeight: '600' },
+  dropdownBtn: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#f1f5f9', borderRadius: 16, padding: 18 },
   dropdownText: { fontSize: 16, color: '#0f172a', fontWeight: '600' },
 
-  // Footer Buttons
-  footerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 45 },
-  backBtn: { width: 55, height: 55, borderRadius: 27.5, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, shadowOffset: {width: 0, height: 2} },
+  autocompleteContainer: { position: 'absolute', top: 65, left: 0, right: 0, backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#f1f5f9', shadowColor: '#000', shadowOffset: {width: 0, height: 10}, shadowOpacity: 0.1, shadowRadius: 20, elevation: 10, overflow: 'hidden' },
+  autocompleteItem: { flexDirection: 'row', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#f8fafc' },
+  autocompleteText: { fontSize: 16, fontWeight: '600', color: '#0f172a' },
+
+  bottomNavContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 40, paddingTop: 20 },
+  backBtn: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#f8fafc', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#f1f5f9' },
+  nextBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0f172a', paddingVertical: 18, borderRadius: 30, marginLeft: 15 },
+  disabledBtn: { backgroundColor: '#f1f5f9' },
+  nextBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  
   skipBtn: { paddingVertical: 12, paddingHorizontal: 15 },
   skipText: { fontSize: 15, fontWeight: '800', color: '#94a3b8' },
-  nextBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#4f46e5', paddingHorizontal: 30, paddingVertical: 16, borderRadius: 30, elevation: 4, shadowColor: '#4f46e5', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 8 },
-  launchBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0f172a', paddingHorizontal: 30, paddingVertical: 16, borderRadius: 30, elevation: 5, shadowColor: '#0f172a', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 8 },
-  disabledBtn: { backgroundColor: '#a5b4fc', shadowOpacity: 0, elevation: 0 },
-  nextBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  launchBtnText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 },
+  finishBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0f172a', paddingHorizontal: 30, paddingVertical: 18, borderRadius: 30 },
+  finishBtnText: { color: '#fff', fontSize: 16, fontWeight: '900' },
 
-  // State Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 25, height: '75%', shadowColor: '#000', shadowOffset: {width: 0, height: -5}, shadowOpacity: 0.1, shadowRadius: 10 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingBottom: 15, borderBottomWidth: 1, borderColor: '#f1f5f9' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, height: '75%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingBottom: 20, borderBottomWidth: 1, borderColor: '#f8fafc' },
   modalTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a' },
   modalItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 18, borderBottomWidth: 1, borderColor: '#f8fafc' },
   modalItemText: { fontSize: 16, color: '#475569', fontWeight: '600' }

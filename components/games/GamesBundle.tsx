@@ -10,7 +10,7 @@ const PERIODIC_TABLE = [{ sym: 'H', name: 'Hydrogen' }, { sym: 'He', name: 'Heli
 const SI_UNITS = [{ q: 'Force', u: 'Newton (N)' }, { q: 'Work / Energy', u: 'Joule (J)' }, { q: 'Power', u: 'Watt (W)' }, { q: 'Pressure', u: 'Pascal (Pa)' }, { q: 'Electric Current', u: 'Ampere (A)' }, { q: 'Resistance', u: 'Ohm (Ω)' }, { q: 'Capacitance', u: 'Farad (F)' }, { q: 'Inductance', u: 'Henry (H)' }, { q: 'Magnetic Flux', u: 'Weber (Wb)' }, { q: 'Magnetic Field', u: 'Tesla (T)' }, { q: 'Frequency', u: 'Hertz (Hz)' }, { q: 'Luminous Intensity', u: 'Candela (cd)' }];
 const SCIENCE_WORDS = ["KINEMATICS", "GRAVITATION", "FRICTION", "MOMENTUM", "ELECTRON", "PROTON", "ISOTOPE", "TITRATION", "POLYGON", "CALCULUS", "ALGEBRA", "GENETICS", "BOTANY"];
 const BIO_FACTS = [{ q: "Mitochondria is the powerhouse of the cell.", ans: true }, { q: "Humans have 24 pairs of chromosomes.", ans: false }, { q: "DNA contains Uracil.", ans: false }, { q: "Arteries carry oxygenated blood.", ans: true }, { q: "Photosynthesis occurs in mitochondria.", ans: false }, { q: "White blood cells fight infections.", ans: true }];
-const CODE_SNIPPETS = [{ code: "const name = 'John'\nconsole.log(name)", bug: "Missing Semicolon", ans: "Missing Semicolon" }, { code: "if (x = 10) {\n  return true;\n}", bug: "Used = instead of ==", ans: "Assignment in IF" }, { code: "let arr = [1,2,3];\nconsole.log(arr[3]);", bug: "Out of bounds", ans: "Index Out of Bounds" }, { code: "const add = (a, b) => a + b;\nadd(5);", bug: "Missing Argument", ans: "Missing Argument" }];
+
 
 // --- GAMES ---
 const MemoryCard = ({ item, isFlipped, isMatched, onPress }: any) => {
@@ -157,17 +157,7 @@ export const BioTimeAttackGame = () => {
   );
 };
 
-export const BugHunterGame = () => {
-  const [question, setQuestion] = useState(CODE_SNIPPETS[0]); const [options, setOptions] = useState<string[]>([]); const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
-  const generateQuestion = () => { const correctObj = CODE_SNIPPETS[Math.floor(Math.random() * CODE_SNIPPETS.length)]; setQuestion(correctObj); let opts = new Set<string>([correctObj.ans]); while(opts.size < 4) { opts.add(CODE_SNIPPETS[Math.floor(Math.random() * CODE_SNIPPETS.length)].ans); } setOptions(Array.from(opts).sort(() => Math.random() - 0.5)); setGameState('playing'); };
-  useEffect(() => { generateQuestion(); }, []);
-  return (
-    <Animated.View entering={FadeInDown.springify()} style={[styles.gameCard, { borderColor: '#6366f1' }]}>
-      <View style={styles.gameHeader}><View style={styles.gameTitleRow}><Ionicons name="bug" size={20} color="#6366f1" /><Text style={[styles.gameTitle, { color: '#6366f1' }]}>BUG HUNTER</Text></View><Text style={styles.gameSubtitle}>Find the Error 💻</Text></View>
-      {gameState === 'playing' ? (<View style={styles.mathArea}><View style={styles.codeBlockGame}><Text style={styles.codeBlockGameText}>{question.code}</Text></View><View style={styles.mathGrid}>{options.map((opt, i) => (<TouchableOpacity key={i} style={[styles.mathOptionBtn, { borderColor: '#6366f1', paddingVertical: 10 }]} onPress={() => { if(opt === question.ans) setGameState('won'); else setGameState('lost'); }}><Text style={[styles.mathOptionText, {fontSize: 13}]}>{opt}</Text></TouchableOpacity>))}</View></View>) : (<View style={styles.gameWinArea}><Ionicons name={gameState === 'won' ? "terminal" : "skull"} size={60} color={gameState === 'won' ? "#10b981" : "#ef4444"} /><Text style={styles.gameWinTitle}>{gameState === 'won' ? "Senior Dev!" : `Bug: ${question.ans}`}</Text><TouchableOpacity style={[styles.claimBtnGame, { backgroundColor: '#6366f1' }]} onPress={generateQuestion}><Text style={styles.claimBtnGameText}>Next Bug</Text></TouchableOpacity></View>)}
-    </Animated.View>
-  );
-};
+
 
 // --- STYLES FOR GAMES ---
 const styles = StyleSheet.create({

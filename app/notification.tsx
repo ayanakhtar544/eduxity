@@ -1,3 +1,4 @@
+// Location: app/notification.tsx
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, FlatList, TouchableOpacity, Image, 
@@ -6,7 +7,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../firebaseConfig'; 
-import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, writeBatch, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, writeBatch, deleteDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import Animated, { FadeInDown, Layout, SlideOutRight, useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence } from 'react-native-reanimated';
@@ -40,10 +41,10 @@ export default function NotificationScreen() {
   
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeFilter, setActiveFilter] = useState<'All' | 'Unread' | 'Doubts'>('All');
+  const [activeFilter, setActiveFilter] = useState<'All' | 'Unread' | 'Doubts' | 'System'>('All');
 
   // ==========================================
-  // 📡 FETCH REAL-TIME NOTIFICATIONS
+  // 📡 FETCH REAL-TIME NOTIFICATIONS (FIXED)
   // ==========================================
   useEffect(() => {
     if (!currentUid) {
@@ -51,22 +52,33 @@ export default function NotificationScreen() {
       return;
     }
 
+    console.log("📡 Listening for notifications for user:", currentUid);
+
+    // 🔥 FIX: Removed orderBy from query to avoid composite index error. 
+    // We sort it on the client side instead.
     const q = query(
       collection(db, 'notifications'), 
-      where('recipientId', '==', currentUid), 
-      orderBy('createdAt', 'desc')
+      where('recipientId', '==', currentUid)
     );
 
     const unsubscribe = onSnapshot(q, 
       (snapshot) => {
-        const notifsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        let notifsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // 🔥 FIX: Client-side sorting (Newest first)
+        notifsData.sort((a: any, b: any) => {
+          const timeA = a.createdAt?.toMillis() || 0;
+          const timeB = b.createdAt?.toMillis() || 0;
+          return timeB - timeA;
+        });
+
+        console.log(`✅ Loaded ${notifsData.length} notifications.`);
         setNotifications(notifsData);
         setLoading(false);
       },
       (error) => {
-        console.error("Firebase Query Error:", error.message);
+        console.error("❌ Firebase Query Error:", error.message);
         setLoading(false); 
-        alert("Firestore Index Error! Check your computer terminal.");
       }
     );
 
@@ -82,15 +94,16 @@ export default function NotificationScreen() {
       try { await updateDoc(doc(db, 'notifications', item.id), { isRead: true }); } 
       catch (error) { console.log(error); }
     }
-    // Smart Navigation for Post Context
+    
+    // Smart Navigation
     if (item.type === 'doubt_solved') router.push('/doubts');
     else if (item.postId) router.push(`/post/${item.postId}`);
-    else if (item.senderId) router.push(`/user/${item.senderId}`); // Fallback
+    else if (item.senderId && item.type !== 'broadcast') router.push(`/user/${item.senderId}`);
   };
 
-  const handleAvatarPress = (senderId: string) => {
+  const handleAvatarPress = (senderId: string, type: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (senderId) {
+    if (type !== 'broadcast' && senderId) {
       router.push(`/user/${senderId}`);
     }
   };
@@ -117,9 +130,6 @@ export default function NotificationScreen() {
     } catch (error) { console.log(error); }
   };
 
-  // ==========================================
-  // 🕒 FORMATTERS & HELPERS
-  // ==========================================
   const timeAgo = (timestamp: any) => {
     if (!timestamp) return 'Just now';
     const seconds = Math.floor((Date.now() - timestamp.toMillis()) / 1000);
@@ -131,39 +141,42 @@ export default function NotificationScreen() {
     return `${Math.floor(hours / 24)}d`;
   };
 
-  const getNotificationMeta = (type: string) => {
+ const getNotificationMeta = (type: string) => {
     switch(type) {
       case 'like': return { name: 'heart', color: '#ef4444', bg: '#fef2f2', border: '#ef4444' };
       case 'comment': return { name: 'chatbubble', color: '#3b82f6', bg: '#eff6ff', border: '#3b82f6' };
       case 'follow': return { name: 'person-add', color: '#10b981', bg: '#ecfdf5', border: '#10b981' };
       case 'mention': return { name: 'at', color: '#8b5cf6', bg: '#f5f3ff', border: '#8b5cf6' };
       case 'doubt_solved': return { name: 'bulb', color: '#f59e0b', bg: '#fffbeb', border: '#f59e0b' };
+      case 'broadcast': return { name: 'megaphone', color: '#4f46e5', bg: '#eef2ff', border: '#4f46e5' }; 
       default: return { name: 'notifications', color: '#64748b', bg: '#f8fafc', border: '#cbd5e1' };
     }
   };
 
+  // 🔥 NEW FILTER LOGIC
   const filteredNotifications = notifications.filter(notif => {
     if (activeFilter === 'All') return true;
     if (activeFilter === 'Unread') return !notif.isRead;
     if (activeFilter === 'Doubts') return notif.type === 'doubt_solved';
+    if (activeFilter === 'System') return notif.type === 'broadcast'; // New System filter
     return true;
   });
 
   // ==========================================
-  // 🃏 RENDER CARD (ULTRA ADVANCED)
+  // 🃏 RENDER CARD
   // ==========================================
   const renderNotification = ({ item, index }: { item: any, index: number }) => {
     const meta = getNotificationMeta(item.type);
     
     return (
-      <Animated.View entering={FadeInDown.delay(index * 40).springify()} layout={Layout.springify()} exiting={SlideOutRight.duration(300)}>
+      <Animated.View entering={FadeInDown.delay(Math.min(index * 40, 400)).springify()} layout={Layout.springify()} exiting={SlideOutRight.duration(300)}>
         <View style={[styles.notificationCard, { borderLeftColor: meta.border }, !item.isRead && styles.unreadCardBg]}>
           
           <View style={styles.cardLayout}>
-            {/* 🔥 NEW: Touchable Avatar Area for Profile Navigation */}
+            {/* Avatar Area */}
             <TouchableOpacity 
               activeOpacity={0.8} 
-              onPress={() => handleAvatarPress(item.senderId)}
+              onPress={() => handleAvatarPress(item.senderId, item.type)}
               style={styles.avatarContainer}
             >
               <Image source={{ uri: item.senderAvatar || DEFAULT_AVATAR }} style={styles.avatar} />
@@ -172,7 +185,7 @@ export default function NotificationScreen() {
               </View>
             </TouchableOpacity>
             
-            {/* 🔥 NEW: Touchable Text Area for Post/Doubt Navigation */}
+            {/* Text Area */}
             <TouchableOpacity 
               activeOpacity={0.7} 
               onPress={() => handleNotificationPress(item)}
@@ -183,15 +196,18 @@ export default function NotificationScreen() {
                 <Text style={styles.timeText}>{timeAgo(item.createdAt)}</Text>
               </View>
 
-              <Text style={styles.notificationText} numberOfLines={2}>
+              {/* 🔥 FIX: Cleaned up Text rendering logic */}
+              <Text style={styles.notificationText} numberOfLines={3}>
                 {item.type === 'like' && 'Liked your recent post. Keep it up!'}
                 {item.type === 'comment' && `Commented: "${item.text || 'Awesome post!'}"`}
                 {item.type === 'follow' && 'Started following your journey.'}
                 {item.type === 'mention' && 'Mentioned you in a discussion.'}
                 {item.type === 'doubt_solved' && `Solved your ${item.text || 'doubt'}. Check it out!`}
+                {item.type === 'broadcast' && <Text style={{fontWeight: '700', color: '#0f172a'}}>📢 {item.title}: </Text>}
+                {item.type === 'broadcast' && item.text}
               </Text>
 
-              {/* ⚡ INLINE QUICK ACTIONS */}
+              {/* Inline Actions */}
               {item.type === 'follow' && (
                 <View style={styles.quickActionRow}>
                   <View style={styles.quickActionBtn}>
@@ -209,11 +225,9 @@ export default function NotificationScreen() {
               )}
             </TouchableOpacity>
 
-            {/* Unread Indicator */}
             {!item.isRead && <View style={[styles.unreadDot, {backgroundColor: meta.color}]} />}
           </View>
 
-          {/* Delete Swipe Area */}
           <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteNotification(item.id)}>
             <Ionicons name="trash-outline" size={18} color="#ef4444" />
           </TouchableOpacity>
@@ -243,7 +257,7 @@ export default function NotificationScreen() {
       {/* 🗂️ SMART FILTERS */}
       <View style={styles.filterContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal: 15, paddingVertical: 10}}>
-          {['All', 'Unread', 'Doubts'].map((filter) => (
+          {['All', 'Unread', 'System', 'Doubts'].map((filter) => (
             <TouchableOpacity 
               key={filter} 
               style={[styles.filterPill, activeFilter === filter && styles.activeFilterPill]} 
@@ -258,7 +272,7 @@ export default function NotificationScreen() {
         </ScrollView>
       </View>
 
-      {/* 📜 LIST OR SKELETONS */}
+      {/* 📜 LIST */}
       {loading ? (
         <View style={styles.listContent}>
           {[1,2,3,4,5].map(i => <BreathingSkeleton key={i} />)}
@@ -288,7 +302,7 @@ export default function NotificationScreen() {
 }
 
 // ==========================================
-// 🎨 ULTRA PREMIUM STYLES
+// 🎨 STYLES
 // ==========================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
@@ -314,7 +328,7 @@ const styles = StyleSheet.create({
   
   cardLayout: { flex: 1, flexDirection: 'row', padding: 15, paddingRight: 10 },
   
-  avatarContainer: { position: 'relative', marginRight: 15, alignSelf: 'flex-start', padding: 2 }, // Added padding for touch area
+  avatarContainer: { position: 'relative', marginRight: 15, alignSelf: 'flex-start', padding: 2 }, 
   avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#e2e8f0', borderWidth: 1, borderColor: '#e2e8f0' },
   typeIconBadge: { position: 'absolute', bottom: -2, right: -2, width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff', elevation: 2 },
   

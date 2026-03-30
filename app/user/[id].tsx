@@ -188,19 +188,7 @@ export default function CompleteProfileScreen() {
       );
     }
 
-    // CODE UI
-    if (post.type === 'code') {
-      return (
-        <View>
-          <Text style={styles.postContent}>{post.text}</Text>
-          <View style={styles.codeSnippetBox}>
-             <Text style={styles.codeLangText}>{post.language}</Text>
-             <Text style={styles.codeText} numberOfLines={4}>{post.codeSnippet}</Text>
-          </View>
-        </View>
-      );
-    }
-
+    
     // DEFAULT (Text + Image)
     return (
       <View>
@@ -460,7 +448,6 @@ const styles = StyleSheet.create({
   pollOptionView: { backgroundColor: '#f8fafc', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0' },
   pollOptionText: { fontSize: 13, fontWeight: '600', color: '#334155' },
 
-  codeSnippetBox: { backgroundColor: '#0f172a', padding: 12, borderRadius: 12, marginTop: 10 },
   codeLangText: { color: '#38bdf8', fontSize: 10, fontWeight: '900', textTransform: 'uppercase', marginBottom: 6 },
   codeText: { color: '#e2e8f0', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 12, lineHeight: 18 },
 

@@ -30,8 +30,12 @@ import LiveTestModal from '../../components/chat/LiveTestModal';
 import HomeworkDashboard from '../../components/chat/HomeworkDashboard';
 import ImageViewerModal from '../../components/ImageViewerModal';
 
+import * as ImagePicker from 'expo-image-picker';
+import { Alert } from 'react-native';
+
 const { width, height } = Dimensions.get('window');
-const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png'; 
+const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
+const IMGBB_API_KEY = process.env.EXPO_PUBLIC_IMGBB_API_KEY; 
 
 const LIMITS = { MAX_MESSAGE_LENGTH: 1500, MAX_TEST_QUESTIONS: 30, MAX_QUESTION_LENGTH: 500, MAX_TITLE_LENGTH: 100, MAX_DURATION_MINS: 180 };
 const TOPIC_TABS = ['Chat', 'Doubts', 'Resources', 'Tasks']; 
@@ -63,6 +67,8 @@ export default function MVPAdvancedChatEngine() {
   const [groupInfo, setGroupInfo] = useState<any>(null);
   const [otherUser, setOtherUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  const [isUploadingHW, setIsUploadingHW] = useState(false);
   
   const [activeTab, setActiveTab] = useState('Chat'); 
   const [searchQuery, setSearchQuery] = useState(''); 

@@ -248,10 +248,6 @@ export default function ProfileScreen() {
           </View>
 
           {item.title ? <Text style={styles.miniPostTitle} numberOfLines={1}>{item.title}</Text> : null}
-          
-          <Text style={styles.miniPostText} numberOfLines={3}>
-            {item.text || item.codeSnippet || "Media Post..."}
-          </Text>
 
           {item.imageUrl && (
             <View style={styles.miniImageContainer}>

@@ -1,17 +1,17 @@
 // Location: app/_layout.tsx
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Alert } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { onAuthStateChanged, signOut } from 'firebase/auth'; // 🔥 signOut import kiya
+import { doc, onSnapshot } from 'firebase/firestore'; // 🔥 getDoc ki jagah onSnapshot
 
 // 🔥 Naya Loader Import
 import EduxityLoader from '../components/EduxityLoader';
 
 // 🔥 Firebase & Store Imports
-import { auth, db } from '../firebaseConfig'; // Apne path ke hisaab se check kar lena
+import { auth, db } from '../firebaseConfig'; 
 import { useUserStore } from '../store/useUserStore';
-import RewardOverlay from '../components/RewardOverlay'; // Reward component
+import RewardOverlay from '../components/RewardOverlay'; 
 
 export default function RootLayout() {
   const [initializing, setInitializing] = useState(true);
@@ -23,45 +23,58 @@ export default function RootLayout() {
   const clearUserData = useUserStore((state) => state.clearUserData);
 
   // ============================================================================
-  // 🔥 1. GLOBAL DATA FETCH (Auth Listener)
+  // 🔥 1. GLOBAL REAL-TIME DATA FETCH (Auth Listener)
   // ============================================================================
   useEffect(() => {
-    const subscriber = onAuthStateChanged(auth, async (currentUser) => {
+    let unsubscribeUserDoc: any = null;
+
+    const subscriber = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
-        try {
-          const userDocRef = doc(db, 'users', currentUser.uid);
-          const userDocSnap = await getDoc(userDocRef);
-          
+        // User logged in hai, uska document real-time me suno
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        
+        unsubscribeUserDoc = onSnapshot(userDocRef, async (userDocSnap) => {
           if (userDocSnap.exists()) {
-            setUserData(userDocSnap.data()); 
+            const data = userDocSnap.data();
+            
+            // 🚨 ENFORCE BAN: Agar admin ne ban kiya hai toh user ko fauran bahar feko
+            if (data.isBanned) {
+              Alert.alert("Access Denied", "Your account has been suspended by Eduxity Admin.");
+              await signOut(auth);
+              clearUserData();
+              return;
+            }
+
+            // 🎁 GIFT COINS & SYNC: Agar ban nahi hai, toh uska data (coins, xp) update karo
+            setUserData(data); 
           }
-        } catch (error) {
-          console.error("Error fetching user data:", error);
-        }
+        });
       } else {
+        // User logged out hai
+        if (unsubscribeUserDoc) unsubscribeUserDoc();
         clearUserData(); 
       }
       setInitializing(false);
     });
 
-    return () => subscriber();
+    return () => {
+      subscriber();
+      if (unsubscribeUserDoc) unsubscribeUserDoc();
+    };
   }, []);
 
   // ============================================================================
   // 🛡️ 2. ROUTE PROTECTION (THE GATEKEEPER)
   // ============================================================================
   useEffect(() => {
-    if (initializing) return; // Do nothing while initializing is true
+    if (initializing) return;
 
     const user = auth.currentUser;
-    // Check if user is on an auth screen (login, signup, or root)
     const inAuthGroup = segments[0] === 'auth' || segments[0] === 'login' || !segments[0];
 
     if (!user && !inAuthGroup) {
-      // User logout ho gaya hai -> Seedha Welcome/Login page pe phenko
       router.replace('/'); 
     } else if (user && inAuthGroup) {
-      // User login hai -> Dashboard pe bhej do
       router.replace('/(tabs)');
     }
   }, [initializing, auth.currentUser, segments]); 
@@ -72,32 +85,27 @@ export default function RootLayout() {
   if (initializing) {
     return (
       <View style={styles.loaderContainer}>
-        {/* Sasta spinner hata diya, Advance loader laga diya 🔥 */}
         <EduxityLoader />
       </View>
     );
   }
 
   // ============================================================================
-  // 📱 4. MAIN RENDER WITH GLOBAL OVERLAYS (Crucial for Animations)
+  // 📱 4. MAIN RENDER WITH GLOBAL OVERLAYS 
   // ============================================================================
   return (
     <>
       <Stack screenOptions={{ headerShown: false }} />
-      {/* 🔥 REWARD OVERLAY HAMESHA TOP PAR RAHEGA. ISKE BINA ANIMATION NAHI AAYEGA */}
       <RewardOverlay /> 
     </>
   );
 }
 
-// ============================================================================
-// 🎨 STYLES
-// ============================================================================
 const styles = StyleSheet.create({
   loaderContainer: {
     flex: 1, 
     justifyContent: 'center', 
     alignItems: 'center', 
-    backgroundColor: '#f8fafc' // Solid background so the loader pops
+    backgroundColor: '#f8fafc' 
   }
 });

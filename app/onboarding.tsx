@@ -162,14 +162,25 @@ export default function OnboardingScreen() {
   };
 
   // 🔥 CALENDAR HANDLER
+  // 🔥 UPDATED CALENDAR HANDLER
   const onDateChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === 'android') setShowDatePicker(false);
-    if (selectedDate) {
+    // Android handle karo: Jab user OK ya Cancel dabaye tab band kar do
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+
+    // Agar user ne date select ki hai (Cancel nahi kiya)
+    if (event.type !== 'dismissed' && selectedDate) {
       setDate(selectedDate);
+      
+      // Date formatting logic
       const day = selectedDate.getDate().toString().padStart(2, '0');
       const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
       const year = selectedDate.getFullYear();
       setDob(`${day}/${month}/${year}`);
+
+      // iOS pe selection ke baad agar modal style nahi hai toh 
+      // yahan hum decide kar sakte hain ki kab band karna hai
     }
   };
 
@@ -486,23 +497,41 @@ export default function OnboardingScreen() {
         <Text style={styles.inputLabel}>SCHOOL OR COLLEGE NAME</Text>
         <TextInput style={styles.inputField} placeholder="e.g. DPS, IIT Bombay..." placeholderTextColor="#94a3b8" value={institution} onChangeText={setInstitution} />
 
-        <Text style={styles.inputLabel}>DATE OF BIRTH</Text>
-        
-        {/* 🔥 NATIVE CALENDAR PICKER LOGIC HERE */}
-        <TouchableOpacity style={styles.dropdownBtn} onPress={() => setShowDatePicker(true)} activeOpacity={0.8}>
-          <Text style={[styles.dropdownText, !dob && { color: '#94a3b8' }]}>{dob || "Select Date of Birth"}</Text>
-          <Ionicons name="calendar-outline" size={20} color="#64748b" />
-        </TouchableOpacity>
+       <Text style={styles.inputLabel}>DATE OF BIRTH</Text>
 
-        {showDatePicker && (
-          <DateTimePicker
-            value={date}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            maximumDate={new Date()} // Future dates not allowed
-            onChange={onDateChange}
-          />
-        )}
+{Platform.OS === 'web' ? (
+  // 🔥 CHROME / WEB KE LIYE FIX
+  <input
+    style={styles.inputField as any}
+    type="date"
+    value={dob ? dob.split('/').reverse().join('-') : ''}
+    onChange={(e: any) => {
+      const val = e.target.value;
+      if (val) {
+        const [y, m, d] = val.split('-');
+        setDob(`${d}/${m}/${y}`);
+      }
+    }}
+  />
+) : (
+  // 📱 MOBILE (Android/iOS) KE LIYE PURANA LOGIC
+  <>
+    <TouchableOpacity style={styles.dropdownBtn} onPress={() => setShowDatePicker(true)} activeOpacity={0.8}>
+      <Text style={[styles.dropdownText, !dob && { color: '#94a3b8' }]}>{dob || "Select Date of Birth"}</Text>
+      <Ionicons name="calendar-outline" size={20} color="#64748b" />
+    </TouchableOpacity>
+
+    {showDatePicker && (
+      <DateTimePicker
+        value={date}
+        mode="date"
+        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+        maximumDate={new Date()}
+        onChange={onDateChange}
+      />
+    )}
+  </>
+)}
 
         <View style={styles.bottomNavContainer}>
           <TouchableOpacity style={styles.skipBtn} onPress={() => completeOnboarding(true)}>

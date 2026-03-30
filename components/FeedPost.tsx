@@ -318,15 +318,7 @@ const PostCard = React.memo(({ item, currentUid, onOpenComments, onImagePress }:
           <View style={styles.imageContainer}><Image source={{ uri: item.imageUrl }} style={styles.postImage} contentFit="cover" transition={300} /></View>
         ) : null}
         
-        {item.type === 'code' && item.codeSnippet ? (
-          <View style={styles.codeBlockContainer}>
-            <View style={styles.macWindowHeader}>
-              <View style={styles.macDots}><View style={[styles.macDot, { backgroundColor: '#ff5f56' }]} /><View style={[styles.macDot, { backgroundColor: '#ffbd2e' }]} /><View style={[styles.macDot, { backgroundColor: '#27c93f' }]} /></View>
-              <Text style={styles.codeLanguage}>{item.language || 'Code'}</Text>
-            </View>
-            <Text style={styles.codeText} numberOfLines={8}>{item.codeSnippet}</Text>
-          </View>
-        ) : null}
+        
       </TouchableOpacity>
 
       {/* ========================================== */}

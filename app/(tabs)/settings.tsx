@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity, ScrollView, 
-  Alert, SafeAreaView, StatusBar, Platform, Modal, TextInput, Linking
+  Alert, SafeAreaView, StatusBar, Platform, Modal, TextInput 
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +18,10 @@ export default function SettingsScreen() {
   const user = auth.currentUser;
   const username = user?.displayName || "user";
   
+  // 🔐 ADMIN CHECK LOGIC
+  const ADMIN_EMAIL = process.env.EXPO_PUBLIC_ADMIN_EMAIL;
+  const isSuperAdmin = user?.email === ADMIN_EMAIL;
+  
   // Zustand State
   const clearUserData = useUserStore((state) => state.clearUserData);
 
@@ -33,9 +37,7 @@ export default function SettingsScreen() {
   // ==========================================
   const performLogout = async () => {
     try {
-      console.log("Logout triggered...");
       if (Platform.OS !== 'web') await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
       clearUserData(); 
       await signOut(auth);
       router.replace('/'); 
@@ -92,22 +94,20 @@ export default function SettingsScreen() {
   // ==========================================
   // 📜 3. LEGAL & POLICIES HANDLERS
   // ==========================================
- const handleOpenPrivacyPolicy = () => {
+  const handleOpenPrivacyPolicy = () => {
     if (Platform.OS !== 'web') Haptics.selectionAsync();
-    router.push('/privacy-policy'); // 👈 Ye ab naye page pe bhejega
+    router.push('/privacy-policy');
   };
 
   const handleOpenTerms = () => {
     if (Platform.OS !== 'web') Haptics.selectionAsync();
-    router.push('/terms'); // 👈 Ye ab terms page pe bhejega
+    router.push('/terms');
   };
 
   // ==========================================
   // 🧩 UI COMPONENTS
   // ==========================================
-  
-  // Extracting SettingsItem outside of render prevents unnecessary re-renders
-  const SettingsItem = ({ icon, label, rightElement, onPress, isDestructive = false }: any) => (
+  const SettingsItem = ({ icon, label, rightElement, onPress, isDestructive = false, isSpecial = false }: any) => (
     <TouchableOpacity 
       style={styles.itemRow} 
       onPress={onPress} 
@@ -115,10 +115,10 @@ export default function SettingsScreen() {
       disabled={!onPress}
     >
       <View style={styles.itemLeft} pointerEvents="none">
-        <View style={[styles.iconBox, isDestructive && {backgroundColor: '#fef2f2'}]}>
-          <Ionicons name={icon} size={18} color={isDestructive ? '#ef4444' : '#64748b'} />
+        <View style={[styles.iconBox, isDestructive && {backgroundColor: '#fef2f2'}, isSpecial && {backgroundColor: '#ecfdf5'}]}>
+          <Ionicons name={icon} size={18} color={isDestructive ? '#ef4444' : isSpecial ? '#10b981' : '#64748b'} />
         </View>
-        <Text style={[styles.itemLabel, isDestructive && {color: '#ef4444', fontWeight: 'bold'}]}>{label}</Text>
+        <Text style={[styles.itemLabel, isDestructive && {color: '#ef4444', fontWeight: 'bold'}, isSpecial && {color: '#10b981', fontWeight: '900'}]}>{label}</Text>
       </View>
       <View style={styles.itemRight} pointerEvents="none">
         {rightElement || (onPress && <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />)}
@@ -157,27 +157,34 @@ export default function SettingsScreen() {
           <View style={styles.groupContent}>
             <SettingsItem icon="help-buoy-outline" label="FAQs & Help Center" onPress={() => router.push('/help-center')} />
             <View style={styles.divider} />
-             <SettingsItem icon="bug-outline" label="Report a Bug" onPress={() => router.push('/report-bug')} />
+            <SettingsItem icon="bug-outline" label="Report a Bug" onPress={() => router.push('/report-bug')} />
           </View>
         </View>
 
-        {/* 📜 NEW SECTION: LEGAL & POLICIES */}
+        {/* LEGAL & POLICIES */}
         <View style={styles.groupContainer}>
           <Text style={styles.groupTitle}>Legal</Text>
           <View style={styles.groupContent}>
-            <SettingsItem 
-              icon="shield-checkmark-outline" 
-              label="Privacy Policy" 
-              onPress={handleOpenPrivacyPolicy} 
-            />
+            <SettingsItem icon="shield-checkmark-outline" label="Privacy Policy" onPress={handleOpenPrivacyPolicy} />
             <View style={styles.divider} />
-            <SettingsItem 
-              icon="document-text-outline" 
-              label="Terms & Conditions" 
-              onPress={handleOpenTerms} 
-            />
+            <SettingsItem icon="document-text-outline" label="Terms & Conditions" onPress={handleOpenTerms} />
           </View>
         </View>
+
+        {/* 🚀 SECRET DEVELOPER ZONE (ONLY FOR SUPER ADMIN) */}
+        {isSuperAdmin && (
+          <View style={styles.groupContainer}>
+            <Text style={[styles.groupTitle, { color: '#10b981' }]}>Developer Options</Text>
+            <View style={[styles.groupContent, { borderColor: '#a7f3d0', borderWidth: 2 }]}>
+              <SettingsItem 
+                icon="terminal-outline" 
+                label="Admin God Mode" 
+                isSpecial={true} 
+                onPress={() => router.push('/admin')} 
+              />
+            </View>
+          </View>
+        )}
 
         {/* DANGER ZONE */}
         <View style={styles.groupContainer}>

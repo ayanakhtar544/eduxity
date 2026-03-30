@@ -35,7 +35,7 @@ export default function CreatePostScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null); 
   
-  const [codeSnippet, setCodeSnippet] = useState('');
+
   const [language, setLanguage] = useState('javascript');
   const [pollOptions, setPollOptions] = useState(['', '']);
   
@@ -125,19 +125,18 @@ export default function CreatePostScreen() {
     const user = auth.currentUser;
     if (!user) { Alert.alert("Error", "You must be logged in to post."); return; }
 
-    if (!text.trim() && postType === 'text') { Alert.alert("Empty Post", "Kuch toh likho bhai!"); return; }
-    if (postType === 'code' && !codeSnippet.trim()) { Alert.alert("Empty Code", "Code snippet is missing."); return; }
+    if (!text.trim() && postType === 'text') { Alert.alert("Empty Post", "Write Something"); return; }
     if (postType === 'poll' && pollOptions.filter(opt => opt.trim() !== '').length < 2) { 
-      Alert.alert("Invalid Poll", "Kam se kam 2 valid options chahiye."); return; 
+      Alert.alert("Invalid Poll", "Minimum 2 Valid Option Needed."); return; 
     }
     if (postType === 'resource') {
-      if (!resourceTitle.trim()) { Alert.alert("Missing Title", "Notes ka naam zaroori hai."); return; }
-      if (!driveLink.trim() || !driveLink.includes('http')) { Alert.alert("Invalid Link", "Sahi Google Drive link dalo."); return; }
+      if (!resourceTitle.trim()) { Alert.alert("Missing Title", "Enter a title for your resource."); return; }
+      if (!driveLink.trim() || !driveLink.includes('http')) { Alert.alert("Invalid Link", "Enter a valid Google Drive link."); return; }
     }
     if (postType === 'flashcard') {
-      if (!flashcardTitle.trim()) { Alert.alert("Missing Title", "Deck ko ek naam do."); return; }
+      if (!flashcardTitle.trim()) { Alert.alert("Missing Title", "Enter a title for your flashcard deck."); return; }
       const validCards = flashcards.filter(c => c.q.trim() !== '' && c.a.trim() !== '');
-      if (validCards.length < 2) { Alert.alert("Incomplete Deck", "Kam se kam 2 valid cards chahiye."); return; }
+      if (validCards.length < 2) { Alert.alert("Incomplete Deck", "Minimum 2 Valid Cards Needed."); return; }
     }
 
     setLoading(true);
@@ -169,7 +168,6 @@ export default function CreatePostScreen() {
       };
 
       if (finalImageUrl) postData.imageUrl = finalImageUrl;
-      if (postType === 'code') { postData.codeSnippet = codeSnippet; postData.language = language; }
       if (postType === 'poll') {
         postData.pollOptions = pollOptions.filter(opt => opt.trim() !== '').map(opt => ({ text: opt.trim(), votes: 0 }));
         postData.totalVotes = 0; postData.voters = [];
@@ -282,18 +280,7 @@ export default function CreatePostScreen() {
             </Animated.View>
           )}
 
-          {postType === 'code' && (
-            <Animated.View entering={FadeIn} layout={Layout.springify()} style={styles.codeSection}>
-              <View style={styles.codeHeader}>
-                <View style={styles.macDots}>
-                  <View style={[styles.macDot, { backgroundColor: '#ff5f56' }]} /><View style={[styles.macDot, { backgroundColor: '#ffbd2e' }]} /><View style={[styles.macDot, { backgroundColor: '#27c93f' }]} />
-                </View>
-                <TextInput style={[styles.langInput, noOutlineStyle]} placeholder="Language (e.g. JSX)" placeholderTextColor="#64748b" value={language} onChangeText={setLanguage} />
-              </View>
-              <TextInput style={[styles.codeEditor, noOutlineStyle]} placeholder="// Paste your code snippet here..." placeholderTextColor="#64748b" multiline value={codeSnippet} onChangeText={setCodeSnippet} spellCheck={false} autoCorrect={false} autoCapitalize="none" />
-            </Animated.View>
-          )}
-
+          
           {postType === 'poll' && (
             <Animated.View entering={FadeIn} layout={Layout.springify()} style={styles.pollSection}>
               <View style={styles.pollHeader}>

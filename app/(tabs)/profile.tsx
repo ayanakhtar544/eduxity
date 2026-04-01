@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../../firebaseConfig';
 import { signOut } from 'firebase/auth';
-import { collection, query, where, getDocs, doc, onSnapshot, deleteDoc } from 'firebase/firestore'; 
+import { collection, query, where, getDocs, doc, onSnapshot, deleteDoc, updateDoc, arrayRemove } from 'firebase/firestore'; 
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
@@ -23,12 +23,15 @@ export default function ProfileScreen() {
 
   const [activeTab, setActiveTab] = useState<'posts' | 'saved'>('posts');
   const [myPosts, setMyPosts] = useState<any[]>([]); // Normal posts
-  const [savedPosts, setSavedPosts] = useState<any[]>([]);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
   const [myTests, setMyTests] = useState<any[]>([]); // Exam Engine Tests
   const [loadingTests, setLoadingTests] = useState(true);
+
+  // 🔥 NEW STATE FOR AI FEED BOOKMARKS
+  const [savedAIPosts, setSavedAIPosts] = useState<any[]>([]);
+  const [loadingSaved, setLoadingSaved] = useState(false);
 
   // ==========================================
   // 1. FETCH MY CREATED TESTS
@@ -77,28 +80,47 @@ export default function ProfileScreen() {
   }, [user]);
 
   // ==========================================
-  // 3. FETCH REAL POSTS DATA
+  // 3. FETCH REAL POSTS DATA (AND BOOKMARKS)
   // ==========================================
   const fetchProfileData = async () => {
     setLoading(true);
     try {
+      // 3A. Fetch Normal Community Posts
       const postsQuery = query(collection(db, 'posts'), where('authorId', '==', user?.uid));
       const postsSnapshot = await getDocs(postsQuery);
       let fetchedMyPosts = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       fetchedMyPosts.sort((a: any, b: any) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
       setMyPosts(fetchedMyPosts);
-
-      const savedQuery = query(collection(db, 'posts'), where('savedBy', 'array-contains', user?.uid));
-      const savedSnapshot = await getDocs(savedQuery);
-      let fetchedSavedPosts = savedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      fetchedSavedPosts.sort((a: any, b: any) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
-      setSavedPosts(fetchedSavedPosts);
     } catch (error) {
       console.log("Error fetching profile posts:", error);
     } finally {
       setLoading(false);
     }
   };
+
+  // 📡 FETCH SAVED AI POSTS WHEN TAB SWITCHES
+  useEffect(() => {
+    const fetchSavedAIPosts = async () => {
+      if (activeTab === 'saved' && user?.uid) {
+        setLoadingSaved(true);
+        try {
+          const q = query(collection(db, 'ai_feed_items'), where('savedBy', 'array-contains', user.uid));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            setSavedAIPosts(snap.docs.map(doc => ({ id: doc.id, isSavedAIPost: true, ...doc.data() })));
+          } else {
+            setSavedAIPosts([]);
+          }
+        } catch (error) {
+          console.error("Error fetching saved AI posts:", error);
+        } finally {
+          setLoadingSaved(false);
+        }
+      }
+    };
+
+    fetchSavedAIPosts();
+  }, [activeTab, user]);
 
   // ==========================================
   // 4. LOGOUT LOGIC
@@ -123,7 +145,7 @@ export default function ProfileScreen() {
   };
 
   // ==========================================
-  // 5A. DELETE NORMAL POST LOGIC (ADDED)
+  // 5A. DELETE NORMAL POST
   // ==========================================
   const handleDeleteFromProfile = async (postId: string) => {
     Alert.alert("Delete Post", "Are you sure you want to delete this post forever?", [
@@ -144,7 +166,7 @@ export default function ProfileScreen() {
   };
 
   // ==========================================
-  // 5B. DELETE TEST LOGIC
+  // 5B. DELETE TEST
   // ==========================================
   const handleDeleteTest = async (testId: string) => {
     Alert.alert("Delete Exam?", "This will permanently remove the test and all its responses.", [
@@ -165,6 +187,22 @@ export default function ProfileScreen() {
   };
 
   // ==========================================
+  // 5C. REMOVE AI BOOKMARK
+  // ==========================================
+  const handleRemoveBookmark = async (postId: string) => {
+    if (!user?.uid) return;
+    
+    // Optimistic UI Removal
+    setSavedAIPosts(prev => prev.filter(p => p.id !== postId));
+    try {
+      await updateDoc(doc(db, 'ai_feed_items', postId), { savedBy: arrayRemove(user.uid) });
+    } catch (e) {
+      console.error("Error removing bookmark", e);
+      // Revert logic could be added here if needed
+    }
+  };
+
+  // ==========================================
   // 6. RENDERERS FOR LIST
   // ==========================================
   const combinedFeed = [...myTests, ...myPosts].sort((a: any, b: any) => {
@@ -175,16 +213,36 @@ export default function ProfileScreen() {
 
   const renderFeedItem = ({ item, index }: { item: any, index: number }) => {
     
-    // --- RENDER TEST CARD ---
+    // --- 🔖 RENDER SAVED AI BOOKMARK CARD ---
+    if (item.isSavedAIPost) {
+      const safeContent = typeof item.content === 'object' && item.content !== null ? item.content : {};
+      
+      let previewText = "";
+      if (item.type === 'concept_micro') previewText = safeContent.title || "Concept Topic";
+      else if (item.type === 'flashcard') previewText = safeContent.front || "Flashcard Question";
+      else if (item.type === 'quiz_mcq') previewText = safeContent.question || "Quiz Question";
+      else if (item.type === 'quiz_tf') previewText = safeContent.statement || "True/False Statement";
+      else previewText = "Interactive Match Game";
+
+      return (
+        <Animated.View entering={FadeInDown.delay(index * 50).springify()} style={styles.savedCard}>
+          <View style={styles.savedCardHeader}>
+            <Text style={styles.savedBadge}>{item.type.replace('_', ' ').toUpperCase()}</Text>
+            <TouchableOpacity onPress={() => handleRemoveBookmark(item.id)}>
+              <Ionicons name="bookmark" size={24} color="#4f46e5" />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.savedTopicText}>{item.topic || 'General Topic'}</Text>
+          <Text style={styles.savedPreviewText} numberOfLines={2}>{previewText}</Text>
+        </Animated.View>
+      );
+    }
+
+    // --- 📝 RENDER TEST CARD ---
     if (item.isExamEngineTest) {
       return (
         <Animated.View entering={FadeInDown.delay(index * 100).springify()} style={styles.testCard}>
-          <TouchableOpacity 
-            activeOpacity={0.8}
-            // 🔥 FIXED ROUTE HERE: test-analysis 
-            onPress={() => router.push(`/test-analysis/${item.id}`)}
-            style={{ flex: 1 }}
-          >
+          <TouchableOpacity activeOpacity={0.8} onPress={() => router.push(`/test-analysis/${item.id}`)} style={{ flex: 1 }}>
             <View style={styles.testCardHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <View style={styles.testBadgeContainer}>
@@ -193,16 +251,13 @@ export default function ProfileScreen() {
                 </View>
                 <Text style={[styles.testCategory, { marginLeft: 10 }]}>{item.category || 'TEST'}</Text>
               </View>
-              
               {activeTab === 'posts' && (
                 <TouchableOpacity onPress={() => handleDeleteTest(item.id)} style={styles.deleteMiniBtn}>
                   <Ionicons name="trash-outline" size={18} color="#ef4444" />
                 </TouchableOpacity>
               )}
             </View>
-            
             <Text style={styles.testCardTitle} numberOfLines={2}>{item.title}</Text>
-            
             <View style={styles.testCardFooter}>
               <View style={styles.testFooterStat}>
                 <Ionicons name="list" size={14} color="#64748b" />
@@ -224,7 +279,7 @@ export default function ProfileScreen() {
       );
     }
 
-    // --- RENDER NORMAL POST CARD ---
+    // --- 📱 RENDER NORMAL POST CARD ---
     return (
       <Animated.View entering={FadeInDown.delay(index * 100).springify()} style={styles.miniPostCard}>
         <TouchableOpacity activeOpacity={0.8} onPress={() => router.push(`/post/${item.id}`)}>
@@ -246,15 +301,12 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             )}
           </View>
-
           {item.title ? <Text style={styles.miniPostTitle} numberOfLines={1}>{item.title}</Text> : null}
-
           {item.imageUrl && (
             <View style={styles.miniImageContainer}>
               <Image source={{ uri: item.imageUrl }} style={styles.miniImage} />
             </View>
           )}
-
         </TouchableOpacity>
       </Animated.View>
     );
@@ -299,11 +351,11 @@ export default function ProfileScreen() {
       </View>
 
       <FlatList
-        data={activeTab === 'posts' ? combinedFeed : savedPosts}
+        data={activeTab === 'posts' ? combinedFeed : savedAIPosts}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}
-        refreshing={loading}
+        refreshing={activeTab === 'posts' ? loading : loadingSaved}
         onRefresh={() => { fetchProfileData(); }}
         ListHeaderComponent={
           <View style={styles.headerWrapper}>
@@ -319,7 +371,6 @@ export default function ProfileScreen() {
               
               <View style={styles.profileDetails}>
                 <Text style={styles.fullName}>{user?.displayName || 'Eduxity User'}</Text>
-                
                 <View style={styles.roleContainer}>
                   <Ionicons name="school" size={14} color="#4f46e5" />
                   <Text style={styles.roleText}>{userData?.roleDetail || 'Community Member'}</Text>
@@ -349,10 +400,7 @@ export default function ProfileScreen() {
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgesScroll}>
                   {unlockedBadges.map((badge:any, idx:number) => (
                     <Animated.View entering={FadeIn.delay(idx * 100)} key={badge.id} style={styles.badgeItem}>
-                      
-                      {/* 🔥 YAHAN CHANGE HUA HAI: Text ki jagah Image aagaya */}
                       <Image source={badge.icon} style={styles.badgeImage} />
-                      
                       <Text style={styles.badgeName}>{badge.name}</Text>
                     </Animated.View>
                   ))}
@@ -411,16 +459,6 @@ export default function ProfileScreen() {
                   {userData.instagramLink && <TouchableOpacity><Ionicons name="logo-instagram" size={24} color="#e1306c" style={styles.socialIcon}/></TouchableOpacity>}
                 </View>
               )}
-
-              {userData?.interests && userData.interests.length > 0 && (
-                <View style={styles.interestsContainer}>
-                  {userData.interests.map((interest: string, index: number) => (
-                    <View key={index} style={styles.interestTag}>
-                      <Text style={styles.interestTagText}>{interest}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
             </View>
 
             {/* --- 🗂️ TAB SELECTOR --- */}
@@ -432,7 +470,7 @@ export default function ProfileScreen() {
               
               <TouchableOpacity style={[styles.tabBtn, activeTab === 'saved' && styles.activeTabBtn]} onPress={() => setActiveTab('saved')}>
                 <Ionicons name="bookmark-outline" size={20} color={activeTab === 'saved' ? '#4f46e5' : '#64748b'} />
-                <Text style={[styles.tabText, activeTab === 'saved' && styles.activeTabText]}>Saved ({savedPosts.length})</Text>
+                <Text style={[styles.tabText, activeTab === 'saved' && styles.activeTabText]}>Saved ({savedAIPosts.length})</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -441,7 +479,7 @@ export default function ProfileScreen() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Ionicons name={activeTab === 'posts' ? "document-text-outline" : "bookmarks-outline"} size={60} color="#cbd5e1" />
-            <Text style={styles.emptyText}>{activeTab === 'posts' ? "You haven't posted or created tests yet." : "No saved posts."}</Text>
+            <Text style={styles.emptyText}>{activeTab === 'posts' ? "You haven't posted or created tests yet." : "You haven't saved any AI posts yet."}</Text>
           </View>
         }
       />
@@ -491,7 +529,6 @@ const styles = StyleSheet.create({
   badgeCount: { fontSize: 12, fontWeight: '800', color: '#4f46e5', backgroundColor: '#e0e7ff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   badgesScroll: { paddingHorizontal: 15, gap: 12 },
   badgeItem: { alignItems: 'center', backgroundColor: '#f8fafc', padding: 12, borderRadius: 14, borderWidth: 1, borderColor: '#f1f5f9', width: 85 },
-  badgeEmoji: { fontSize: 28, marginBottom: 6 },
   badgeImage: { width: 45, height: 45, marginBottom: 8, resizeMode: 'contain' },
   badgeName: { fontSize: 10, fontWeight: '800', color: '#475569', textAlign: 'center' },
   noBadgesContainer: { alignItems: 'center', paddingVertical: 10 },
@@ -502,11 +539,8 @@ const styles = StyleSheet.create({
   infoRowGrid: { gap: 10, marginBottom: 15 },
   infoRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#f1f5f9' },
   infoText: { fontSize: 13, color: '#475569', marginLeft: 8, fontWeight: '700' },
-  socialLinksRow: { flexDirection: 'row', gap: 15, marginBottom: 15, paddingTop: 15, borderTopWidth: 1, borderColor: '#f1f5f9' },
+  socialLinksRow: { flexDirection: 'row', gap: 15, paddingTop: 15, borderTopWidth: 1, borderColor: '#f1f5f9' },
   socialIcon: { marginRight: 5 },
-  interestsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  interestTag: { backgroundColor: '#e0e7ff', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  interestTagText: { fontSize: 12, fontWeight: '800', color: '#4f46e5' },
 
   tabContainer: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', marginTop: 15 },
   tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 15 },
@@ -521,7 +555,6 @@ const styles = StyleSheet.create({
   miniPostLikes: { fontSize: 12, fontWeight: '800', color: '#475569', marginLeft: 10 },
   deleteMiniBtn: { backgroundColor: '#fef2f2', padding: 6, borderRadius: 10, zIndex: 10 },
   miniPostTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginBottom: 4 },
-  miniPostText: { fontSize: 14, color: '#334155', lineHeight: 20, fontWeight: '500', marginBottom: 8 },
   miniImageContainer: { width: '100%', height: 120, borderRadius: 12, overflow: 'hidden', marginTop: 8, backgroundColor: '#f1f5f9' },
   miniImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   
@@ -534,6 +567,13 @@ const styles = StyleSheet.create({
   testCardFooter: { flexDirection: 'row', gap: 15, paddingTop: 10, borderTopWidth: 1, borderColor: '#f1f5f9', alignItems: 'center' },
   testFooterStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   testFooterTxt: { fontSize: 12, fontWeight: '800', color: '#64748b' },
+
+  // 🔥 NEW STYLES FOR SAVED BOOKMARKS
+  savedCard: { backgroundColor: '#fff', marginHorizontal: 15, marginTop: 12, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
+  savedCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  savedBadge: { fontSize: 10, fontWeight: '800', color: '#64748b', backgroundColor: '#f1f5f9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  savedTopicText: { fontSize: 13, fontWeight: '800', color: '#4f46e5', marginBottom: 6 },
+  savedPreviewText: { fontSize: 16, fontWeight: '700', color: '#0f172a', lineHeight: 24 },
 
   emptyState: { alignItems: 'center', marginTop: 60 },
   emptyText: { marginTop: 15, fontSize: 15, fontWeight: '700', color: '#94a3b8' }

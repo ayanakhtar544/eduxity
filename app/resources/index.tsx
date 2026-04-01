@@ -1,244 +1,423 @@
+// Location: app/resources/index.tsx
 import React, { useState, useEffect } from 'react';
 import { 
-  View, Text, StyleSheet, FlatList, TouchableOpacity, 
-  TextInput, StatusBar, ActivityIndicator 
+  View, Text, StyleSheet, TouchableOpacity, TextInput, 
+  Platform, KeyboardAvoidingView, ScrollView, ActivityIndicator, Alert,
+  LayoutAnimation, UIManager
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { db } from '../../firebaseConfig';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import Animated, { FadeInDown, ZoomIn } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 
-const SUBJECTS = ['All', 'Physics', 'Chemistry', 'Maths', 'Biology'];
+// Firebase Imports
+import { auth, db } from '../../firebaseConfig';
+import { doc, getDoc } from 'firebase/firestore';
+import { AIGeneratorService } from '../../lib/services/aiGeneratorService';
 
-export default function StudyVaultScreen() {
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const MODES = [
+  { id: 'scratch', title: 'Start from Scratch', icon: 'egg-outline', desc: 'Step-by-step concepts' },
+  { id: 'revise', title: 'Exam Revision', icon: 'book-outline', desc: 'Balanced concepts & quizzes' },
+  { id: 'practice', title: 'Hardcore Practice', icon: 'flame-outline', desc: 'Only tricky MCQs & Games' }
+];
+
+const LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
+
+export default function AdvancedPlannerHub() {
   const router = useRouter();
-  const [resources, setResources] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSubject, setSelectedSubject] = useState('All');
+  
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [isFetchingProfile, setIsFetchingProfile] = useState(true);
 
-  // 🚀 FETCH ONLY 'RESOURCE' POSTS
+  const [learningMode, setLearningMode] = useState('revise');
+  const [currentLevel, setCurrentLevel] = useState('Intermediate');
+  
+  const [currentTopic, setCurrentTopic] = useState('');
+  const [topicsList, setTopicsList] = useState<string[]>([]);
+  
+  // 📁 Material Sources
+  const [attachedFiles, setAttachedFiles] = useState<any[]>([]); 
+  const [driveLink, setDriveLink] = useState(''); // 🔥 NEW: Drive Link State
+  
+  const [isUploading, setIsUploading] = useState(false);
+  const [success, setSuccess] = useState(false);
+
   useEffect(() => {
-    // Sirf wo posts layenge jo 'resource' hain
-    const q = query(collection(db, 'posts'), where('type', '==', 'resource'));
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      let fetchedData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      
-      // Client-side sorting (To avoid Firebase Index errors for now)
-      fetchedData.sort((a: any, b: any) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
-      
-      setResources(fetchedData);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    const fetchUserData = async () => {
+      const uid = auth.currentUser?.uid;
+      if (uid) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', uid));
+          if (userDoc.exists()) setUserProfile(userDoc.data());
+        } catch (error) { console.error("Error fetching user:", error); }
+      }
+      setIsFetchingProfile(false);
+    };
+    fetchUserData();
   }, []);
 
-  // 🔍 FILTER LOGIC (Search by Title/Tags + Subject Filter)
-  const filteredResources = resources.filter(res => {
-    const matchesSearch = 
-      res.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      res.tags?.some((tag: string) => tag.toLowerCase().includes(searchQuery.toLowerCase()));
-      
-    const matchesSubject = selectedSubject === 'All' || res.subject === selectedSubject;
-    return matchesSearch && matchesSubject;
-  });
-
-  // 🃏 RESOURCE CARD COMPONENT
-  const renderResourceCard = ({ item, index }: { item: any, index: number }) => {
-    const isDriveLink = item.fileUrl && item.fileUrl.includes('http');
-    
-    return (
-      <Animated.View entering={FadeInDown.delay(index * 100).duration(400).springify()}>
-        <TouchableOpacity 
-          style={styles.card} 
-          activeOpacity={0.7}
-          onPress={() => router.push(`/resources/view/${item.id}`)}
-        >
-          {/* Left Icon Base */}
-          <View style={[styles.iconBox, { backgroundColor: isDriveLink ? '#e0f2fe' : '#fce7f3' }]}>
-            <Ionicons 
-               name={isDriveLink ? "cloud" : "sparkles"} 
-               size={28} 
-               color={isDriveLink ? "#0284c7" : "#db2777"} 
-            />
-          </View>
-
-          {/* Content */}
-          <View style={styles.cardContent}>
-            <View style={styles.cardHeader}>
-              <View style={styles.subjectBadge}>
-                <Text style={styles.subjectText}>{item.subject}</Text>
-              </View>
-              {/* Type Tag */}
-              <View style={[styles.typeTag, { backgroundColor: isDriveLink ? '#f1f5f9' : '#fff1f2' }]}>
-               <Ionicons 
-                  name={isDriveLink ? "cloud" : "flash"} 
-                  size={28} 
-                 color={isDriveLink ? "#0284c7" : "#db2777"} 
-                />
-                <Text style={[styles.typeText, { color: isDriveLink ? "#64748b" : "#e11d48" }]}>
-                  {isDriveLink ? 'Drive Link' : 'Smart Note'}
-                </Text>
-              </View>
-            </View>
-            
-            <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
-            
-            {/* 🏷️ TAGS DISPLAY (Up to 3 tags) */}
-            {item.tags && item.tags.length > 0 && (
-              <View style={styles.tagsRow}>
-                {item.tags.slice(0, 3).map((tag: string, idx: number) => (
-                  <Text key={idx} style={styles.tagText}>#{tag}</Text>
-                ))}
-                {item.tags.length > 3 && <Text style={styles.tagText}>+{item.tags.length - 3}</Text>}
-              </View>
-            )}
-            
-            <View style={styles.cardFooter}>
-              <Text style={styles.authorText}>By {item.authorName?.split(' ')[0]}</Text>
-              <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
-            </View>
-          </View>
-        </TouchableOpacity>
-      </Animated.View>
-    );
+  const addTopic = () => {
+    if (currentTopic.trim().length > 0 && !topicsList.includes(currentTopic.trim())) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setTopicsList([...topicsList, currentTopic.trim()]);
+      setCurrentTopic('');
+    }
   };
 
+  const pickDocument = async () => {
+    let result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'] });
+    if (!result.canceled) {
+      setAttachedFiles([...attachedFiles, { type: 'document', uri: result.assets[0].uri, name: result.assets[0].name }]);
+    }
+  };
+
+ const pickImage = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true, 
+      quality: 0.8,
+      base64: true, // 🔥 DIRECT BASE64: Ab FileReader ki zaroorat hi nahi!
+    });
+    
+    if (!result.canceled) {
+      const asset = result.assets[0];
+      // Hum direct base64 aur mimeType save kar lenge
+      setAttachedFiles([...attachedFiles, { 
+        type: 'image', 
+        uri: asset.uri, 
+        name: 'Uploaded Image',
+        base64: asset.base64, // Pure clean base64
+        mimeType: asset.uri.endsWith('.png') ? 'image/png' : 'image/jpeg'
+      }]);
+    }
+  };
+
+
+  const removeFile = (index: number) => {
+    const newFiles = [...attachedFiles];
+    newFiles.splice(index, 1);
+    setAttachedFiles(newFiles);
+  };
+
+ // 📸 HELPER: Convert URI to Base64 (STRICTLY CLEANED FOR GEMINI)
+const convertUriToBase64 = async (uri: string) => {
+    try {
+      const response = await fetch(uri);
+      if (!response.ok) throw new Error(`HTTP Fetch Error: ${response.status}`);
+      const blob = await response.blob();
+      
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result?.toString() || "";
+          // 🔥 Ultimate Regex Filter: Ye kisi bhi tarah ke 'data:image/...;base64,' prefix ko uda dega
+          const pureBase64 = result.replace(/^data:.*?;base64,/, "");
+          resolve(pureBase64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error("Base64 Conversion Error:", error);
+      return null;
+    }
+  };
+ // 🌐 REAL ENGINE: Extract Drive ID and fetch as Base64 (Smart Platform Detection)
+  const processDriveLink = async (url: string) => {
+    try {
+      // Step 1: Extract File ID
+      const fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
+      if (!fileIdMatch) {
+        Alert.alert("Invalid Link", "Bhai, Google Drive ka link sahi format me nahi hai.");
+        return null;
+      }
+      
+      const fileId = fileIdMatch[1];
+      console.log("Extracted Drive File ID:", fileId);
+
+      // Step 2: Google's direct download endpoint
+      const directDownloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+      
+      // 🛑 THE WEB REALITY CHECK
+      if (Platform.OS === 'web') {
+        Alert.alert(
+          "Web Limitation ⚠️", 
+          "Bhai, Web browser pe Google Drive ki security (CORS) direct download block kar deti hai. PC pe testing ke liye 'Upload File' ya 'Scan Photo' button use kar lo.\n\nPhone (Expo Go) pe ye Drive link ekdum perfect chalega!"
+        );
+        return null; // Rok do, kyunki proxy fail hi hogi
+      }
+      
+      // 📱 MOBILE MAGIC (CORS doesn't exist here)
+      console.log("Mobile platform detected: Fetching directly from Google Drive...");
+      const base64Data = await convertUriToBase64(directDownloadUrl);
+      
+      if (!base64Data) {
+        throw new Error("Failed to fetch. Is the link set to 'Anyone with the link can view'?");
+      }
+      
+      console.log("Google Drive File successfully converted to Base64!");
+      return base64Data;
+
+    } catch (error: any) {
+      console.error("Drive Link Process Error:", error);
+      Alert.alert("Drive Error 🔒", error.message || "File fetch nahi ho payi. Link check karo.");
+      return null;
+    }
+  };
+  const handleGeneratePlan = async () => {
+    if (topicsList.length === 0 && !currentTopic.trim() && attachedFiles.length === 0 && !driveLink.trim()) {
+      Alert.alert("Input Needed", "Please provide a topic, upload a file, or paste a Drive link.");
+      return;
+    }
+
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    setIsUploading(true);
+    setSuccess(false);
+
+    const finalTopics = [...topicsList];
+    if (currentTopic.trim()) finalTopics.push(currentTopic.trim());
+
+    try {
+      let base64Data = null;
+      let detectedMimeType = "image/jpeg"; // Default fallback
+
+      // Handle Image Files FIRST
+      const imageFile = attachedFiles.find(f => f.type === 'image');
+      if (imageFile) {
+        console.log("Processing Local Image...");
+        base64Data = imageFile.base64; // Direct use, no fetch needed!
+        detectedMimeType = imageFile.mimeType;
+      } 
+      // Handle Drive Link
+      else if (driveLink.trim()) {
+        console.log("Processing Drive Link...");
+        base64Data = await processDriveLink(driveLink.trim());
+      }
+      // Handle Local Document (PDF etc)
+      else if (attachedFiles.length > 0) {
+        console.log("Processing Local Document...");
+        base64Data = await convertUriToBase64(attachedFiles[0].uri);
+        if (attachedFiles[0].name.endsWith('.pdf')) detectedMimeType = "application/pdf";
+      }
+
+      // 🔥 Send mimeType in payload!
+      const aiPayload = {
+        subject: "Custom Learning Module",
+        topic: finalTopics.join(', ') || "Uploaded Material Context",
+        examType: userProfile?.targetExam || 'General Prep',
+        goal: learningMode,
+        time: "Custom Session",
+        difficulty: currentLevel,
+        contentPreferences: [],
+        hasFiles: !!base64Data,
+        fileBase64: base64Data, 
+        mimeType: detectedMimeType, // Naya field AI ko batane ke liye
+        fileNames: attachedFiles.map(f => f.name),
+        directText: `Student mode: ${learningMode}. Level: ${currentLevel}. Analyze the material and generate strict micro-learning content.`,
+        userClass: userProfile?.class || 'Not specified',
+        userBoard: userProfile?.board || 'Not specified',
+        weakAreas: 'Not specified' 
+      };
+
+      const result = await AIGeneratorService.processMaterialAndGenerateFeed(aiPayload);
+      
+      if (result) {
+        if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setSuccess(true);
+        setTimeout(() => router.replace('/(tabs)'), 2000);
+      } else {
+        Alert.alert("AI Error", "Failed to generate AI Feed. Try again.");
+      }
+    } catch (error) {
+      console.error("Plan Gen Error:", error);
+      Alert.alert("Error", "Something went wrong.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+  if (isFetchingProfile) return <View style={styles.center}><ActivityIndicator size="large" color="#4f46e5"/></View>;
+
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
-      
-      {/* 🔝 HEADER */}
+    <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color="#0f172a" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Study Vault 📚</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}><Ionicons name="close" size={24} color="#0f172a" /></TouchableOpacity>
+        <Text style={styles.headerTitle}>Create New Module</Text>
+        <View style={styles.helpBtn}><Ionicons name="sparkles" size={20} color="#4f46e5" /></View>
       </View>
 
-      {/* 🔍 SEARCH BAR */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#94a3b8" />
-        <TextInput 
-          style={styles.searchInput}
-          placeholder="Search notes, PYQs or #tags..."
-          placeholderTextColor="#94a3b8"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={20} color="#cbd5e1" />
-          </TouchableOpacity>
-        )}
-      </View>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{flex: 1}}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          
+          {success ? (
+            <Animated.View entering={ZoomIn} style={styles.successBox}>
+              <Ionicons name="rocket" size={80} color="#4f46e5" />
+              <Text style={styles.successTitle}>Module Ready!</Text>
+              <Text style={styles.successSub}>Your personalized feed has been loaded.</Text>
+            </Animated.View>
+          ) : (
+            <Animated.View entering={FadeInDown.springify()}>
+              
+              {/* 🎯 STEP 1: LEARNING MODE */}
+              <View style={styles.card}>
+                <Text style={styles.sectionHeader}>1. How do you want to learn?</Text>
+                <View style={styles.modesContainer}>
+                  {MODES.map((mode) => (
+                    <TouchableOpacity 
+                      key={mode.id} 
+                      style={[styles.modeCard, learningMode === mode.id && styles.modeCardActive]}
+                      onPress={() => { if(Platform.OS !== 'web') Haptics.selectionAsync(); setLearningMode(mode.id); }}
+                    >
+                      <Ionicons name={mode.icon as any} size={28} color={learningMode === mode.id ? '#fff' : '#4f46e5'} />
+                      <Text style={[styles.modeTitle, learningMode === mode.id && {color: '#fff'}]}>{mode.title}</Text>
+                      <Text style={[styles.modeDesc, learningMode === mode.id && {color: '#e0e7ff'}]}>{mode.desc}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
 
-      {/* 🏷️ CATEGORY FILTER */}
-      <View style={styles.filterWrapper}>
-        <FlatList 
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          data={SUBJECTS}
-          keyExtractor={(item) => item}
-          contentContainerStyle={styles.filterList}
-          renderItem={({ item }) => (
-            <TouchableOpacity 
-              style={[styles.filterPill, selectedSubject === item && styles.activeFilterPill]}
-              onPress={() => setSelectedSubject(item)}
-            >
-              <Text style={[styles.filterText, selectedSubject === item && styles.activeFilterText]}>
-                {item}
-              </Text>
-            </TouchableOpacity>
+                <Text style={[styles.label, {marginTop: 20}]}>Your Current Level</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 10}}>
+                  {LEVELS.map(lvl => (
+                    <TouchableOpacity key={lvl} style={[styles.chip, currentLevel === lvl && styles.chipActive]} onPress={() => setCurrentLevel(lvl)}>
+                      <Text style={[styles.chipText, currentLevel === lvl && styles.chipTextActive]}>{lvl}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* 📚 STEP 2: SOURCE MATERIAL */}
+              <View style={styles.card}>
+                <Text style={styles.sectionHeader}>2. What are we studying?</Text>
+                
+                <View style={styles.inputRow}>
+                  <TextInput 
+                    style={styles.topicInput} placeholder="Type topics (e.g. Thermodynamics)" 
+                    value={currentTopic} onChangeText={setCurrentTopic} onSubmitEditing={addTopic}
+                  />
+                  <TouchableOpacity style={styles.addBtn} onPress={addTopic}><Ionicons name="add" size={24} color="#fff" /></TouchableOpacity>
+                </View>
+
+                <View style={styles.topicTagsContainer}>
+                  {topicsList.map((topic, idx) => (
+                    <View key={idx} style={styles.topicTag}>
+                      <Text style={styles.topicTagText}>{topic}</Text>
+                      <TouchableOpacity onPress={() => removeTopic(topic)} style={{marginLeft: 8}}><Ionicons name="close-circle" size={18} color="#ef4444" /></TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+
+                <View style={styles.divider}>
+                  <Text style={styles.dividerText}>OR PROVIDE MATERIAL</Text>
+                </View>
+
+                {/* 🔥 NEW: Google Drive Link Input */}
+                <View style={styles.driveInputContainer}>
+                  <Ionicons name="logo-google" size={20} color="#6366f1" style={{marginRight: 10}} />
+                  <TextInput 
+                    style={styles.driveInput} 
+                    placeholder="Paste Google Drive Link here..." 
+                    value={driveLink} 
+                    onChangeText={setDriveLink}
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                {/* Upload Zone */}
+                <View style={styles.uploadRow}>
+                  <TouchableOpacity style={styles.uploadBox} onPress={pickImage}>
+                    <Ionicons name="camera-outline" size={30} color="#6366f1" />
+                    <Text style={styles.uploadBoxText}>Scan Photo</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.uploadBox} onPress={pickDocument}>
+                    <Ionicons name="document-text-outline" size={30} color="#6366f1" />
+                    <Text style={styles.uploadBoxText}>Upload File</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Show Attached Files */}
+                {attachedFiles.map((file, idx) => (
+                  <Animated.View entering={ZoomIn} key={idx} style={styles.attachedFileRow}>
+                    <Ionicons name={file.type === 'image' ? "image" : "document"} size={24} color="#4f46e5" />
+                    <Text style={styles.attachedFileName} numberOfLines={1}>{file.name}</Text>
+                    <TouchableOpacity onPress={() => removeFile(idx)}><Ionicons name="trash-outline" size={20} color="#ef4444" /></TouchableOpacity>
+                  </Animated.View>
+                ))}
+
+              </View>
+
+              {/* 🚀 SUBMIT ACTION */}
+              <TouchableOpacity style={styles.generateBtn} onPress={handleGeneratePlan} disabled={isUploading}>
+                <LinearGradient colors={['#0f172a', '#4f46e5']} style={styles.btnGradient} start={{x:0, y:0}} end={{x:1, y:1}}>
+                  {isUploading ? <ActivityIndicator color="#fff" /> : (
+                    <><Ionicons name="flash" size={24} color="#fde047" style={{marginRight: 10}} /><Text style={styles.btnText}>Ignite AI Engine</Text></>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+            </Animated.View>
           )}
-        />
-      </View>
 
-      {/* 📚 RESOURCES LIST */}
-      {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color="#2563eb" /></View>
-      ) : (
-        <FlatList
-          data={filteredResources}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          renderItem={renderResourceCard}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Ionicons name="folder-open-outline" size={60} color="#cbd5e1" />
-              <Text style={styles.emptyTitle}>Vault is Empty</Text>
-              <Text style={styles.emptySub}>No resources found. Be the first to share notes!</Text>
-            </View>
-          }
-        />
-      )}
-      
-
-      {/* ➕ FLOATING ACTION BUTTON */}
-      <TouchableOpacity 
-        style={styles.fab} 
-        activeOpacity={0.9} 
-        onPress={() => router.push('/create-post?type=resource')}
-      >
-        <Ionicons name="cloud-upload" size={24} color="#fff" />
-        <Text style={styles.fabText}>Add Notes</Text>
-      </TouchableOpacity>
-
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-// ==========================================
-// 🎨 STYLES
-// ==========================================
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, backgroundColor: '#f4f4f5' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e4e4e7' },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f4f4f5', justifyContent: 'center', alignItems: 'center' },
+  helpBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#eef2ff', justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+  scrollContent: { padding: 15, paddingBottom: 50 },
+  card: { backgroundColor: '#fff', padding: 20, borderRadius: 20, marginBottom: 15, shadowColor: '#000', shadowOffset: {width:0, height:2}, shadowOpacity: 0.05, shadowRadius: 5, elevation: 1 },
+  sectionHeader: { fontSize: 18, fontWeight: '900', color: '#0f172a', marginBottom: 15 },
+  label: { fontSize: 13, fontWeight: '800', color: '#475569', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
   
-  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', paddingHorizontal: 15, paddingTop: 10, paddingBottom: 15 },
-  backBtn: { padding: 5, marginRight: 10 },
-  headerTitle: { fontSize: 24, fontWeight: '900', color: '#0f172a' },
-
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', marginHorizontal: 15, marginTop: 5, paddingHorizontal: 15, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', height: 50 },
-  searchInput: { flex: 1, marginLeft: 10, fontSize: 15, color: '#1e293b' },
-
-  filterWrapper: { marginTop: 15, paddingBottom: 10 },
-  filterList: { paddingHorizontal: 15, gap: 10 },
-  filterPill: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: '#cbd5e1' },
-  activeFilterPill: { backgroundColor: '#0f172a', borderColor: '#0f172a' },
-  filterText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
-  activeFilterText: { color: '#fff' },
-
-  listContent: { padding: 15, paddingBottom: 100 },
+  modesContainer: { gap: 10 },
+  modeCard: { backgroundColor: '#f8fafc', padding: 15, borderRadius: 16, borderWidth: 2, borderColor: '#e2e8f0' },
+  modeCardActive: { backgroundColor: '#4f46e5', borderColor: '#4f46e5' },
+  modeTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginTop: 8 },
+  modeDesc: { fontSize: 13, color: '#64748b', marginTop: 4, fontWeight: '500' },
   
-  card: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, padding: 15, marginBottom: 15, borderWidth: 1, borderColor: '#f1f5f9', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5 },
-  iconBox: { width: 60, height: 60, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  cardContent: { flex: 1, justifyContent: 'center' },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  subjectBadge: { backgroundColor: '#f1f5f9', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  subjectText: { fontSize: 10, fontWeight: '800', color: '#475569', textTransform: 'uppercase' },
-  typeTag: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, gap: 4 },
-  typeText: { fontSize: 9, fontWeight: '800', textTransform: 'uppercase' },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: '#1e293b', marginBottom: 6, lineHeight: 22 },
+  chip: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#f4f4f5', borderRadius: 20, borderWidth: 1, borderColor: '#e4e4e7' },
+  chipActive: { backgroundColor: '#0f172a', borderColor: '#0f172a' },
+  chipText: { fontSize: 13, fontWeight: '700', color: '#475569' },
+  chipTextActive: { color: '#fff' },
+
+  inputRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  topicInput: { flex: 1, backgroundColor: '#f4f4f5', height: 50, borderRadius: 12, paddingHorizontal: 15, fontSize: 15, fontWeight: '600', color: '#0f172a', borderWidth: 1, borderColor: '#e4e4e7' },
+  addBtn: { width: 50, height: 50, backgroundColor: '#0f172a', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  topicTagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  topicTag: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef2ff', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, borderWidth: 1, borderColor: '#c7d2fe' },
+  topicTagText: { fontSize: 14, fontWeight: '700', color: '#4f46e5' },
+
+  divider: { marginVertical: 20, alignItems: 'center' },
+  dividerText: { fontSize: 12, fontWeight: '800', color: '#94a3b8', letterSpacing: 1 },
+
+  // 🔥 NEW DRIVE INPUT STYLE
+  driveInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#c7d2fe', borderRadius: 12, paddingHorizontal: 15, height: 50, marginBottom: 15 },
+  driveInput: { flex: 1, fontSize: 14, fontWeight: '600', color: '#0f172a' },
   
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
-  tagText: { fontSize: 11, color: '#2563eb', fontWeight: '600', backgroundColor: '#eff6ff', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  uploadRow: { flexDirection: 'row', gap: 15 },
+  uploadBox: { flex: 1, backgroundColor: '#f8fafc', borderWidth: 2, borderColor: '#e2e8f0', borderStyle: 'dashed', borderRadius: 16, padding: 20, alignItems: 'center', justifyContent: 'center' },
+  uploadBoxText: { fontSize: 14, fontWeight: '700', color: '#64748b', marginTop: 8 },
 
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  authorText: { fontSize: 12, color: '#94a3b8', fontWeight: '600' },
+  attachedFileRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef2ff', padding: 12, borderRadius: 12, marginTop: 15, borderWidth: 1, borderColor: '#c7d2fe' },
+  attachedFileName: { flex: 1, fontSize: 14, fontWeight: '700', color: '#4f46e5', marginLeft: 10 },
 
-  emptyState: { alignItems: 'center', marginTop: 60, paddingHorizontal: 40 },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: '#1e293b', marginTop: 15 },
-  emptySub: { fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 8, lineHeight: 20 },
-
-  fab: { position: 'absolute', bottom: 30, right: 20, backgroundColor: '#2563eb', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, borderRadius: 30, elevation: 5, shadowColor: '#2563eb', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5 },
-  fabText: { color: '#fff', fontSize: 16, fontWeight: '800', marginLeft: 8 }
+  generateBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 15, elevation: 8 },
+  btnGradient: { flexDirection: 'row', height: 60, justifyContent: 'center', alignItems: 'center' },
+  btnText: { color: '#fff', fontSize: 18, fontWeight: '900', letterSpacing: 0.5 },
+  successBox: { alignItems: 'center', padding: 40 },
+  successTitle: { fontSize: 24, fontWeight: '900', marginTop: 20 },
+  successSub: { fontSize: 14, color: '#64748b', textAlign: 'center' }
 });

@@ -5,6 +5,8 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { onAuthStateChanged, signOut } from 'firebase/auth'; // 🔥 signOut import kiya
 import { doc, onSnapshot } from 'firebase/firestore'; // 🔥 getDoc ki jagah onSnapshot
 
+import 'react-native-gesture-handler';
+
 // 🔥 Naya Loader Import
 import EduxityLoader from '../components/EduxityLoader';
 

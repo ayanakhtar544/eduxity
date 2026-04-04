@@ -1,257 +1,170 @@
-// Location: lib/services/aiGeneratorService.ts
-import { db, auth } from '../../firebaseConfig';
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { auth, db } from '../../firebaseConfig';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// Initialize SDK
-const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
-const genAI = new GoogleGenerativeAI(apiKey);
-
-// ==========================================
-// 🧠 INTERFACES & TYPES
-// ==========================================
-export interface AIParams {
-  subject: string;
-  topic: string;
-  examType: string;
-  goal: string; // 'scratch', 'revise', or 'practice'
-  time: string;
-  difficulty: string; // 'Beginner', 'Intermediate', 'Advanced'
-  contentPreferences: string[];
-  hasFiles: boolean;
-  fileNames: string[];
-  fileBase64?: string | null; // Vision API ke liye image data
-  directText: string;
-  userClass?: string;
-  userBoard?: string;
-  weakAreas?: string;
+// Initialize the Gemini Client
+// Ensure your API key is properly set in your .env or Expo config
+const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+if (!apiKey) {
+  console.warn("⚠️ EXPO_PUBLIC_GEMINI_API_KEY is missing! Engine will fail.");
 }
 
-export class AIGeneratorService {
+const genAI = new GoogleGenerativeAI(apiKey || "");
 
-  // ==========================================
-  // 🔍 1. MODEL DISCOVERY ENGINE
-  // ==========================================
-  static async getWorkingModel() {
-    try {
-      console.log("🔍 Scanning for available Gemini Models...");
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-      const data = await response.json();
-      if (!response.ok) throw new Error("API Key Invalid");
+export const AIGeneratorService = {
+  /**
+   * Core Engine: Processes user inputs and optional files to generate a structured 5-post learning feed.
+   */
+  processMaterialAndGenerateFeed: async (params: {
+    topic: string;
+    subject?: string;
+    chapter?: string;
+    userClass: string;
+    examType: string;
+    difficulty: string;
+    hasFiles: boolean;
+    fileBase64?: string | null;
+    mimeType?: string;
+    directText?: string; // Optional override prompt
+  }): Promise<boolean> => {
+    
+    // 🛡️ Retry Mechanism State
+    const MAX_RETRIES = 2;
+    let attempt = 0;
 
-      const validModels = data.models.filter((m: any) => 
-        m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent")
-      );
-      const modelNames = validModels.map((m: any) => m.name.replace('models/', ''));
-      
-      // Hamesha flash models ko priority do kyunki wo fast hain aur Vision support karte hain
-      if (modelNames.includes('gemini-1.5-flash')) return 'gemini-1.5-flash';
-      if (modelNames.includes('gemini-2.5-flash')) return 'gemini-2.5-flash';
-      if (modelNames.includes('gemini-pro')) return 'gemini-pro';
-      
-      return modelNames[0];
-    } catch (error) {
-      console.warn("⚠️ Fallback to default model due to fetch error.");
-      return 'gemini-1.5-flash'; // Hard fallback
-    }
-  }
-
-  // ==========================================
-  // 🛡️ 2. BULLETPROOF JSON CLEANER
-  // ==========================================
-  static cleanAndParseJSON(rawText: string) {
-    try {
-      // Remove markdown wrappers like ```json and ```
-      let cleaned = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-      
-      // Find the first '[' and last ']' to extract purely the array
-      const startIndex = cleaned.indexOf('[');
-      const endIndex = cleaned.lastIndexOf(']');
-      
-      if (startIndex !== -1 && endIndex !== -1) {
-        cleaned = cleaned.substring(startIndex, endIndex + 1);
-      } else {
-        throw new Error("No array brackets found in AI output.");
-      }
-
-      // Parse the string
-      const parsedData = JSON.parse(cleaned);
-      if (!Array.isArray(parsedData)) throw new Error("Parsed data is not an array.");
-      
-      return parsedData;
-    } catch (error) {
-      console.error("❌ CRITICAL: JSON Parsing Failed. Raw Output was:\n", rawText);
-      throw new Error("AI generated malformed JSON data.");
-    }
-  }
-
-  // ==========================================
-  // 🚀 3. THE MAIN GENERATOR ENGINE
-  // ==========================================
-  static async processMaterialAndGenerateFeed(params: AIParams) {
-    const currentUid = auth.currentUser?.uid;
-    if (!currentUid) throw new Error("User not authenticated");
-    if (!apiKey || apiKey.trim() === "") throw new Error("API Key is missing from .env");
-
-    try {
-      const workingModelName = await this.getWorkingModel();
-      console.log(`🧠 Igniting AI Engine (${workingModelName}) for Mode: [${params.goal.toUpperCase()}]`);
-
-      // ---------------------------------------------------------
-      // 🎭 DYNAMIC PEDAGOGY INSTRUCTIONS (Tuning the AI's Brain)
-      // ---------------------------------------------------------
-      let pedagogyStyle = "";
-      if (params.goal === 'scratch') {
-        pedagogyStyle = `
-          MODE: START FROM SCRATCH (ZERO TO HERO)
-          - The user is an absolute beginner. Explain concepts like they are 5 years old (ELI5).
-          - Use highly relatable daily-life analogies (e.g., Pizza, Cars, Sports).
-          - Make the Quizzes very easy to build confidence. Do NOT use heavy jargon without explaining it first.
-        `;
-      } else if (params.goal === 'practice') {
-        pedagogyStyle = `
-          MODE: HARDCORE PRACTICE
-          - The user wants a challenge. Skip basic definitions.
-          - Make the 'quiz_mcq' extremely tricky. Use common student misconceptions as the wrong options (distractors).
-          - The 'mini_game_match' should connect advanced formulas, complex phenomena, or edge-cases.
-        `;
-      } else {
-        pedagogyStyle = `
-          MODE: EXAM REVISION
-          - The user is revising for ${params.examType}. Keep explanations concise, bullet-pointed, and high-yield.
-          - Focus heavily on frequently asked concepts and high-probability topics.
-          - Balance the difficulty.
-        `;
-      }
-
-      let imageContextText = params.hasFiles ? `
-        🚨 VISION MODE ACTIVE: The user has attached an image (notes/book page/question). 
-        You MUST analyze the provided image. Extract the core concepts, problems, or text from it, and base the 5 posts strictly on the content found within this image.
-      ` : "";
-
-      // ---------------------------------------------------------
-      // 🔥 THE MASSIVE PROMPT (God-Tier Instructions)
-      // ---------------------------------------------------------
-      const promptText = `
-        You are 'Eduxity AI', an elite, dopamine-driven educational engine designed to make learning as addictive as TikTok or Instagram Reels. 
-        Your job is to generate a strictly formatted JSON array of interactive learning posts.
-
-        =========================================
-        👤 STUDENT CONTEXT & PROFILE
-        =========================================
-        - Class/Grade: ${params.userClass || 'Class 11/12'}
-        - Board/Curriculum: ${params.userBoard || 'CBSE/State Board'}
-        - Subject & Requested Topic: ${params.subject} - ${params.topic}
-        - Target Exam: ${params.examType}
-        - Current Level: ${params.difficulty}
-        - Stated Weak Areas: ${params.weakAreas || 'None specifically mentioned'}
-        - User's Custom Instructions: ${params.directText}
-
-        =========================================
-        🧠 PEDAGOGY & TONE INSTRUCTIONS
-        =========================================
-        ${pedagogyStyle}
-        ${imageContextText}
-        - Use the "Curiosity Gap" trick: Hook the user in the question/front, reward them in the answer/explanation.
-        - Tone: Energetic, encouraging, slightly witty, but academically 100% accurate.
-
-        =========================================
-        🔥 MANDATORY COMPOSITION RULE (EXACTLY 5 ITEMS)
-        =========================================
-        You MUST generate EXACTLY 5 JSON objects in this EXACT order. Do not skip any, do not add extra.
+    while (attempt < MAX_RETRIES) {
+      attempt++;
+      try {
+        console.log(`🚀 AI Engine Ignition [Attempt ${attempt}/${MAX_RETRIES}]...`);
         
-        1. "concept_micro" (The Hook): A mind-blowing fact, core concept, or real-world application. Keep it under 4 sentences.
-        2. "flashcard" (Active Recall): A direct question on the front, and a crisp, bold answer on the back.
-        3. "quiz_mcq" (Application): A conceptual multiple-choice question. Give 4 options. Option length must be short.
-        4. "quiz_tf" (Rapid Fire): A True/False statement focusing on a common myth or misconception.
-        5. "mini_game_match" (The Boss Level): Provide EXACTLY 3 pairs. Do NOT use boring textbook definitions. Use funny analogies, tricky applications, or historical facts related to the topic. (e.g. Term: "Inertia", Definition: "Why you spill coffee when the bus brakes suddenly").
+        // 1. Determine Model (Vision vs Text)
+        // Note: 'gemini-2.5-flash' handles both vision and text efficiently in the latest API.
+        const workingModelName = "gemini-2.5-flash"; 
+        const model = genAI.getGenerativeModel({ model: workingModelName });
 
-        =========================================
-        📐 CRITICAL FORMATTING & MATH RULES (DO NOT FAIL THESE)
-        =========================================
-        The frontend mobile app DOES NOT support raw LaTeX or Markdown math. You will crash the app if you use them.
-        - NO LaTeX commands (DO NOT use \\frac, \\sqrt, x^2, _, etc.).
-        - USE UNICODE EXCLUSIVELY:
-          - Powers/Exponents: ², ³, ⁴, ⁿ, ⁻¹ (Example: "v² = u² + 2as" or "ms⁻²").
-          - Subscripts: ₁, ₂, ₃, ₄ (Example: "H₂O", "v₁").
-          - Fractions: ½, ⅓, ¼, ¾.
-          - Symbols: π, Δ, θ, α, β, γ, °, √, ∞, ±, ≈, ≠, ≤, ≥, Σ.
-        - If a formula is too complex for Unicode, rewrite the question to be conceptual rather than heavily numerical.
+        // 2. The Master Prompt (Strict System Instructions)
+        const basePrompt = params.directText || `
+          You are an elite, hyper-intelligent Educator AI. Your task is to generate exactly 5 distinct, highly interactive micro-learning posts.
 
-        =========================================
-        🛡️ STRICT JSON SCHEMA
-        =========================================
-        Output ONLY a valid JSON array. No conversational text before or after.
-        ESCAPE ALL internal double quotes using \\". Use \\n for line breaks inside strings.
+          --- CONTEXT ---
+          Target Audience: ${params.userClass} preparing for ${params.examType}.
+          Difficulty Baseline: ${params.difficulty}.
+          Input Topic: "${params.topic}"
+          Given Subject: "${params.subject === 'AUTO_DETECT' ? 'Detect from context/image' : params.subject}"
+          Given Chapter: "${params.chapter === 'AUTO_DETECT' ? 'Detect from context/image' : params.chapter}"
 
-        [
-          { "type": "concept_micro", "topic": "${params.topic}", "difficulty": "${params.difficulty}", "content": { "title": "Catchy Title Here", "explanation": "Explanation here..." } },
-          { "type": "flashcard", "topic": "${params.topic}", "difficulty": "${params.difficulty}", "content": { "front": "Question...", "back": "Answer..." } },
-          { "type": "quiz_mcq", "topic": "${params.topic}", "difficulty": "${params.difficulty}", "content": { "question": "Question...", "options": ["A", "B", "C", "D"], "correctAnswerIndex": 0, "explanation": "Why A is correct..." } },
-          { "type": "quiz_tf", "topic": "${params.topic}", "difficulty": "${params.difficulty}", "content": { "statement": "Statement here...", "isTrue": true, "explanation": "Why it is true/false..." } },
-          { "type": "mini_game_match", "topic": "${params.topic}", "difficulty": "${params.difficulty}", "content": { "pairs": [{"term": "T1", "definition": "D1"}, {"term": "T2", "definition": "D2"}, {"term": "T3", "definition": "D3"}] } }
-        ]
-      `;
+          --- TASK REQUIREMENTS ---
+          1. Analyze the context (and attached image if present). 
+          2. IF Subject or Chapter is marked as "Detect", you MUST infer the correct academic Subject (e.g., Physics, History) and Chapter based on the topic/image. Do not leave them blank.
+          3. Generate EXACTLY 5 posts. Ensure a logical progression (e.g., Concept -> Flashcard -> Practice -> Application).
 
-      // ---------------------------------------------------------
-      // 📸 API EXECUTION (Handling Text vs Multimodal)
-      // ---------------------------------------------------------
-      const model = genAI.getGenerativeModel({ model: workingModelName });
-      let result;
+          --- CRITICAL JSON SCHEMA ---
+          You must respond ONLY with a raw, valid JSON array. DO NOT wrap the response in markdown blocks (like \`\`\`json). Provide NO conversational text.
 
-      if (params.hasFiles && params.fileBase64) {
-        console.log(`👁️ Vision Engine Engaged. Sending ${params.mimeType || "image/jpeg"} to Gemini...`);
-        const imagePart = {
-          inlineData: { 
-            data: params.fileBase64, 
-            // 🔥 Ab hum hardcoded 'image/jpeg' ki jagah dynamic mimeType bhej rahe hain
-            mimeType: (params as any).mimeType || "image/jpeg" 
-          } 
-        };
-        // Multimodal Request array: [Text Prompt, Image Part]
-        result = await model.generateContent([promptText, imagePart]);
-      } else {
-        console.log("📝 Text Engine Engaged: Sending standard prompt...");
-        // Standard Text Request
-        result = await model.generateContent(promptText);
-      }
+          [
+            {
+              "type": "concept_micro" | "flashcard" | "quiz_mcq" | "quiz_tf" | "mini_game_match",
+              "topic": "Specific sub-topic (3-5 words)",
+              "subject": "Inferred or given Subject",
+              "chapter": "Inferred or given Chapter",
+              "userClass": "${params.userClass}",
+              "examContext": "${params.examType}",
+              "difficulty": "${params.difficulty}",
+              "content": {
+                // Must strictly follow the structure required for the specific "type"
+                // concept_micro: { "title": string, "explanation": string }
+                // flashcard: { "front": string, "back": string }
+                // quiz_mcq: { "question": string, "options": string[4], "correctAnswerIndex": integer 0-3, "explanation": string }
+                // quiz_tf: { "statement": string, "isTrue": boolean, "explanation": string }
+                // mini_game_match: { "pairs": [{ "term": string, "definition": string }, ...] } (exactly 4 pairs)
+              }
+            }
+          ]
+        `;
 
-      const responseText = result.response.text();
-      
-      // ---------------------------------------------------------
-      // 🧹 SANITIZE, PARSE & SAVE TO FIREBASE
-      // ---------------------------------------------------------
-      const aiResponseJSON = this.cleanAndParseJSON(responseText);
+        let result;
 
-      console.log(`✅ Success! Generated ${aiResponseJSON.length} highly customized posts. Injecting to Firestore...`);
+        // 3. Execute Request (Multimodal or Pure Text)
+        if (params.hasFiles && params.fileBase64 && params.mimeType) {
+          console.log(`👁️ Vision Mode Active. Scanning ${params.mimeType}...`);
+          const imagePart = {
+            inlineData: { 
+              data: params.fileBase64, 
+              mimeType: params.mimeType 
+            }
+          };
+          result = await model.generateContent([basePrompt, imagePart]);
+        } else {
+          console.log("📝 Text Mode Active. Processing constraints...");
+          result = await model.generateContent(basePrompt);
+        }
 
-      const batchPromises = aiResponseJSON.map(async (item: any) => {
+        const responseText = result.response.text();
+
+        // 4. Bulletproof JSON Extraction
+        // AI sometimes ignores instructions and wraps JSON in ```json ... ``` or adds intro text.
+        // This regex finds the first '[' and the last ']' to extract the pure array.
+        const jsonMatch = responseText.match(/\[[\s\S]*\]/);
         
-        // Final safety net for undefined values
-        const safeType = item.type || 'concept_micro';
-        const safeTopic = item.topic || params.topic || 'General Knowledge';
-        const safeDifficulty = item.difficulty || params.difficulty || 'Medium';
+        if (!jsonMatch) {
+          console.error("AI Response snippet:", responseText.slice(0, 100));
+          throw new Error("Regex Extraction Failed: No valid JSON array found in AI output.");
+        }
+
+        // 5. Parse the extracted string
+        let generatedItems: any[];
+        try {
+          generatedItems = JSON.parse(jsonMatch[0]);
+        } catch (parseError) {
+          console.error("Failed to parse extracted JSON string.");
+          throw parseError; // Triggers retry
+        }
+
+        // 6. Basic Validation
+        if (!Array.isArray(generatedItems) || generatedItems.length === 0) {
+          throw new Error("Parsed result is not an array or is empty.");
+        }
+
+        // 7. Commit to Database (Firebase)
+        console.log(`💾 Data Validated. Saving ${generatedItems.length} items to Firebase...`);
+        const userId = auth.currentUser?.uid || "anonymous";
         
-        return addDoc(collection(db, 'ai_feed_items'), {
-          userId: currentUid,
-          type: safeType,
-          topic: safeTopic,
-          difficulty: safeDifficulty,
-          content: item.content || {}, // The actual data
-          examContext: params.examType || 'Revision',
-          createdAt: serverTimestamp(),
-          engagementScore: 100 // Starting score for future sorting algorithms
+        // Save operations concurrently for speed
+        const savePromises = generatedItems.map(item => {
+          return addDoc(collection(db, 'ai_feed_items'), {
+            userId,
+            type: item.type,
+            topic: item.topic || params.topic,
+            subject: item.subject || 'Uncategorized', 
+            chapter: item.chapter || 'General',       
+            userClass: item.userClass || params.userClass,
+            examContext: item.examContext || params.examType,
+            difficulty: item.difficulty || params.difficulty,
+            content: item.content,
+            savedBy: [], // Array for bookmarks
+            createdAt: serverTimestamp(),
+          });
         });
-      });
 
-      await Promise.all(batchPromises);
-      console.log("🔥 All posts securely saved to Firebase!");
-      
-      return true;
+        await Promise.all(savePromises);
+        console.log("✅ Success: Pipeline completed without errors.");
+        
+        return true; // Return success immediately
 
-    } catch (error: any) {
-      console.error("❌ Ultimate Generator Crash Log:\n", error);
-      return false; // Tells the UI that generation failed
+      } catch (error: any) {
+        console.error(`❌ Attempt ${attempt} Failed:`, error.message);
+        
+        if (attempt >= MAX_RETRIES) {
+          console.error("🚨 Critical Engine Failure: Max retries reached.");
+          return false;
+        }
+        
+        console.log("🔄 Retrying pipeline...");
+        // Wait 1 second before retrying to prevent rate limit collisions
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
+    
+    return false; // Fallback failure
   }
-}
+};

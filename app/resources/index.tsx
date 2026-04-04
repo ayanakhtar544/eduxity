@@ -38,6 +38,10 @@ export default function ResourceUploadScreen() {
   const [isUploading, setIsUploading] = useState(false);
   const [loadingText, setLoadingText] = useState("Igniting AI Engine...");
 
+
+  const [selectedLanguage, setSelectedLanguage] = useState('Hinglish'); // Default Hinglish 🚀
+  const LANGUAGES = ['English', 'Hindi', 'Hinglish'];
+
   // 📡 FETCH USER CONTEXT
   useEffect(() => {
     const fetchUser = async () => {
@@ -141,14 +145,14 @@ export default function ResourceUploadScreen() {
         topic: currentTopic.trim() || "Analyze from attached material",
         subject: subject.trim() || "AUTO_DETECT", 
         chapter: chapter.trim() || "AUTO_DETECT",
-        
         userClass: userProfile?.class || 'Class 11',
         examType: userProfile?.targetExam || 'JEE Mains',
         difficulty: userProfile?.level || 'Advanced',
-        
         hasFiles: !!base64Data,
         fileBase64: base64Data, 
         mimeType: detectedMimeType,
+        language: selectedLanguage, // 🔥 SEND LANGUAGE
+        count: 15, // 🔥 15 POSTS ON INITIAL GENERATION
       };
 
       const result = await AIGeneratorService.processMaterialAndGenerateFeed(aiPayload);
@@ -271,6 +275,22 @@ export default function ResourceUploadScreen() {
                 />
               </Animated.View>
             )}
+          </Animated.View>
+
+          {/* 🌐 LANGUAGE SELECTOR */}
+          <Animated.View entering={FadeInDown.delay(150).springify()} style={{marginTop: 20}}>
+            <Text style={styles.label}>Choose Learning Language 🗣️</Text>
+            <View style={styles.tabContainer}>
+              {LANGUAGES.map(lang => (
+                <TouchableOpacity 
+                  key={lang} 
+                  style={[styles.tabBtn, selectedLanguage === lang && styles.tabBtnActive]} 
+                  onPress={() => setSelectedLanguage(lang)}
+                >
+                  <Text style={[styles.tabText, selectedLanguage === lang && styles.tabTextActive]}>{lang}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </Animated.View>
 
           {/* 🚀 GENERATE BUTTON */}

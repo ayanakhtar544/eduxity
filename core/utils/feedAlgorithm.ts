@@ -1,0 +1,79 @@
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase/firebaseConfig'; // Ensure this path is correct
+
+// ==========================================
+// 🚀 1. GLOBAL TREND ENGINE (The Base Rank)
+// ==========================================
+const ACTION_WEIGHTS = { LIKE: 1, COMMENT: 3, SAVE: 5, ATTEMPT_TEST: 10 };
+
+const calculateTrendScore = (likes: number, comments: number, saves: number, tests: number, createdAtMillis: number) => {
+  const engagementScore = (likes * ACTION_WEIGHTS.LIKE) + (comments * ACTION_WEIGHTS.COMMENT) + (saves * ACTION_WEIGHTS.SAVE) + (tests * ACTION_WEIGHTS.ATTEMPT_TEST);
+  const hoursOld = (Date.now() - createdAtMillis) / (1000 * 60 * 60);
+  const gravity = Math.pow(Math.max(hoursOld + 2, 2), 1.5); 
+  return (engagementScore + 1) / gravity; 
+};
+
+export const updatePostTrendScore = async (postId: string, collectionName: string = 'ai_feed_items') => {
+  try {
+    const postRef = doc(db, collectionName, postId);
+    const postSnap = await getDoc(postRef);
+    if (!postSnap.exists()) return;
+
+    const data = postSnap.data();
+    const createdAtMillis = data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now();
+    const currentLikes = data.likes?.length || 0;
+    const currentComments = data.commentsCount || 0;
+    const currentSaves = data.savedBy?.length || 0;
+    const currentTestAttempts = data.responses ? Object.keys(data.responses).length : 0;
+
+    const newTrendScore = calculateTrendScore(currentLikes, currentComments, currentSaves, currentTestAttempts, createdAtMillis);
+    await updateDoc(postRef, { trendScore: newTrendScore, lastInteractionAt: Date.now() });
+  } catch (error) {
+    console.error("Algorithm Engine Error:", error);
+  }
+};
+
+// ==========================================
+// 🧠 2. THE INSTA-STYLE PERSONALIZATION ENGINE (For You Tab)
+// ==========================================
+export const personalizeFeedForUser = (fetchedPosts: any[], currentUserData: any, myFriendsIds: string[], currentUid: string) => {
+  const userInterests = currentUserData?.interests || [];
+  const targetExam = currentUserData?.targetExam || currentUserData?.grade || 'JEE';
+
+  let smartPosts = fetchedPosts.map(post => {
+    let baseScore = post.trendScore || 1;
+    let affinityMultiplier = 1;
+    let algoReason = "";
+
+    if (myFriendsIds.includes(post.authorId)) { affinityMultiplier += 0.5; algoReason = algoReason || "👥 From your Network"; }
+    if (userInterests.includes(post.category) || post.tags?.some((t: string) => userInterests.includes(t))) { affinityMultiplier += 1.0; algoReason = algoReason || `🔥 Picked for you in ${post.category || 'your interests'}`; }
+    if (post.category === targetExam || post.title?.includes(targetExam)) { affinityMultiplier += 1.5; algoReason = `🎯 Important for ${targetExam}`; }
+    if (post.type === 'live_test') { affinityMultiplier += 0.8; algoReason = algoReason || "📝 Recommended Mock Test"; }
+    if (post.authorId === currentUid) { affinityMultiplier = 0.5; }
+
+    return { ...post, algoScore: baseScore * affinityMultiplier, algoReason: algoReason };
+  });
+
+  smartPosts.sort((a, b) => b.algoScore - a.algoScore);
+
+  // Gamification Injection
+  if (targetExam === '9th' || targetExam === '10th' || targetExam === 'Foundation') {
+    if (smartPosts.length >= 4) smartPosts.splice(3, 0, { id: 'game_formula_ninja', type: 'mini_game_match', topic: 'Formula Ninja' });
+  } else {
+    if (smartPosts.length >= 4) smartPosts.splice(3, 0, { id: 'game_brain_match_1', type: 'mini_game_match', topic: 'Brain Match' });
+  }
+  return smartPosts;
+};
+
+// ==========================================
+// 🗂️ 3. MY SPACE ORGANIZER (Chronological + Type Weight)
+// ==========================================
+export const organizeMySpace = (posts: any[]) => {
+  const typeWeight: any = { concept_micro: 1, flashcard: 2, quiz_tf: 3, mini_game_match: 4, quiz_mcq: 5 };
+  return [...posts].sort((a, b) => {
+    const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+    const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+    if (Math.abs(timeA - timeB) < 10000) return (typeWeight[a.type] || 99) - (typeWeight[b.type] || 99);
+    return timeB - timeA;
+  });
+};

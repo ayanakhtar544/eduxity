@@ -28,7 +28,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import ChatBubble from '../../components/chat/ChatBubble'; 
 import LiveTestModal from '../../components/chat/LiveTestModal';
 import HomeworkDashboard from '../../components/chat/HomeworkDashboard';
-import ImageViewerModal from '../../components/ImageViewerModal';
+import ImageViewerModal from '../../components/ui/ImageViewerModal';
 
 import * as ImagePicker from 'expo-image-picker';
 import { Alert } from 'react-native';

@@ -15,7 +15,6 @@ import Animated, { FadeInDown, FadeInUp, SlideInDown } from 'react-native-reanim
 // Firebase & Gamification
 import { auth, db } from '../../firebaseConfig';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { processAction } from '../../helpers/gamificationEngine';
 import { useRewardStore } from '../../store/useRewardStore';
 
 const SUBJECTS = ['Physics', 'Chemistry', 'Mathematics', 'Biology', 'Computer Science', 'Other'];

@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../firebaseConfig';
 import { doc, updateDoc } from 'firebase/firestore';
-import { awardXP } from '../../helpers/gamificationEngine';
 import * as Haptics from 'expo-haptics';
 
 export default function LiveTestModal({ activeTest, onClose, groupId }: any) {

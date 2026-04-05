@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
 // 🛑 IMPORTANT: Tumhara BADGES_LIST import
-import { BADGES_LIST } from '../../helpers/gamificationEngine'; 
+import { BADGES_LIST } from '../../core/utils/gamificationEngine'; 
 
 const { width } = Dimensions.get('window');
 const DEFAULT_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';

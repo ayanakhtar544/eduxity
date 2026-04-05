@@ -104,6 +104,37 @@ export default function SettingsScreen() {
     router.push('/terms');
   };
 
+const forceRefreshAdminToken = async () => {
+  try {
+    const user = auth.currentUser;
+    
+    if (!user) {
+      Alert.alert("Error", "Bhai, pehle login toh kar le!");
+      return;
+    }
+
+    console.log("🔄 Force refreshing Firebase Auth token...");
+    
+    // 🔥 The Magic Line: 'true' forces a network request to bypass the 1-hour cache
+    await user.getIdToken(true); 
+
+    // Verification: Decode the new token to see if the 'admin' claim is actually there
+    const idTokenResult = await user.getIdTokenResult();
+    
+    if (idTokenResult.claims.admin) {
+      Alert.alert("Success! 🎉", "Super Admin powers activated! You can now access the dashboard.");
+      console.log("✅ Admin claim verified in token:", idTokenResult.claims);
+    } else {
+      Alert.alert("Failed", "Token refreshed, but 'admin' claim is missing. Check your Node script.");
+      console.log("❌ Current claims:", idTokenResult.claims);
+    }
+
+  } catch (error: any) {
+    console.error("Token refresh error:", error);
+    Alert.alert("Error", "Token refresh failed.");
+  }
+};
+
   // ==========================================
   // 🧩 UI COMPONENTS
   // ==========================================

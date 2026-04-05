@@ -1,113 +1,86 @@
-// Location: app/_layout.tsx
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { onAuthStateChanged, signOut } from 'firebase/auth'; // 🔥 signOut import kiya
-import { doc, onSnapshot } from 'firebase/firestore'; // 🔥 getDoc ki jagah onSnapshot
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { Slot, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen'; // 🔥 SplashScreen control ke liye
+import { onAuthStateChanged } from 'firebase/auth';
 
-import 'react-native-gesture-handler';
-
-// 🔥 Naya Loader Import
-import EduxityLoader from '../components/EduxityLoader';
-
-// 🔥 Firebase & Store Imports
-import { auth, db } from '../firebaseConfig'; 
+// Paths check kar lena (Tere project ke hisaab se)
+import { auth } from '../core/firebase/firebaseConfig';
 import { useUserStore } from '../store/useUserStore';
-import RewardOverlay from '../components/RewardOverlay'; 
+
+// 1. Splash screen ko tab tak roko jab tak hum ready na hon
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [initializing, setInitializing] = useState(true);
-  const router = useRouter();
+  const [appIsReady, setAppIsReady] = useState(false);
+  const setUser = useUserStore((state) => state.setUser);
   const segments = useSegments();
-  
-  // Zustand State
-  const setUserData = useUserStore((state) => state.setUserData);
-  const clearUserData = useUserStore((state) => state.clearUserData);
+  const router = useRouter();
 
-  // ============================================================================
-  // 🔥 1. GLOBAL REAL-TIME DATA FETCH (Auth Listener)
-  // ============================================================================
+  // ==========================================
+  // 🔐 1. AUTH & INITIALIZATION
+  // ==========================================
   useEffect(() => {
-    let unsubscribeUserDoc: any = null;
-
-    const subscriber = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-        // User logged in hai, uska document real-time me suno
-        const userDocRef = doc(db, 'users', currentUser.uid);
-        
-        unsubscribeUserDoc = onSnapshot(userDocRef, async (userDocSnap) => {
-          if (userDocSnap.exists()) {
-            const data = userDocSnap.data();
-            
-            // 🚨 ENFORCE BAN: Agar admin ne ban kiya hai toh user ko fauran bahar feko
-            if (data.isBanned) {
-              Alert.alert("Access Denied", "Your account has been suspended by Eduxity Admin.");
-              await signOut(auth);
-              clearUserData();
-              return;
-            }
-
-            // 🎁 GIFT COINS & SYNC: Agar ban nahi hai, toh uska data (coins, xp) update karo
-            setUserData(data); 
-          }
+    async function prepare() {
+      try {
+        // Firebase Auth Listener
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+          console.log("🔥 Auth State Updated:", user ? "User Found" : "No User");
+          setUser(user);
+          setAppIsReady(true); // Signal ki ab app ready hai
         });
-      } else {
-        // User logged out hai
-        if (unsubscribeUserDoc) unsubscribeUserDoc();
-        clearUserData(); 
+
+        return () => unsubscribe();
+      } catch (e) {
+        console.warn("❌ Initialization Error:", e);
+        setAppIsReady(true); // Error aaye tab bhi app dikhao, crash mat karo
       }
-      setInitializing(false);
-    });
-
-    return () => {
-      subscriber();
-      if (unsubscribeUserDoc) unsubscribeUserDoc();
-    };
-  }, []);
-
-  // ============================================================================
-  // 🛡️ 2. ROUTE PROTECTION (THE GATEKEEPER)
-  // ============================================================================
-  useEffect(() => {
-    if (initializing) return;
-
-    const user = auth.currentUser;
-    const inAuthGroup = segments[0] === 'auth' || segments[0] === 'login' || !segments[0];
-
-    if (!user && !inAuthGroup) {
-      router.replace('/'); 
-    } else if (user && inAuthGroup) {
-      router.replace('/(tabs)');
     }
-  }, [initializing, auth.currentUser, segments]); 
 
-  // ============================================================================
-  // ⏳ 3. LOADING STATE
-  // ============================================================================
-  if (initializing) {
-    return (
-      <View style={styles.loaderContainer}>
-        <EduxityLoader />
-      </View>
-    );
+    prepare();
+  }, [setUser]);
+
+  // ==========================================
+  // 🚀 2. HIDE LOGO & NAVIGATION
+  // ==========================================
+  useEffect(() => {
+    if (!appIsReady) return;
+
+    const hideSplashAndNavigate = async () => {
+      // 1. Sabse pehle logo ko hatao screen se
+      await SplashScreen.hideAsync();
+      console.log("✅ Splash Screen Hidden");
+
+      // 2. Phir check karo kahan bhejna hai
+      const inAuthGroup = segments[0] === '(auth)';
+
+      if (!auth.currentUser && !inAuthGroup) {
+        router.replace('/(auth)/auth');
+      } else if (auth.currentUser && inAuthGroup) {
+        router.replace('/(tabs)');
+      }
+    };
+
+    hideSplashAndNavigate();
+  }, [appIsReady, segments]);
+
+  // ==========================================
+  // ⏳ 3. FALLBACK UI (Just in case)
+  // ==========================================
+  if (!appIsReady) {
+    // Ye tab tak dikhega jab tak Splash Screen active hai (Background me)
+    return null; 
   }
 
-  // ============================================================================
-  // 📱 4. MAIN RENDER WITH GLOBAL OVERLAYS 
-  // ============================================================================
-  return (
-    <>
-      <Stack screenOptions={{ headerShown: false }} />
-      <RewardOverlay /> 
-    </>
-  );
+  // ✅ Ab asli screens load hongi
+  return <Slot />;
 }
 
 const styles = StyleSheet.create({
-  loaderContainer: {
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    backgroundColor: '#f8fafc' 
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
   }
 });

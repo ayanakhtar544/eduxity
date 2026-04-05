@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ======================================================================
+    // 🔐 HELPER FUNCTIONS (The Gatekeepers)
+    // ======================================================================
+    function isLoggedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isLoggedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      // Checks the highly secure custom claim we just injected
+      return isLoggedIn() && request.auth.token.admin == true;
+    }
+
+    function isUpdatingOnlyAllowedFields(allowedFields) {
+      let affectedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      return affectedKeys.hasOnly(allowedFields);
+    }
+
+    // ======================================================================
+    // 👤 USERS COLLECTION
+    // ======================================================================
+    match /users/{userId} {
+      allow read: if isLoggedIn();
+      allow create: if isOwner(userId);
+      
+      // THE SHIELD: Users can update their name/city, but CANNOT touch their coins, XP, or bans
+      allow update: if isOwner(userId) 
+                    && !request.resource.data.diff(resource.data).affectedKeys()
+                       .hasAny(['role', 'isBanned', 'eduCoins', 'level', 'xp', 'currentStreak']);
+      
+      // Admins have full access
+      allow read, write: if isAdmin();
+    }
+
+    // ======================================================================
+    // 📚 AI FEED ITEMS
+    // ======================================================================
+    match /ai_feed_items/{postId} {
+      allow read: if isLoggedIn();
+      
+      // INTERACTION SHIELD: Users can ONLY like, save, or answer. They can't modify the actual post content.
+      allow update: if isLoggedIn() 
+                    && isUpdatingOnlyAllowedFields([
+                         'savedBy', 'savesCount', 
+                         'likes', 'likesCount', 
+                         'commentsCount', 'responses', 
+                         'trendScore', 'lastInteractionAt'
+                       ]);
+      
+      // Only Admins (and backend Cloud Functions) can create or delete actual posts
+      allow create, delete, update: if isAdmin();
+    }
+
+    // ======================================================================
+    // 🗂️ GENERATION SESSIONS (The Vault)
+    // ======================================================================
+    match /generation_sessions/{sessionId} {
+      // PRIVACY SHIELD: Users can ONLY see and delete their own history
+      allow read, delete: if isOwner(resource.data.userId);
+      
+      // Creation happens entirely via Cloud Functions
+      allow read, write: if isAdmin();
+    }
+
+    // ======================================================================
+    // 🛡️ API RATE LIMITS (Hidden from Frontend)
+    // ======================================================================
+    match /api_rate_limits/{userId} {
+      // INVISIBLE SHIELD: The frontend has absolutely zero access here.
+      allow read, write: if isAdmin();
+    }
+
+  }
+}

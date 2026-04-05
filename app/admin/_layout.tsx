@@ -1,45 +1,38 @@
 // Location: app/admin/_layout.tsx
-import { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { Stack, useRouter } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
-import { auth, db } from '../../firebaseConfig';
-import { doc, getDoc } from 'firebase/firestore';
+import { useUserStore } from '../../store/useUserStore';
 
 export default function AdminLayout() {
   const router = useRouter();
-  const [isAuthorized, setIsAuthorized] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const { currentUser, userProfile, isLoading } = useUserStore();
 
   useEffect(() => {
-    const checkAdmin = async () => {
-      const user = auth.currentUser;
-      if (!user) {
-        router.replace('/auth'); // Ya login page ka jo bhi route hai
-        return;
-      }
+    // Wait for the store to finish loading the profile
+    if (isLoading) return;
 
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      if (userDoc.exists() && userDoc.data().role === 'ADMIN') {
-        setIsAuthorized(true);
-      } else {
-        // Agar admin nahi hai, toh chup-chaap home page pe phek do
-        console.warn("Intruder Alert: Non-admin tried to access admin panel!");
-        router.replace('/(tabs)'); 
-      }
-      setLoading(false);
-    };
+    // 🛡️ The Gatekeeper: Strict Role Check
+    // If not logged in, or NOT an admin, throw them back to the home screen instantly
+    if (!currentUser || userProfile?.role !== 'admin') {
+      console.warn("🚨 Unauthorized Admin Access Attempted!");
+      router.replace('/(tabs)');
+    }
+  }, [currentUser, userProfile, isLoading]);
 
-    checkAdmin();
-  }, []);
-
-  if (loading) {
+  if (isLoading || userProfile?.role !== 'admin') {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#4f46e5" />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
+        <ActivityIndicator size="large" color="#fde047" />
       </View>
     );
   }
 
-  // Agar authorized hai, tabhi admin routes render honge
-  return isAuthorized ? <Stack screenOptions={{ headerShown: false }} /> : null;
+  // Only renders if the user is a verified Admin
+  return (
+    <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+      <Stack.Screen name="index" />
+      {/* other admin screens */}
+    </Stack>
+  );
 }

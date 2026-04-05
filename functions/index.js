@@ -1,88 +1,92 @@
-// Location: functions/index.js
+// Location: functions/index.js (Firebase Cloud Functions Backend)
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 admin.initializeApp();
+const db = admin.firestore();
 
-// 🔥 Secure Backend Function
-exports.generateAIFeed = functions.https.onCall(async (data, context) => {
-  // 1. Security Check: Make sure user is logged in
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      "unauthenticated",
-      "Bhai, login karna padega ye action perform karne ke liye!"
-    );
-  }
+// 🛑 1. INITIALIZE GEMINI SAFELY (Key is hidden in backend)
+// Set this in Firebase CLI: firebase functions:secrets:set GEMINI_API_KEY
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-  // 2. Fetch API Key securely from Firebase Environment (NOT client)
-  // Run this in terminal to set it: firebase functions:config:set gemini.key="YOUR_API_KEY"
-  const apiKey = functions.config().gemini?.key || process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new functions.https.HttpsError("internal", "API Key missing in backend.");
-  }
-
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-  try {
-    const { topic, subject, chapter, userClass, examType, difficulty, hasFiles, fileBase64, mimeType, directText } = data;
-
-    const basePrompt = directText || `
-      You are an elite, hyper-intelligent Educator AI. Generate exactly 5 highly interactive micro-learning posts.
-      Context: ${userClass}, Exam: ${examType}, Difficulty: ${difficulty}.
-      Topic: "${topic}", Subject: "${subject}", Chapter: "${chapter}".
-      
-      Generate a strict JSON array containing exactly 5 objects.
-      Allowed types: "concept_micro", "flashcard", "quiz_mcq", "quiz_tf", "mini_game_match".
-      Must include fields: type, topic, subject, chapter, userClass, examContext, difficulty, content.
-      NO Markdown, NO conversation, JUST the raw JSON array.
-    `;
-
-    let result;
-
-    // 3. Multimodal Execution
-    if (hasFiles && fileBase64) {
-      const imagePart = { inlineData: { data: fileBase64, mimeType: mimeType || "image/jpeg" } };
-      result = await model.generateContent([basePrompt, imagePart]);
-    } else {
-      result = await model.generateContent(basePrompt);
+exports.generateSecureAIFeed = functions
+  .runWith({ enforceAppCheck: true }) // 🛡️ Layer 3: App Check Enforcement
+  .https.onCall(async (data, context) => {
+    
+    // 🛡️ Bouncer 1: Authentication Check
+    if (!context.auth) {
+      throw new functions.https.HttpsError("unauthenticated", "Login required.");
     }
 
-    const responseText = result.response.text();
+    // 🛡️ Bouncer 2: App Check (Blocks Postman, cURL, and Bots)
+    if (context.app === undefined) {
+        throw new functions.https.HttpsError("failed-precondition", "The function must be called from our verified Eduxity App.");
+    }
+
+    const uid = context.auth.uid;
+
+    // 🛡️ Layer 2: FIRESTORE RATE LIMITING (Max 10 AI Gens per hour)
+    const MAX_CALLS_PER_HOUR = 10;
+    const rateLimitRef = db.collection("api_rate_limits").doc(uid);
+    const docSnap = await rateLimitRef.get();
     
-    // 4. Regex Parse
-    const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) throw new Error("Invalid JSON structure from AI.");
+    const now = Date.now();
+    const oneHourMillis = 60 * 60 * 1000;
 
-    const generatedItems = JSON.parse(jsonMatch[0]);
+    if (docSnap.exists) {
+      const userData = docSnap.data();
+      const lastCallTime = userData.lastCallTime || 0;
+      const callsThisHour = userData.callsThisHour || 0;
 
-    // 5. Save to Firebase from Backend directly
-    const batch = admin.firestore().batch();
-    const userId = context.auth.uid;
+      if (now - lastCallTime < oneHourMillis) {
+        if (callsThisHour >= MAX_CALLS_PER_HOUR) {
+          console.warn(`🚨 Rate limit hit by ${uid}`);
+          throw new functions.https.HttpsError("resource-exhausted", "You have exhausted your hourly AI generations. Try again later.");
+        }
+        await rateLimitRef.update({ callsThisHour: callsThisHour + 1 });
+      } else {
+        // Reset limit after 1 hour
+        await rateLimitRef.update({ callsThisHour: 1, lastCallTime: now });
+      }
+    } else {
+      await rateLimitRef.set({ callsThisHour: 1, lastCallTime: now });
+    }
 
-    generatedItems.forEach((item) => {
-      const docRef = admin.firestore().collection('ai_feed_items').doc();
-      batch.set(docRef, {
-        userId,
-        type: item.type,
-        topic: item.topic || topic,
-        subject: item.subject || 'Uncategorized',
-        chapter: item.chapter || 'General',
-        userClass: item.userClass || userClass,
-        examContext: item.examContext || examType,
-        difficulty: item.difficulty || difficulty,
-        content: item.content,
-        savedBy: [],
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    // ==========================================
+    // 🧠 ACTUAL GEMINI LOGIC MOVED HERE
+    // ==========================================
+    try {
+      const model = genAI.getGenerativeModel({ 
+          model: "gemini-2.5-flash",
+          generationConfig: { responseMimeType: "application/json" }
       });
-    });
 
-    await batch.commit();
-    return { success: true, message: "Posts generated." };
+      // Construct your basePrompt using data.topic, data.difficulty, etc.
+      const prompt = `Generate exactly ${data.count || 10} educational posts about ${data.topic} ... [YOUR STRICT JSON PROMPT HERE]`;
 
-  } catch (error) {
-    console.error("AI Engine Crash:", error);
-    throw new functions.https.HttpsError("internal", error.message);
-  }
+      const result = await model.generateContent(prompt);
+      const responseText = result.response.text();
+      
+      const generatedItems = JSON.parse(responseText);
+
+      // Save securely to Firestore from Backend
+      const batch = db.batch();
+      generatedItems.forEach(item => {
+        const docRef = db.collection("ai_feed_items").doc();
+        batch.set(docRef, {
+           ...item,
+           userId: uid,
+           sessionId: data.sessionId || null,
+           createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      });
+
+      await batch.commit();
+      return { success: true, count: generatedItems.length };
+
+    } catch (error) {
+      console.error("AI Generation Error:", error);
+      throw new functions.https.HttpsError("internal", "AI failed to generate content.");
+    }
 });

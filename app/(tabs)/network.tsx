@@ -12,7 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInDown, FadeInUp, Layout, LinearTransition } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
-import { useSmartRecommendations } from '../../hooks/useSmartRecommendations';
+import { useSmartRecommendations } from '../../hooks/queries/useSmartRecommendations';
 import { collection, query, where, onSnapshot, doc, getDoc, updateDoc, deleteDoc, arrayUnion, serverTimestamp, addDoc } from 'firebase/firestore';
 import * as Haptics from 'expo-haptics';
 

@@ -15,7 +15,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { auth, db } from '../../firebaseConfig';
 import { collection, query, where, getDocs, updateDoc, doc, arrayUnion, arrayRemove, addDoc, serverTimestamp, increment, onSnapshot, orderBy } from 'firebase/firestore';
 import { useUserStore } from '../../store/useUserStore';
-import { processAction } from '../../helpers/gamificationEngine';
 import { useRewardStore } from '../../store/useRewardStore';
 
 // ==========================================

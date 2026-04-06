@@ -1,7 +1,5 @@
 # 🚀 Eduxity: The Ultimate Student Super-App
 
-![Eduxity Banner](https://via.placeholder.com/1200x400.png?text=Eduxity+-+Study.+Connect.+Grow.)
-_(P.S. Yahan baad mein app ka ek mast banner image laga dena)_
 
 ## 📖 About The Project
 

@@ -12,7 +12,7 @@ import {
     StyleSheet,
     Text,
     TouchableOpacity,
-    View
+    View,
 } from "react-native";
 import Animated, { FadeInDown, Layout } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -28,10 +28,9 @@ import {
     setDoc,
     where,
 } from "firebase/firestore";
-import { auth, db } from "../../firebaseConfig";
+import { auth, db } from "../../core/firebase/firebaseConfig";
 
 // Gamification Badges
-import { processAction } from '../../core/utils/gamificationEngine';
 
 import EduxityLoader from "../../components/ui/EduxityLoader";
 

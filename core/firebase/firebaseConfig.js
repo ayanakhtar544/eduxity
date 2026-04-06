@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getFunctions } from "firebase/functions";
 
 // Firebase configuration (Ye tere .env se aayega)
 const firebaseConfig = {
@@ -18,5 +19,7 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 // 🔥 YE LINES SABSE ZAROORI HAIN - Check karo 'export' likha hai ya nahi
 export const auth = getAuth(app); 
 export const db = getFirestore(app);
+
+export const functions = getFunctions(app);
 
 export default app;

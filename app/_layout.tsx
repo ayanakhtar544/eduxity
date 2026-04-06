@@ -1,86 +1,46 @@
-import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { Slot, useRouter, useSegments } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen'; // 🔥 SplashScreen control ke liye
-import { onAuthStateChanged } from 'firebase/auth';
-
-// Paths check kar lena (Tere project ke hisaab se)
-import { auth } from '../core/firebase/firebaseConfig';
-import { useUserStore } from '../store/useUserStore';
-
-// 1. Splash screen ko tab tak roko jab tak hum ready na hon
-SplashScreen.preventAutoHideAsync();
+import React, { useEffect } from 'react';
+import { Stack } from 'expo-router';
+import { usePushNotifications } from '../hooks/usePushNotifications';
+import { useUserStore } from '../store/useUserStore'; // Tumhara existing store
 
 export default function RootLayout() {
-  const [appIsReady, setAppIsReady] = useState(false);
-  const setUser = useUserStore((state) => state.setUser);
-  const segments = useSegments();
-  const router = useRouter();
+  const { expoPushToken } = usePushNotifications();
+  const { user } = useUserStore(); // Current logged-in user
 
-  // ==========================================
-  // 🔐 1. AUTH & INITIALIZATION
-  // ==========================================
   useEffect(() => {
-    async function prepare() {
-      try {
-        // Firebase Auth Listener
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
-          console.log("🔥 Auth State Updated:", user ? "User Found" : "No User");
-          setUser(user);
-          setAppIsReady(true); // Signal ki ab app ready hai
-        });
-
-        return () => unsubscribe();
-      } catch (e) {
-        console.warn("❌ Initialization Error:", e);
-        setAppIsReady(true); // Error aaye tab bhi app dikhao, crash mat karo
-      }
+    // Agar user logged in hai aur token generate ho gaya hai, toh DB me save karo
+    if (user && expoPushToken) {
+      saveTokenToDatabase(user.id, expoPushToken);
     }
+  }, [user, expoPushToken]); // Jab bhi user login kare ya token aaye, yeh run hoga
 
-    prepare();
-  }, [setUser]);
+  const saveTokenToDatabase = async (userId: string, token: string) => {
+    try {
+      // Yahan apne backend ya Firebase/Supabase ka endpoint call karo
+      // Example with standard fetch API:
+      const response = await fetch('https://tumhara-backend.com/api/users/save-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // 'Authorization': `Bearer ${user.authToken}` // Agar auth zaroori hai
+        },
+        body: JSON.stringify({
+          userId: userId,
+          pushToken: token,
+        }),
+      });
 
-  // ==========================================
-  // 🚀 2. HIDE LOGO & NAVIGATION
-  // ==========================================
-  useEffect(() => {
-    if (!appIsReady) return;
-
-    const hideSplashAndNavigate = async () => {
-      // 1. Sabse pehle logo ko hatao screen se
-      await SplashScreen.hideAsync();
-      console.log("✅ Splash Screen Hidden");
-
-      // 2. Phir check karo kahan bhejna hai
-      const inAuthGroup = segments[0] === '(auth)';
-
-      if (!auth.currentUser && !inAuthGroup) {
-        router.replace('/(auth)/auth');
-      } else if (auth.currentUser && inAuthGroup) {
-        router.replace('/(tabs)');
+      if (response.ok) {
+        console.log('Token securely saved to database! 🚀');
       }
-    };
+    } catch (error) {
+      console.error('Error saving push token to DB:', error);
+    }
+  };
 
-    hideSplashAndNavigate();
-  }, [appIsReady, segments]);
-
-  // ==========================================
-  // ⏳ 3. FALLBACK UI (Just in case)
-  // ==========================================
-  if (!appIsReady) {
-    // Ye tab tak dikhega jab tak Splash Screen active hai (Background me)
-    return null; 
-  }
-
-  // ✅ Ab asli screens load hongi
-  return <Slot />;
+  return (
+    <Stack>
+      <Stack.Screen name="index" options={{ headerShown: false }} />
+    </Stack>
+  );    
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-  }
-});

@@ -1,0 +1,33 @@
+// File: prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id    String  @id @default(uuid())
+  email String  @unique
+  name  String?
+
+  // Relation setup: Ek user ke multiple active devices/tokens ho sakte hain
+  pushTokens PushToken[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Naya model sirf Push Tokens store karne ke liye
+model PushToken {
+  id    String @id @default(uuid())
+  token String @unique
+
+  // Foreign Key: User model ke liye refer kar raha hai
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}

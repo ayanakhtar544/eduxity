@@ -4,27 +4,26 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-    Dimensions,
-    SafeAreaView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Dimensions,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import Animated, {
-    Easing,
-    FadeIn,
-    FadeInDown,
-    useAnimatedStyle,
-    useSharedValue,
-    withRepeat,
-    withSequence,
-    withTiming
+  Easing,
+  FadeIn,
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
 } from "react-native-reanimated";
 import BrandLogo from "../components/ui/BrandLogo";
 import EduxityLoader from "../components/ui/EduxityLoader";
-import { auth } from "../firebaseConfig";
 
 const { width, height } = Dimensions.get("window");
 
@@ -93,7 +92,7 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, []);
 
-  if (auth.currentUser || isChecking) {
+  if (isChecking) {
     return (
       <View style={styles.loaderScreen}>
         <EduxityLoader />

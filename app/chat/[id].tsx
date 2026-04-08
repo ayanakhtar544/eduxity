@@ -1,14 +1,15 @@
 // Location: app/chat/[id].tsx
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
+import { auth, db } from '@/core/firebase/firebaseConfig';
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { doc, updateDoc } from 'firebase/firestore';
 import {
   addDoc,
   arrayRemove,
   arrayUnion,
   collection,
-  doc,
   getDoc,
   increment,
   onSnapshot,
@@ -16,6 +17,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  where,
 } from "firebase/firestore";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -38,7 +40,6 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import { auth, db } from "../../core/firebase/firebaseConfig";
 
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -58,6 +59,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
+import Toast from "react-native-toast-message";
 
 // 🛑 CHILD COMPONENTS
 import ChatBubble from "../../components/chat/ChatBubble";
@@ -163,6 +165,7 @@ export default function MVPAdvancedChatEngine() {
 
   const flatListRef = useRef<FlatList>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastMessageIdRef = useRef<string | null>(null);
 
   const sendBtnScale = useSharedValue(1);
   const pulseScale = useSharedValue(1);
@@ -200,10 +203,11 @@ export default function MVPAdvancedChatEngine() {
   // ==========================================
   useEffect(() => {
     if (!chatIdStr || !auth.currentUser) return;
-    const myUid = auth.currentUser.uid;
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
 
     const unsubGroup = onSnapshot(
-      doc(db, "groups", chatIdStr),
+      doc(db, "chats", chatIdStr),
       async (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data();
@@ -212,11 +216,11 @@ export default function MVPAdvancedChatEngine() {
           // Fetch direct user details
           if (chatIdStr.includes("_") || data.isGroup === false) {
             let targetUid = (data.members || []).find(
-              (uid: string) => uid !== myUid,
+              (memberUid: string) => memberUid !== uid,
             );
             if (!targetUid && chatIdStr.includes("_")) {
               const splitIds = chatIdStr.split("_");
-              targetUid = splitIds.find((uid) => uid !== myUid);
+              targetUid = splitIds.find((memberUid) => memberUid !== uid);
             }
 
             if (targetUid) {
@@ -226,9 +230,7 @@ export default function MVPAdvancedChatEngine() {
           }
 
           if (data.pinnedMessageId) {
-            getDoc(
-              doc(db, "groups", chatIdStr, "messages", data.pinnedMessageId),
-            ).then((pSnap) => {
+            getDoc(doc(db, "chats", chatIdStr, "messages", data.pinnedMessageId)).then((pSnap) => {
               if (pSnap.exists())
                 setPinnedMessage({ id: pSnap.id, ...pSnap.data() });
             });
@@ -252,12 +254,26 @@ export default function MVPAdvancedChatEngine() {
 
     const unsubMessages = onSnapshot(
       query(
-        collection(db, "groups", chatIdStr, "messages"),
+        collection(db, "chats", chatIdStr, "messages"),
         orderBy("createdAt", "asc"),
       ),
       (snapshot) => {
         const fetched = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
         setMessages(fetched);
+        const newest = fetched[fetched.length - 1] as any;
+        if (
+          newest?.id &&
+          newest.id !== lastMessageIdRef.current &&
+          newest.senderId !== auth.currentUser?.uid
+        ) {
+          Toast.show({
+            type: "success",
+            text1: "New message",
+            text2: newest.text || "You received a new message",
+            visibilityTime: 1500,
+          });
+        }
+        lastMessageIdRef.current = newest?.id || null;
 
         const hws = fetched.filter(
           (m) =>
@@ -276,10 +292,7 @@ export default function MVPAdvancedChatEngine() {
     );
 
     const unsubTasks = onSnapshot(
-      query(
-        collection(db, "groups", chatIdStr, "todos"),
-        orderBy("createdAt", "desc"),
-      ),
+      query(collection(db, "groups", chatIdStr, "todos"), orderBy("createdAt", "desc")),
       (snapshot) => {
         setTasks(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
       },
@@ -295,7 +308,7 @@ export default function MVPAdvancedChatEngine() {
   // 🔥 INSTANT MARK AS READ
   useEffect(() => {
     if (chatIdStr && auth.currentUser && messages.length > 0) {
-      updateDoc(doc(db, "groups", chatIdStr), {
+      updateDoc(doc(db, "chats", chatIdStr), {
         [`unreadCount.${auth.currentUser.uid}`]: 0,
       }).catch(() => {});
     }
@@ -395,7 +408,7 @@ export default function MVPAdvancedChatEngine() {
 
     if (!auth.currentUser || !chatIdStr) return;
     const uid = auth.currentUser.uid;
-    const groupRef = doc(db, "groups", chatIdStr);
+    const groupRef = doc(db, "chats", chatIdStr);
     if (text.trim() === "") {
       updateDoc(groupRef, { typing: arrayRemove(uid) }).catch(() => {});
       return;
@@ -431,7 +444,7 @@ export default function MVPAdvancedChatEngine() {
     });
 
     const myUid = auth.currentUser.uid;
-    const groupRef = doc(db, "groups", chatIdStr);
+    const groupRef = doc(db, "chats", chatIdStr);
 
     // Remove typing status
     updateDoc(groupRef, { typing: arrayRemove(myUid) }).catch(() => {});
@@ -457,7 +470,7 @@ export default function MVPAdvancedChatEngine() {
     }
 
     // 1. Add message to subcollection
-    await addDoc(collection(db, "groups", chatIdStr, "messages"), msgPayload);
+    const added = await addDoc(collection(db, "chats", chatIdStr, "messages"), msgPayload);
 
     // 2. Update Parent Document strictly
     let isGroupChat = groupInfo?.isGroup ?? true;
@@ -470,11 +483,12 @@ export default function MVPAdvancedChatEngine() {
 
     const updates: any = {
       lastMessage: {
+        id: added.id,
         text: textToSend,
         type: "text",
         senderName: auth.currentUser.displayName || "User",
       },
-      lastMessageTime: serverTimestamp(),
+      updatedAt: serverTimestamp(),
       isGroup: isGroupChat,
     };
 
@@ -502,7 +516,7 @@ export default function MVPAdvancedChatEngine() {
     if (Platform.OS !== "web")
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await updateDoc(
-      doc(db, "groups", chatIdStr, "messages", selectedMessage.id),
+      doc(db, "chats", chatIdStr, "messages", selectedMessage.id),
       { [`reactions.${auth.currentUser.uid}`]: emoji },
     );
     setSelectedMessage(null);
@@ -510,7 +524,7 @@ export default function MVPAdvancedChatEngine() {
 
   const handlePinMessage = async () => {
     if (!selectedMessage || !isLeader) return;
-    await updateDoc(doc(db, "groups", chatIdStr), {
+    await updateDoc(doc(db, "chats", chatIdStr), {
       pinnedMessageId: selectedMessage.id,
     });
     setSelectedMessage(null);
@@ -529,7 +543,7 @@ export default function MVPAdvancedChatEngine() {
         type: msgObj.type,
         senderName: auth.currentUser!.displayName || "User",
       },
-      lastMessageTime: serverTimestamp(),
+      updatedAt: serverTimestamp(),
       isGroup: groupInfo?.isGroup ?? !chatIdStr.includes("_"),
     };
     if (membersArray.length > 0) {
@@ -538,7 +552,7 @@ export default function MVPAdvancedChatEngine() {
         if (m !== myUid) updates[`unreadCount.${m}`] = increment(1);
       });
     }
-    await setDoc(doc(db, "groups", chatIdStr), updates, { merge: true });
+    await setDoc(doc(db, "chats", chatIdStr), updates, { merge: true });
   };
 
   const handleSendQuestion = async () => {
@@ -555,7 +569,7 @@ export default function MVPAdvancedChatEngine() {
       senderAvatar: auth.currentUser.photoURL,
       createdAt: serverTimestamp(),
     };
-    await addDoc(collection(db, "groups", chatIdStr, "messages"), payload);
+    await addDoc(collection(db, "chats", chatIdStr, "messages"), payload);
     await syncParentDocument(payload);
     setShowQuestionModal(false);
     setQText("");
@@ -576,7 +590,7 @@ export default function MVPAdvancedChatEngine() {
       senderAvatar: auth.currentUser.photoURL,
       createdAt: serverTimestamp(),
     };
-    await addDoc(collection(db, "groups", chatIdStr, "messages"), payload);
+    await addDoc(collection(db, "chats", chatIdStr, "messages"), payload);
     await syncParentDocument({ type: "test", text: testTitle.trim() });
     setShowTestCreator(false);
     setTestTitle("");
@@ -602,7 +616,7 @@ export default function MVPAdvancedChatEngine() {
       senderAvatar: auth.currentUser.photoURL,
       createdAt: serverTimestamp(),
     };
-    await addDoc(collection(db, "groups", chatIdStr, "messages"), payload);
+    await addDoc(collection(db, "chats", chatIdStr, "messages"), payload);
     await syncParentDocument({
       type: "homework_bucket",
       text: bucketTitle.trim(),
@@ -629,7 +643,7 @@ export default function MVPAdvancedChatEngine() {
     const endTime = Date.now() + dur * 60000;
     setShowStudyModal(false);
     const docRef = await addDoc(
-      collection(db, "groups", chatIdStr, "messages"),
+      collection(db, "chats", chatIdStr, "messages"),
       {
         type: "study_session",
         title: "Deep Focus Session",
@@ -992,11 +1006,18 @@ export default function MVPAdvancedChatEngine() {
                 {typingText ||
                   (otherUser
                     ? "Online"
-                    : `${groupInfo?.members?.length || 1} members`)}
+                    : groupInfo?.lastMessage?.text || `${groupInfo?.members?.length || 1} members`)}
               </Text>
             </View>
           </TouchableOpacity>
           <View style={styles.headerRightActions}>
+            {!!groupInfo?.unreadCount?.[auth.currentUser?.uid || ""] && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadBadgeText}>
+                  {groupInfo.unreadCount[auth.currentUser?.uid || ""]}
+                </Text>
+              </View>
+            )}
             <TouchableOpacity
               style={styles.iconCircleBtn}
               onPress={() => setIsSearching(!isSearching)}
@@ -1851,6 +1872,16 @@ const styles = StyleSheet.create({
     borderColor: "#c7d2fe",
   },
   studyRoomText: { color: "#4f46e5", fontSize: 13, fontWeight: "800" },
+  unreadBadge: {
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#ef4444",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+  },
+  unreadBadgeText: { color: "#fff", fontSize: 11, fontWeight: "900" },
   searchBarWrapper: {
     flexDirection: "row",
     alignItems: "center",

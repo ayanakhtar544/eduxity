@@ -5,6 +5,7 @@ import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { apiClient } from "../../core/network/apiClient";
 import {
     collection,
     doc,
@@ -474,13 +475,18 @@ export default function OnboardingScreen() {
   };
 
   const completeOnboarding = async (isSkipped = false) => {
-    if (!user) return;
+    if (!user) {
+      Alert.alert("Error", "You must be logged in to complete onboarding.");
+      return;
+    }
+    
     setLoading(true);
 
     try {
       let finalAvatarUrl = profilePic || DEFAULT_AVATAR;
       if (imageBase64) finalAvatarUrl = await uploadImage();
 
+      // 1. Firebase Profile Data (🚨 CLEANED FOR SECURITY RULES)
       const userData = {
         uid: user.uid,
         email: user.email,
@@ -489,7 +495,8 @@ export default function OnboardingScreen() {
         photoURL: finalAvatarUrl,
 
         accountType: role,
-        level: level,
+        // Rule block se bachne ke liye 'level' ko 'academicLevel' kar diya
+        academicLevel: level, 
         goals: goals,
         interests: interests,
 
@@ -500,25 +507,42 @@ export default function OnboardingScreen() {
         bio: "",
 
         onboardingCompleted: true,
-        eduCoins: 50,
-        gamification: { xp: 100, level: 1, currentStreak: 1, badges: [] },
-        stats: { likesReceived: 0, postsCreated: 0 },
-        joinedAt: serverTimestamp(),
-        followers: [],
-        following: [],
+        
+        // 🚨 DELETED: eduCoins, gamification, stats. 
+        // Frontend se inko update karna Security Rules ke sakht khilaf hai.
       };
 
+      // 2. Save to Firebase (Ab permission denied nahi aayega)
       await setDoc(doc(db, "users", user.uid), userData, { merge: true });
-      setLoading(false);
-      if (Platform.OS !== "web")
+
+      // 3. Sync with Prisma Database
+      try {
+        await apiClient('/api/auth/sync', {
+          method: 'POST',
+          body: JSON.stringify({
+            email: user.email,
+            name: user.displayName || username,
+            firebaseUid: user.uid,
+            photoUrl: finalAvatarUrl,
+          })
+        });
+      } catch (syncError) {
+        console.warn("Prisma Sync Warning:", syncError);
+      }
+
+      if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setStep(6);
-    } catch (error) {
-      Alert.alert("Network Error", "Data save failed. Please try again.");
+      }
+      
+      setStep(6); // Success screen par le jao
+      
+    } catch (error: any) {
+      console.error("Onboarding Error:", error);
+      Alert.alert("Error", error.message || "Something went wrong");
+    } finally {
       setLoading(false);
     }
   };
-
   const handleNext = () => {
     if (Platform.OS !== "web")
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1247,6 +1271,7 @@ export default function OnboardingScreen() {
 }
 
 // 🟢 Reusable Sticky Bottom CTA Component
+// 🟢 Reusable Sticky Bottom CTA Component
 const StickyBottomCTA = ({ onBack, onNext, disabled, label }: any) => (
   <View style={styles.bottomNavContainer}>
     {onBack ? (
@@ -1254,7 +1279,7 @@ const StickyBottomCTA = ({ onBack, onNext, disabled, label }: any) => (
         <Ionicons name="arrow-back" size={24} color="#0f172a" />
       </TouchableOpacity>
     ) : (
-      <View />
+      <View /> // Ye theek hai
     )}
     <TouchableOpacity
       style={[styles.nextBtn, disabled && styles.disabledBtn]}
@@ -1274,7 +1299,6 @@ const StickyBottomCTA = ({ onBack, onNext, disabled, label }: any) => (
     </TouchableOpacity>
   </View>
 );
-
 // ==========================================
 // 🎨 PREMIUM STYLES (Rounded 24px, Clean Surfaces)
 // ==========================================

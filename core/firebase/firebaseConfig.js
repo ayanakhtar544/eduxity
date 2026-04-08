@@ -1,25 +1,44 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getFunctions } from "firebase/functions";
+ // core/firebase/firebaseConfig.js
 
-// Firebase configuration (Ye tere .env se aayega)
+import { initializeApp, getApps, getApp } from 'firebase/app';
+// FIX: Web aur Native dono ke persistence import karne hain
+import { initializeAuth, getAuth, getReactNativePersistence, browserLocalPersistence } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getFirestore } from 'firebase/firestore';
+import { Platform } from 'react-native';
+
+// Apni .env variables se config setup
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+// 1. App initialize karo (check karke ki already initialized toh nahi hai)
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// 🔥 YE LINES SABSE ZAROORI HAIN - Check karo 'export' likha hai ya nahi
-export const auth = getAuth(app); 
-export const db = getFirestore(app);
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.authDomain) {
+  console.error("[Firebase] Missing required config: apiKey/projectId/authDomain");
+}
 
-export const functions = getFunctions(app);
+// 2. 🚨 CRITICAL FIX: Platform check lagaya hai
+// Agar Web hai toh browserLocalPersistence, nahi toh AsyncStorage
+const auth = (() => {
+  try {
+    return initializeAuth(app, {
+      persistence: Platform.OS === 'web'
+        ? browserLocalPersistence
+        : getReactNativePersistence(AsyncStorage),
+    });
+  } catch {
+    return getAuth(app);
+  }
+})();
 
-export default app;
+// 3. Database initialize
+const db = getFirestore(app);
+
+export { app, auth, db };

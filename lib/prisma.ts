@@ -1,28 +1,21 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from "@/prisma/generated/client";
 
-// PrismaClient ka instance globally define kar rahe hain
-// Taaki TypeScript ko globalThis.prisma ka type pata chal sake
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
+  prisma: PrismaClient | undefined;
+};
+
+if (!process.env.DATABASE_URL) {
+  console.error("[Prisma] Missing DATABASE_URL");
 }
 
-// Production-ready Singleton instance
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
-    // Development me queries aur warnings console me print karega (debugging ke liye best)
-    // Production me sirf errors print karega
-    log:
-      process.env.NODE_ENV === 'development'
-        ? ['query', 'error', 'warn']
-        : ['error'],
-  })
+    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+  });
 
-// Agar hum development environment me hain, toh instance ko global object me save kar do
-// Taaki jab Next.js file ko hot-reload kare, toh wo purana connection hi reuse kare
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
 }
 
-// Default export taaki kisi bhi file me easily import kar sakein
-export default prisma
+export default prisma;

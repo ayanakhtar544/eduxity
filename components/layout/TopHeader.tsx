@@ -1,18 +1,22 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import Animated from 'react-native-reanimated';
-import { Image } from 'expo-image'; // 🔥 Import for local logo asset
+import { Image } from 'expo-image';
+import { StreakCounter } from '@/components/gamification/StreakCounter';
+import { useRouter, useNavigation } from 'expo-router';
+import { DrawerActions } from '@react-navigation/native';
 
-export default function TopHeader({ setIsMenuOpen, unreadCount }: { setIsMenuOpen: any, unreadCount: number }) {
+
+export default function TopHeader({ setIsMenuOpen, unreadCount, searchQuery, setSearchQuery }: { setIsMenuOpen: any, unreadCount?: number, searchQuery?: string, setSearchQuery?: (q: string) => void }) {
   const router = useRouter();
+const navigation = useNavigation();
 
   return (
     <View style={styles.mainHeader}>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         
-        {/* Hamburger Menu */}
+       {/* Hamburger Menu - Wapas original wala */}
         <TouchableOpacity onPress={() => setIsMenuOpen(true)} style={styles.hamburgerBtn}>
           <Ionicons name="menu" size={28} color="#0f172a" />
         </TouchableOpacity>
@@ -30,15 +34,16 @@ export default function TopHeader({ setIsMenuOpen, unreadCount }: { setIsMenuOpe
 
       {/* Header Icons (Right Side) */}
       <View style={styles.headerIcons}>
+        <StreakCounter />
         <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/search-users')}>
           <Ionicons name="search" size={24} color="#0f172a" />
         </TouchableOpacity>
         
         <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/notification')}>
           <Ionicons name="notifications-outline" size={24} color="#0f172a" />
-          {unreadCount > 0 && (
+          {(unreadCount ?? 0) > 0 && (
             <Animated.View style={styles.notificationBadge}>
-              <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+              <Text style={styles.badgeText}>{(unreadCount ?? 0) > 9 ? '9+' : unreadCount}</Text>
             </Animated.View>
           )}
         </TouchableOpacity>

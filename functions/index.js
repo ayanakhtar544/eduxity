@@ -1,3 +1,9 @@
+const functions = require("firebase-functions");
+const admin = require("firebase-admin");
+
+admin.initializeApp();
+const db = admin.firestore();
+
 // Schedule: Roz raat 8:00 PM (Server Time zone ke hisaab se adjust kar lena)
 exports.dailyStreakReminder = functions.pubsub.schedule('0 20 * * *')
   .timeZone('Asia/Kolkata') // Indian Standard Time

@@ -10,11 +10,15 @@ import Animated, {
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import * as Notifications from "expo-notifications"; // 👈 New Import
+import * as Notifications from "expo-notifications"; 
+import { useSafeNotificationResponse } from '@/hooks/useSafeNotification';
+import { useQueryClient } from "@tanstack/react-query";
+import { auth } from "../../core/firebase/firebaseConfig";
 
 // Core Imports
 import { useUserStore } from "../../store/useUserStore";
 import { AIGeneratorService } from "../../core/api/aiGeneratorService";
+
 
 const LOADING_STEPS = [
   "Waking up the AI Engine... 🤖",
@@ -26,6 +30,7 @@ const LOADING_STEPS = [
 
 export default function AIGenerationScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, userProfile } = useUserStore();
 
   // 🟢 PHASE 1: "Magic Search" (Core Inputs)
@@ -46,8 +51,8 @@ export default function AIGenerationScreen() {
   // ==========================================
   // 🔔 NOTIFICATION AUTO-FILL LOGIC
   // ==========================================
-  const lastNotificationResponse = Notifications.useLastNotificationResponse();
-
+  const lastNotificationResponse = useSafeNotificationResponse();
+  
   // 1. Handle notification tap (Background/Killed State)
   useEffect(() => {
     if (
@@ -116,50 +121,71 @@ export default function AIGenerationScreen() {
     overflow: 'hidden'
   }));
 
-  // ==========================================
-  // 🚀 GENERATION TRIGGER
-  // ==========================================
-  const handleGenerate = async () => {
-    if (!topic.trim()) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      return; 
-    }
+// ==========================================
+// 🚀 GENERATION TRIGGER
+// ==========================================
+const handleGenerate = async () => {
+  if (!topic.trim()) {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    return; 
+  }
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    setIsGenerating(true);
+  // 🚨 THE PERMANENT FIX: Exact click ke time Firebase se current user fetch karo
+  const currentUserId = auth.currentUser?.uid || user?.uid;
 
-    try {
-      const payload = {
-        subject: "General", 
-        topic: topic.trim(),
-        examType: userProfile?.targetExam || "JEE",
-        difficulty: targetGoal === "Quick Revision" ? "Hard" : "Medium", // Adjusted based on your goals
-        learningGoal: targetGoal,
-        timeAvailable: timeAvailable,
-        language: userProfile?.preferredLanguage || "Hinglish",
-        youtubeLink: showAdvanced ? youtubeLink : null,
-        hasFiles: hasAttachment,
-        count: timeAvailable === "5 Mins" ? 5 : timeAvailable === "15 Mins" ? 10 : 20,
-        userClass: userProfile?.userClass || "12",
-        directText: `Create a ${targetGoal} lesson for ${topic} taking approx ${timeAvailable} to complete.`,
-      };
+  // Agar abhi bhi ID nahi mili, matlab Firebase ka session sach mein expire ho gaya hai
+  if (!currentUserId) {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    alert("Auth Error: Aapka session sync nahi hua hai. Please app restart karein ya dobara login karein.");
+    return; // Yahin se wapas bhej do, API call mat karo
+  }
 
-      await AIGeneratorService.processMaterialAndGenerateFeed(payload);
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+  setIsGenerating(true);
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setTimeout(() => {
-        setIsGenerating(false);
-        router.back(); 
-      }, 1000);
+  try {
+    const payload = {
+      subject: "General", 
+      topic: topic.trim(),
+      examType: userProfile?.targetExam || "JEE",
+      difficulty: targetGoal === "Quick Revision" ? "Hard" : "Medium",
+      learningGoal: targetGoal,
+      timeAvailable: timeAvailable,
+      language: userProfile?.preferredLanguage || "Hinglish",
+      youtubeLink: showAdvanced ? youtubeLink : null,
+      hasFiles: hasAttachment,
+      count: timeAvailable === "5 Mins" ? 5 : timeAvailable === "15 Mins" ? 10 : 20,
+      userClass: userProfile?.userClass || "12", 
+      directText: `Create a ${targetGoal} lesson for ${topic} taking approx ${timeAvailable} to complete.`,
+      
+      // 🚨 Ab yahan humari guaranteed valid ID jayegi
+      userId: currentUserId 
+    };
 
-    } catch (error) {
-      console.error("AI Generation Failed:", error);
+    console.log("🚀 Sending Payload to Backend:", payload);
+
+    const apiResponse = await AIGeneratorService.processMaterialAndGenerateFeed(payload);
+    console.log("✅ Backend Response:", apiResponse);
+
+    // Cache invalidation
+    queryClient.invalidateQueries({ queryKey: ['feedData'] });
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    
+    setTimeout(() => {
       setIsGenerating(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      alert("Oops! The AI got confused. Let's try again.");
-    }
-  };
+      router.back(); 
+    }, 1000);
 
+  } catch (error: any) {
+    console.error("❌ AI Generation Failed:", error);
+    setIsGenerating(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    
+    const errorMessage = error?.response?.data?.message || error.message || "Unknown Error";
+    alert(`Generation Failed: ${errorMessage}`);
+  }
+};
   // ==========================================
   // ⏳ FULLSCREEN LOADING OVERLAY
   // ==========================================

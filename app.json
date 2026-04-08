@@ -7,6 +7,10 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "light",
+    "notification": {
+      "vapidPublicKey": "BCJQ6LrAx5eV_rMviASPjE0fQQdAziLprMdBssVXj0Y6rp8KvnowARufZZRxO1n_p5RQaoGryWMjX5V1Bx8d8Mk" ,
+      "serviceWorkerPath": "service-worker.js"
+    },
     "splash": {
       "image": "./assets/images/icon.png",
       "resizeMode": "contain",
@@ -16,6 +20,12 @@
         "expo-image-picker",
         "expo-av",
         [
+          "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "project": "eduxity", 
+          "organization": "MD ABUSHAHMA AKHTAR" 
+        },
           "react-native-agora",
           {
             "microphonePermission": "Allow Eduxity to access your microphone for Voice Lounge."
@@ -40,7 +50,8 @@
       "@react-native-google-signin/google-signin",
       "expo-audio",
       "expo-video",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "@sentry/react-native"
     ],
     "ios": {
       "supportsTablet": true,

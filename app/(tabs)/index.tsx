@@ -1,6 +1,6 @@
 // Location: app/(tabs)/index.tsx
 import React, { useState } from "react";
-import { SafeAreaView, StatusBar, View, StyleSheet, Animated as RNAnimated } from "react-native";
+import { StatusBar, View, StyleSheet, Animated as RNAnimated } from "react-native";
 import Animated, { 
   useSharedValue, 
   useAnimatedScrollHandler, 
@@ -8,6 +8,11 @@ import Animated, {
   interpolate, 
   Extrapolation 
 } from "react-native-reanimated";
+import { useFeedData, FeedItem } from '@/hooks/queries/useFeedData';
+import { useNavigation } from 'expo-router';
+import { DrawerActions } from '@react-navigation/native';
+
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useLocalSearchParams } from "expo-router";
 

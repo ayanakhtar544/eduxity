@@ -31,10 +31,7 @@ service cloud.firestore {
       allow create: if isOwner(userId);
       
       // THE SHIELD: Users can update their name/city, but CANNOT touch their coins, XP, or bans
-      allow update: if isOwner(userId) 
-                    && !request.resource.data.diff(resource.data).affectedKeys()
-                       .hasAny(['role', 'isBanned', 'eduCoins', 'level', 'xp', 'currentStreak']);
-      
+     allow update: if isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isBanned', 'eduCoins', 'level', 'xp', 'currentStreak']);
       // Admins have full access
       allow read, write: if isAdmin();
     }

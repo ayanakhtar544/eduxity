@@ -1,14 +1,13 @@
-import prisma from "@/lib/prisma";
-import { fail, ok } from "@/app/api/_utils/response";
-import { withErrorHandler } from "@/app/api/_utils/errorHandler";
+import { prisma } from "@/server/prismaClient";
+import { fail, ok } from "@/server/utils/response";
+import { withErrorHandler } from '@/server/utils/errorHandler';
+import { requireAuth } from "@/server/auth/verifyFirebaseToken";
 
 export const GET = withErrorHandler(async (request: Request) => {
-    const url = new URL(request.url);
-    const uid = url.searchParams.get("uid");
-    
-    if (!uid) return fail("UID is required", 400);
+    const authContext = await requireAuth(request);
+    if (!authContext) return fail("Unauthorized", 401);
 
-    const user = await prisma.user.findUnique({ where: { firebaseUid: uid } });
+    const user = await prisma.user.findUnique({ where: { firebaseUid: authContext.uid } });
     if (!user) return fail("User not found", 404);
 
     const dueItems = await prisma.learningItem.findMany({

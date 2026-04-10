@@ -1,40 +1,39 @@
-// File: app/api/auth/sync/+api.ts
-import prisma from "@/lib/prisma";
-import { z } from "zod";
-import { fail, ok } from "@/app/api/_utils/response";
-import { withErrorHandler } from "@/app/api/_utils/errorHandler";
-import { coreLogger } from "@/core/logger";
+import { prisma } from '../../../lib/prisma';
+import { handleApiError } from '../_utils/errorHandler';
 
-// Strict contract for sync
-const SyncSchema = z.object({
-  email: z.string().email(),
-  name: z.string().optional(),
-  firebaseUid: z.string().min(1),
-});
-
-export const POST = withErrorHandler(async (request: Request) => {
+export async function POST(request: Request) {
+  try {
     const body = await request.json();
-    const result = SyncSchema.safeParse(body);
-    
-    if (!result.success) {
-      return fail("Invalid sync payload", 400);
+    const { email, name, firebaseUid } = body;
+
+    // 1. Basic Validation
+    if (!firebaseUid || !email) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Missing required fields' }), 
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
     }
 
-    const { email, name, firebaseUid } = result.data;
-
-    const syncedUser = await prisma.user.upsert({
+    // 2. Upsert User (Agar DB me hai to update karega, nahi hai to create karega)
+    const user = await prisma.user.upsert({
       where: { firebaseUid },
-      update: {
-        email,
-        name: name || "Student",
-      },
+      update: { email, name }, // Email ya name change hua ho to update
       create: {
         firebaseUid,
         email,
-        name: name || "Student",
+        name,
+        targetExam: 'JEE',
+        totalPoints: 0,      // Naya simplified field
+        currentStreak: 0,    // Naya simplified field
       },
     });
 
-    coreLogger.info("auth.sync.success", { firebaseUid });
-    return ok(syncedUser);
-  }, "auth/sync");
+    return new Response(
+      JSON.stringify({ success: true, data: user }), 
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    return handleApiError(error);
+  }
+}

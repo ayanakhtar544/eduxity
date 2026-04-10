@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a', flex: 1, textAlign: 'center' },
   
   statsContainer: { flexDirection: 'row', padding: 15, gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' },
-  statCard: { width: '31%', padding: 15, borderRadius: 16, alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: {width: 0, height: 2} },
+  statCard: { width: '31%', padding: 15, borderRadius: 16, alignItems: 'center', elevation: 2, boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)' },
   statValue: { fontSize: 20, fontWeight: '900', color: '#fff', marginTop: 8, marginBottom: 2 },
   statLabel: { fontSize: 10, color: '#f8fafc', fontWeight: '600', textAlign: 'center' },
   

@@ -258,7 +258,7 @@ export default function CommentsModal({
 // ==========================================
 const styles = StyleSheet.create({
   commentModalBg: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'flex-end' },
-  commentBottomSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, height: height * 0.7, paddingBottom: Platform.OS === 'ios' ? 20 : 0, shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 20 },
+  commentBottomSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, height: height * 0.7, paddingBottom: Platform.OS === 'ios' ? 20 : 0, boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)', elevation: 20 },
   commentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderColor: '#f1f5f9' },
   commentTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
   
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   commentText: { fontSize: 14, color: '#334155', lineHeight: 20 },
   
   // Reaction Summary Badge
-  reactionSummaryBadge: { position: 'absolute', bottom: -10, right: 5, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2, zIndex: 10 },
+  reactionSummaryBadge: { position: 'absolute', bottom: -10, right: 5, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)', elevation: 2, zIndex: 10 },
   summaryEmoji: { fontSize: 10, marginRight: -2 },
   summaryCount: { fontSize: 11, fontWeight: '800', color: '#64748b', marginLeft: 4 },
 
@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
   actionText: { fontSize: 12, color: '#64748b', fontWeight: '700' },
   
   // LinkedIn Style Reaction Popup Menu
-  reactionMenu: { position: 'absolute', top: -45, left: 10, flexDirection: 'row', backgroundColor: '#fff', borderRadius: 25, paddingHorizontal: 10, paddingVertical: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.15, shadowRadius: 10, elevation: 10, borderWidth: 1, borderColor: '#f1f5f9', zIndex: 100 },
+  reactionMenu: { position: 'absolute', top: -45, left: 10, flexDirection: 'row', backgroundColor: '#fff', borderRadius: 25, paddingHorizontal: 10, paddingVertical: 5, boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)', elevation: 10, borderWidth: 1, borderColor: '#f1f5f9', zIndex: 100 },
   reactionOption: { paddingHorizontal: 8, paddingVertical: 4 },
   reactionEmoji: { fontSize: 24 },
 

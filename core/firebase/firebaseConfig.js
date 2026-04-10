@@ -1,13 +1,9 @@
- // core/firebase/firebaseConfig.js
-
 import { initializeApp, getApps, getApp } from 'firebase/app';
-// FIX: Web aur Native dono ke persistence import karne hain
-import { initializeAuth, getAuth, getReactNativePersistence, browserLocalPersistence } from 'firebase/auth';
+import { initializeAuth, getReactNativePersistence, browserLocalPersistence, getAuth } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirestore } from 'firebase/firestore';
 import { Platform } from 'react-native';
 
-// Apni .env variables se config setup
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -17,28 +13,23 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
-// 1. App initialize karo (check karke ki already initialized toh nahi hai)
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+let app;
+let auth;
 
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.authDomain) {
-  console.error("[Firebase] Missing required config: apiKey/projectId/authDomain");
+// 🚨 STRICT INITIALIZATION: App pehli baar khulne par hi persistence set hoga
+if (getApps().length === 0) {
+  app = initializeApp(firebaseConfig);
+  auth = initializeAuth(app, {
+    persistence: Platform.OS === 'web' 
+      ? browserLocalPersistence 
+      : getReactNativePersistence(AsyncStorage),
+  });
+} else {
+  // Hot reload pe purana instance use karega, jisse session loose na ho
+  app = getApp();
+  auth = getAuth(app);
 }
 
-// 2. 🚨 CRITICAL FIX: Platform check lagaya hai
-// Agar Web hai toh browserLocalPersistence, nahi toh AsyncStorage
-const auth = (() => {
-  try {
-    return initializeAuth(app, {
-      persistence: Platform.OS === 'web'
-        ? browserLocalPersistence
-        : getReactNativePersistence(AsyncStorage),
-    });
-  } catch {
-    return getAuth(app);
-  }
-})();
-
-// 3. Database initialize
 const db = getFirestore(app);
 
 export { app, auth, db };

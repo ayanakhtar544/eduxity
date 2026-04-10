@@ -75,7 +75,7 @@ const TabButton = ({ item, onPress, accessibilityState }: any) => {
         style={[
           styles.indicatorDot,
           animatedIndicatorStyle,
-          { backgroundColor: activeColor, shadowColor: activeColor },
+          { backgroundColor: activeColor, boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)' },
         ]}
       />
     </TouchableOpacity>
@@ -116,8 +116,8 @@ const CustomTabBar = ({ state, descriptors, navigation }: any) => {
           };
 
           // Perfect Icon Mapping
-          let activeIcon = "settings";
-          let inactiveIcon = "settings-outline";
+          let activeIcon: keyof typeof Ionicons.glyphMap = "settings";
+          let inactiveIcon: keyof typeof Ionicons.glyphMap = "settings-outline";
           const routeName = route.name.toLowerCase();
 
           switch (routeName) {
@@ -126,10 +126,7 @@ const CustomTabBar = ({ state, descriptors, navigation }: any) => {
               activeIcon = "home";
               inactiveIcon = "home-outline";
               break;
-            case "network":
-              activeIcon = "people";
-              inactiveIcon = "people-outline";
-              break;
+            // 🚨 Network tab ka icon mapping hata diya gaya hai
             case "explore":
             case "chat":
             case "messages":
@@ -166,7 +163,7 @@ export default function TabLayout() {
       screenOptions={{ headerShown: false, tabBarHideOnKeyboard: true }}
     >
       <Tabs.Screen name="index" options={{ title: "Home" }} />
-      <Tabs.Screen name="network" options={{ title: "Network" }} />
+      {/* 🚨 Network screen yahan se remove kar di gayi hai taaki app crash na ho */}
       <Tabs.Screen name="explore" options={{ title: "Chat" }} />
       <Tabs.Screen name="profile" options={{ title: "Profile" }} />
     </Tabs>
@@ -184,10 +181,7 @@ const styles = StyleSheet.create({
     right: 20,
     borderRadius: 35,
     elevation: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
+    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
     overflow: "hidden",
   },
   glassContainer: {
@@ -211,8 +205,6 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
+    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.1)",
   },
 });

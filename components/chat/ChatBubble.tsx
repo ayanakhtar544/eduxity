@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
   bubbleCol: { maxWidth: width * 0.80 }, 
   senderName: { fontSize: 12, fontWeight: '800', color: '#64748b', marginLeft: 6, marginBottom: 5, letterSpacing: 0.2 },
   
-  bubble: { padding: 12, paddingHorizontal: 16, borderRadius: 24, shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
+  bubble: { padding: 12, paddingHorizontal: 16, borderRadius: 24, boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)', elevation: 2 },
   bubbleMe: { backgroundColor: '#4f46e5', borderBottomRightRadius: 6 },
   bubbleOther: { backgroundColor: '#ffffff', borderBottomLeftRadius: 6, borderWidth: 1, borderColor: '#f1f5f9' },
   
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
   replyActionCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#cbd5e1', justifyContent: 'center', alignItems: 'center' },
   
   reactionsRow: { flexDirection: 'row', marginTop: -14, zIndex: 10, position: 'absolute', bottom: -18, backgroundColor: 'transparent' },
-  reactionBadge: { backgroundColor: '#fff', paddingHorizontal: 6, paddingVertical: 4, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#0f172a', shadowOpacity: 0.1, shadowRadius: 5, elevation: 4, marginRight: -8 },
+  reactionBadge: { backgroundColor: '#fff', paddingHorizontal: 6, paddingVertical: 4, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)', elevation: 4, marginRight: -8 },
 
   // 🔥 STUDY SESSION CARD FIXED FOR MOBILE
   studyCardWrapper: { width: '100%', alignItems: 'center', marginVertical: 15 },
@@ -206,10 +206,8 @@ const styles = StyleSheet.create({
     maxWidth: 320, // Strict Max Width for small phones
     padding: 20, // Reduced padding
     borderRadius: 28, 
-    shadowColor: '#3730a3', 
-    shadowOpacity: 0.3, 
-    shadowOffset: {width: 0, height: 10}, 
-    shadowRadius: 20, 
+    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)', 
+    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.1)",
     elevation: 12, 
     overflow: 'hidden' 
   },
@@ -223,6 +221,7 @@ const styles = StyleSheet.create({
   studyDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.1)' },
   metricVal: { color: '#fff', fontSize: 22, fontWeight: '900' },
   metricLabel: { color: '#818cf8', fontSize: 9, fontWeight: '800', letterSpacing: 1, marginTop: 4 },
-  studyJoinBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4f46e5', width: '100%', paddingVertical: 14, borderRadius: 16, gap: 8, shadowColor: '#4f46e5', shadowOpacity: 0.4, shadowRadius: 10, shadowOffset: {width:0, height:4} },
+  studyJoinBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4f46e5', width: '100%', paddingVertical: 14, borderRadius: 16, gap: 8, boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)', boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.1)",
+    },
   studyJoinText: { color: '#fff', fontSize: 15, fontWeight: '900' }
 });

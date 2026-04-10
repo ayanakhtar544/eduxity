@@ -552,9 +552,7 @@ const styles = StyleSheet.create({
     paddingBottom: 25,
     alignItems: "center",
     elevation: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
+    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
   },
   avatarWrapper: { marginTop: -50, position: "relative" },
   avatar: {
@@ -775,9 +773,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 20,
     elevation: 5,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
+    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
   },
   qrShareBtn: {
     flexDirection: "row",

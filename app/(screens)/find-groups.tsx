@@ -490,10 +490,7 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     borderWidth: 1,
     borderColor: "#f1f5f9",
-    shadowColor: "#000",
-    shadowOpacity: 0.03,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
+    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
     elevation: 2,
   },
   cardInfo: { flexDirection: "row", alignItems: "flex-start" },
@@ -547,10 +544,7 @@ const styles = StyleSheet.create({
   },
   btnPublic: {
     backgroundColor: "#2563EB",
-    shadowColor: "#2563EB",
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
+    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
     elevation: 4,
   },
   btnPublicText: {

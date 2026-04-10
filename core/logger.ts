@@ -4,3 +4,6 @@ export const Logger = {
   warn: (event: string, meta?: any) => console.warn(`[WARN] ${event}`, meta || ''),
   error: (event: string, error: any) => console.error(`[ERROR] ${event}`, error?.message || error),
 };
+
+// Alias for server-side code that uses coreLogger
+export const coreLogger = Logger;

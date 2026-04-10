@@ -2,7 +2,7 @@
 import { StyleSheet } from 'react-native';
 
 export const feedStyles = StyleSheet.create({
-  aiCard: { backgroundColor: "#fff", marginHorizontal: 16, marginBottom: 20, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: "#e2e8f0", shadowColor: "#94a3b8", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1, shadowRadius: 15, elevation: 4 },
+  aiCard: { backgroundColor: "#fff", marginHorizontal: 16, marginBottom: 20, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: "#e2e8f0", boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)', elevation: 4 },
   cardHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 },
   typeBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   typeText: { fontSize: 12, fontWeight: "800", marginLeft: 6, textTransform: "uppercase", letterSpacing: 0.5 },

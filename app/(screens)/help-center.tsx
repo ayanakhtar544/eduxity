@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 12, fontWeight: '900', color: '#6366f1', letterSpacing: 1.5, marginBottom: 15, textTransform: 'uppercase' },
 
   faqCard: { backgroundColor: '#fff', borderRadius: 18, padding: 18, marginBottom: 12, borderWidth: 1, borderColor: '#f1f5f9' },
-  faqCardActive: { borderColor: '#e0e7ff', shadowColor: '#4f46e5', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  faqCardActive: { borderColor: '#e0e7ff', boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)', elevation: 2 },
   faqHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   questionText: { fontSize: 15, fontWeight: '800', color: '#1e293b', flex: 1, marginRight: 10, lineHeight: 20 },
   answerWrapper: { marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#f8fafc' },

@@ -1,22 +1,32 @@
 // File: app/api/users/update-token/+api.ts
-import prisma from "@/lib/prisma";
-import { fail, ok } from "@/app/api/_utils/response";
-import { mapPrismaError } from "@/app/api/_utils/prisma";
+import { prisma } from "@/server/prismaClient";
+import { fail, ok } from "@/server/utils/response";
+import { mapPrismaError } from "@/server/utils/prisma";
+import { requireAuth } from "@/server/auth/verifyFirebaseToken";
+import { z } from "zod";
+
+const UpdateTokenSchema = z.object({
+  pushToken: z.string().min(1, "pushToken is required"),
+});
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { email, firebaseUid, pushToken } = body;
-
-    if ((!email && !firebaseUid) || !pushToken) {
-      return fail("firebaseUid or email and pushToken are required", 400);
+    const authContext = await requireAuth(request);
+    if (!authContext) {
+      return fail("Unauthorized", 401);
     }
 
-    // Assumes your PushToken is a separate model linked to User (1-to-Many)
-    // as discussed in your earlier DB design.
-    const user = firebaseUid
-      ? await prisma.user.findUnique({ where: { firebaseUid } })
-      : await prisma.user.findUnique({ where: { email } });
+    const body = await request.json();
+    const result = UpdateTokenSchema.safeParse(body);
+
+    if (!result.success) {
+      return fail("pushToken is required", 400);
+    }
+
+    const { pushToken } = result.data;
+    const user = await prisma.user.findUnique({
+      where: { firebaseUid: authContext.uid },
+    });
 
     if (!user) {
       return fail("User not found", 404);

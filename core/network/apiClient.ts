@@ -1,6 +1,7 @@
-import { auth } from "@/core/firebase/firebaseConfig";
+ import { auth } from "@/core/firebase/firebaseConfig";
 
-const TIMEOUT_MS = 10000;
+// 🚨 TIMEOUT 60 SECONDS FOR AI GENERATION
+const TIMEOUT_MS = 60000;
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -11,14 +12,15 @@ export interface ApiResponse<T> {
 const normalizeEndpoint = (endpoint: string) =>
   endpoint.startsWith("/api") ? endpoint : `/api${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
 
-export const apiClient = async <T,>(endpoint: string, options: RequestInit = {}): Promise<T> => {
-  const { method = "GET", headers, body } = options;
+export const apiClient = async <T,>(endpoint: string, options: RequestInit & { timeout?: number } = {}): Promise<T> => {
+  const { method = "GET", headers, body, timeout = TIMEOUT_MS } = options;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
     const user = auth.currentUser;
-    const token = user ? await user.getIdToken().catch(() => null) : null;
+    // Force refresh token if expired
+    const token = user ? await user.getIdToken(true).catch(() => null) : null;
     const url = normalizeEndpoint(endpoint);
 
     const response = await fetch(url, {

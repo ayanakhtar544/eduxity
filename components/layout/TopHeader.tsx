@@ -1,30 +1,29 @@
+// Location: components/layout/TopHeader.tsx
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated from 'react-native-reanimated';
 import { Image } from 'expo-image';
-import { StreakCounter } from '@/components/gamification/StreakCounter';
 import { useRouter, useNavigation } from 'expo-router';
 import { DrawerActions } from '@react-navigation/native';
 
-
 export default function TopHeader({ setIsMenuOpen, unreadCount, searchQuery, setSearchQuery }: { setIsMenuOpen: any, unreadCount?: number, searchQuery?: string, setSearchQuery?: (q: string) => void }) {
   const router = useRouter();
-const navigation = useNavigation();
+  const navigation = useNavigation();
 
   return (
     <View style={styles.mainHeader}>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         
-       {/* Hamburger Menu - Wapas original wala */}
+       {/* Hamburger Menu */}
         <TouchableOpacity onPress={() => setIsMenuOpen(true)} style={styles.hamburgerBtn}>
           <Ionicons name="menu" size={28} color="#0f172a" />
         </TouchableOpacity>
         
-        {/* 🔥 NEW: Your Direct Local Logo (No Background Box, Exact 20x20 Size) */}
+        {/* Direct Local Logo */}
         <Image 
-          source={require('../../assets/images/logo.png')} // 🔥 Path to your local logo
-          style={styles.directLogo} // Applied styles for size and spacing
+          source={require('../../assets/images/logo.png')} 
+          style={styles.directLogo} 
           contentFit="contain" 
           transition={200}
         />
@@ -34,7 +33,6 @@ const navigation = useNavigation();
 
       {/* Header Icons (Right Side) */}
       <View style={styles.headerIcons}>
-        <StreakCounter />
         <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/search-users')}>
           <Ionicons name="search" size={24} color="#0f172a" />
         </TouchableOpacity>
@@ -53,7 +51,7 @@ const navigation = useNavigation();
 }
 
 // ==========================================
-// 🎨 UPDATED STYLES (No more logoBox!)
+// 🎨 UPDATED STYLES
 // ==========================================
 const styles = StyleSheet.create({
   mainHeader: { 
@@ -62,20 +60,16 @@ const styles = StyleSheet.create({
     alignItems: 'center', 
     backgroundColor: '#fff', 
     paddingHorizontal: 15, 
-    // Reduced padding slightly for a sleeker look with the smaller logo
     paddingTop: Platform.OS === 'ios' ? 8 : 12, 
     paddingBottom: 10, 
     borderBottomWidth: 1, 
     borderColor: '#e2e8f0' 
   },
-  
-  // 🔥 New style for the direct logo
   directLogo: { 
-    width: 40,  // Exact same dimensions as old icon
+    width: 40, 
     height: 40, 
-    marginRight: 10 // Maintains spacing to Brand Name text
+    marginRight: 10 
   },
-  
   brandName: { 
     fontSize: 24, 
     fontWeight: '900', 

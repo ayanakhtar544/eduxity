@@ -472,10 +472,8 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
+    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
+    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.1)",
     elevation: 1,
   },
   boostedCard: {

@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
   backBtn: { padding: 8, backgroundColor: '#f1f5f9', borderRadius: 10 },
   scrollContent: { padding: 15, paddingBottom: 40 },
-  contentCard: { backgroundColor: '#fff', padding: 20, borderRadius: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, borderWidth: 1, borderColor: '#e2e8f0' },
+  contentCard: { backgroundColor: '#fff', padding: 20, borderRadius: 16, boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)', elevation: 2, borderWidth: 1, borderColor: '#e2e8f0' },
   lastUpdated: { fontSize: 13, color: '#64748b', fontWeight: '600', marginBottom: 20, fontStyle: 'italic' },
   heading: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginTop: 15, marginBottom: 8 },
   paragraph: { fontSize: 14, color: '#475569', lineHeight: 24, marginBottom: 10 },

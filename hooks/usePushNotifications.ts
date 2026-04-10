@@ -1,110 +1,35 @@
-import Constants from "expo-constants";
-import * as Device from "expo-device";
-import * as Notifications from "expo-notifications";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Platform } from "react-native";
 
-// App background/foreground mein notification kaise behave karegi
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+let Notifications: any = null;
+let Device: any = null;
+let Constants: any = null;
+
+if (Platform.OS !== "web") {
+  Notifications = require("expo-notifications");
+  Device = require("expo-device");
+  Constants = require("expo-constants");
+}
 
 export const usePushNotifications = () => {
-  const [expoPushToken, setExpoPushToken] = useState<string | undefined>(
-    undefined,
-  );
-  const [notification, setNotification] =
-    useState<Notifications.Notification | null>(null);
-
-  const notificationListener = useRef<Notifications.Subscription>();
-  const responseListener = useRef<Notifications.Subscription>();
+  const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    // Token register karna
-    registerForPushNotificationsAsync().then((token) =>
-      setExpoPushToken(token),
-    );
+    if (Platform.OS === "web") return;
 
-    // Notification aane par sunna
-    notificationListener.current =
-      Notifications.addNotificationReceivedListener((notification) => {
-        setNotification(notification);
-      });
+    const setup = async () => {
+      const { status } = await Notifications.getPermissionsAsync();
 
-    // Jab user notification par click kare
-    responseListener.current =
-      Notifications.addNotificationResponseReceivedListener((response) => {
-        console.log("User interacted with notification:", response);
-      });
-
-    // 🚨 FIX: Naye Expo versions mein subscription remove karne ka sahi tareeqa
-    return () => {
-      if (notificationListener.current) {
-        notificationListener.current.remove(); // Direct .remove() call karna hai
+      if (status !== "granted") {
+        await Notifications.requestPermissionsAsync();
       }
-      if (responseListener.current) {
-        responseListener.current.remove(); // Direct .remove() call karna hai
-      }
+
+      const result = await Notifications.getExpoPushTokenAsync();
+      setToken(result.data);
     };
+
+    setup();
   }, []);
 
-  return { expoPushToken, notification };
+  return { token };
 };
-
-// --- Helper Function ---
-async function registerForPushNotificationsAsync() {
-  let token;
-
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("default", {
-      name: "default",
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#FF231F7C",
-    });
-  }
-
-  if (Device.isDevice) {
-    const { status: existingStatus } =
-      await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-
-    if (existingStatus !== "granted") {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    if (finalStatus !== "granted") {
-      console.log("Push token permission denied!");
-      return undefined;
-    }
-
-    // Expo projectId fetch karna
-    const projectId =
-      Constants.expoConfig?.extra?.eas?.projectId ??
-      Constants.easConfig?.projectId;
-    if (!projectId) {
-      console.warn("Project ID not found in app.config.js / app.json");
-      return undefined;
-    }
-
-    try {
-      token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-    } catch (error) {
-      console.error("Error fetching push token:", error);
-      return undefined;
-    }
-  } else {
-    console.log(
-      "Push Notifications only work on physical devices, not simulators.",
-    );
-  }
-
-  return token;
-}

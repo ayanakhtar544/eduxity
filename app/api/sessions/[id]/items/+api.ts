@@ -1,8 +1,9 @@
-import prisma from "@/lib/prisma";
-import { ok } from "@/app/api/_utils/response";
-import { withErrorHandler } from "@/app/api/_utils/errorHandler";
+import { prisma } from "@/server/prismaClient";
+import { fail, ok } from "@/server/utils/response";
+import { withErrorHandler } from '@/server/utils/errorHandler';
 import { coreLogger } from "@/core/logger";
-import { getReusableOrGenerateItems } from "@/services/contentReuseService";
+import { getReusableOrGenerateItems } from "@/server/services/contentReuseService";
+import { requireAuth } from "@/server/auth/verifyFirebaseToken";
 
 async function preGenerateIfNeeded(sessionId: string) {
   const session = await prisma.learningSession.findUnique({
@@ -51,17 +52,26 @@ async function preGenerateIfNeeded(sessionId: string) {
 }
 
 export const GET = withErrorHandler(async (request: Request, { params }: { params: { id: string } }) => {
+    const authContext = await requireAuth(request);
+    if (!authContext) return fail("Unauthorized", 401);
+
+    const session = await prisma.learningSession.findUnique({
+      where: { id: params.id },
+      include: { user: true },
+    });
+    if (!session) return fail("Session not found", 404);
+    if (session.user.firebaseUid !== authContext.uid) return fail("Forbidden", 403);
+
     const { searchParams } = new URL(request.url);
-    const page = Number(searchParams.get("page") || "1");
     const take = Number(searchParams.get("take") || "20");
     const progress = Number(searchParams.get("progress") || "0");
-    const skip = Math.max(0, (page - 1) * take);
+    const cursor = searchParams.get("cursor");
 
     const items = await prisma.learningItem.findMany({
       where: { sessionId: params.id },
       orderBy: { createdAt: "asc" },
-      skip,
       take,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
 
     if (progress >= 0.7) {
@@ -72,6 +82,6 @@ export const GET = withErrorHandler(async (request: Request, { params }: { param
 
     return ok({
       items,
-      nextPage: items.length === take ? page + 1 : null,
+      nextCursor: items.length === take ? items[items.length - 1].id : null,
     });
   }, "sessions/items");

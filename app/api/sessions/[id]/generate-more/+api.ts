@@ -1,8 +1,9 @@
-import prisma from "@/lib/prisma";
-import { ok } from "@/app/api/_utils/response";
-import { withErrorHandler } from "@/app/api/_utils/errorHandler";
-import { getReusableOrGenerateItems } from "@/services/contentReuseService";
+import { prisma } from "@/server/prismaClient";
+import { fail, ok } from "@/server/utils/response";
+import { withErrorHandler } from '@/server/utils/errorHandler';
+import { getReusableOrGenerateItems } from "@/server/services/contentReuseService";
 import { coreLogger } from "@/core/logger";
+import { requireAuth } from "@/server/auth/verifyFirebaseToken";
 
 async function generateMoreBackground(sessionId: string) {
     const session = await prisma.learningSession.findUnique({
@@ -55,9 +56,16 @@ async function generateMoreBackground(sessionId: string) {
     coreLogger.info("session.generate_more.done", { sessionId, count });
 }
 
-export const POST = withErrorHandler(async (_request: Request, { params }: { params: { id: string } }) => {
-  const session = await prisma.learningSession.findUnique({ where: { id: params.id } });
+export const POST = withErrorHandler(async (request: Request, { params }: { params: { id: string } }) => {
+  const authContext = await requireAuth(request);
+  if (!authContext) return fail("Unauthorized", 401);
+
+  const session = await prisma.learningSession.findUnique({
+    where: { id: params.id },
+    include: { user: true },
+  });
   if (!session) throw new Error("Session not found");
+  if (session.user.firebaseUid !== authContext.uid) return fail("Forbidden", 403);
   if (session.totalGenerated >= 100) return ok({ sessionId: params.id, generated: 0, maxReached: true });
 
   void generateMoreBackground(params.id).catch((error) => {

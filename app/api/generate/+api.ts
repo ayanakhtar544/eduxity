@@ -5,7 +5,10 @@ export async function POST(request: Request) {
     // Backward compatible alias of /api/ai/generate
     return fetch(new URL("/api/ai/generate", request.url), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: request.headers.get("Authorization") || "",
+      },
       body: await request.text(),
     });
   } catch {

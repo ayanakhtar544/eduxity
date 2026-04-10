@@ -1,6 +1,6 @@
 // Location: hooks/useChatSubscription.ts
 import { useEffect, useState } from 'react';
-import { ChatService, Message } from '@/services/chatService';
+import { ChatService, Message } from '@/core/services/chatService';
 
 export function useChatSubscription(chatId: string | undefined) {
   const [messages, setMessages] = useState<Message[]>([]);

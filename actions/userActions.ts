@@ -21,11 +21,11 @@ export async function createNewUser(email: string, name: string, firebaseUid: st
   }
 }
 
-export async function updateUserPushToken(firebaseUid: string, pushToken: string) {
+export async function updateUserPushToken(_firebaseUid: string, pushToken: string) {
   try {
     const response = await apiClient<ApiResponse<any>>('/api/users/update-token', {
       method: 'POST',
-      body: JSON.stringify({ firebaseUid, pushToken }),
+      body: JSON.stringify({ pushToken }),
     });
     return response.data;
   } catch (error) {

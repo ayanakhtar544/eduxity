@@ -5,8 +5,6 @@ import { View, Text, ActivityIndicator, StyleSheet, RefreshControl } from 'react
 import Animated from 'react-native-reanimated';
 import { useFeed } from '@/hooks/queries/useFeed';
 import { useUserStore } from '@/store/useUserStore';
-import { DailyChallengeCard } from '@/components/gamification/DailyChallengeCard';
-import { LeaderboardPreview } from '@/components/gamification/LeaderboardPreview';
 
 interface ForYouFeedProps {
   onScroll?: any;
@@ -24,7 +22,7 @@ export default function ForYouFeed({ onScroll = () => {}, searchQuery }: ForYouF
     refetch
   } = useFeed(user?.uid, "FOR_YOU");
 
-  // 2. Refresh animation ke liye local state
+  // Refresh animation ke liye local state
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const allPosts = data?.pages
@@ -33,7 +31,7 @@ export default function ForYouFeed({ onScroll = () => {}, searchQuery }: ForYouF
   .filter((item: any, idx: number, arr: any[]) => arr.findIndex((x) => x.id === item.id) === idx)
   .slice(-50) || [];
 
-  // 3. Pull to Refresh ka main function
+  // Pull to Refresh ka main function
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await refetch();
@@ -57,26 +55,25 @@ export default function ForYouFeed({ onScroll = () => {}, searchQuery }: ForYouF
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0000ff" />
+        <ActivityIndicator size="large" color="#4f46e5" />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* 🚨 NAYA: Normal FlatList ko Animated.FlatList bana diya */}
       <Animated.FlatList
         data={allPosts}
         keyExtractor={(item, index) => item?.id ? String(item.id) : String(index)}
         renderItem={renderPost}
 
-        // 🚨 NAYA: List ke content ke upar aur neeche jagah dena
+        // List ke content ke upar aur neeche jagah dena
         contentContainerStyle={{
-          paddingTop: 140, // 👈 Is value ko 120-160 ke beech adjust kar, header ki height ke hisaab se
+          paddingTop: 140, // Header ki height ke hisaab se
           paddingBottom: 100, // Neeche tab bar ke liye jagah
         }}
         
-        // Parent se aane wala animation scroll handler ab properly chalega
+        // Parent se aane wala animation scroll handler
         onScroll={(event) => {
           onScroll(event);
           const y = event.nativeEvent.contentOffset.y;
@@ -93,40 +90,33 @@ export default function ForYouFeed({ onScroll = () => {}, searchQuery }: ForYouF
           <RefreshControl 
             refreshing={isRefreshing} 
             onRefresh={handleRefresh} 
-            colors={['#0000ff']} 
-            tintColor={'#0000ff'} 
+            colors={['#4f46e5']} 
+            tintColor={'#4f46e5'} 
           />
         }
 
         onEndReached={loadMore}
         onEndReachedThreshold={0.5} 
         
-        ListHeaderComponent={() => (
-          <View>
-            <DailyChallengeCard />
-            <LeaderboardPreview />
-          </View>
-        )}
-        
         ListFooterComponent={() => 
           isFetchingNextPage ? (
-            <ActivityIndicator style={{ padding: 20 }} size="small" color="#0000ff" />
+            <ActivityIndicator style={{ padding: 20 }} size="small" color="#4f46e5" />
           ) : null
         }
         
         ListEmptyComponent={() => (
           <View style={styles.center}>
-            <Text>No posts found. Swipe down to refresh!</Text>
+            <Text style={styles.emptyText}>No posts found. Swipe down to refresh!</Text>
           </View>
         )}
-      />  {/* 🚨 Dhyan rahe, ye tag yahi par aise `/>` se band hona chahiye */}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 50 },
   postCard: {
     backgroundColor: '#fff',
     padding: 16,
@@ -134,11 +124,14 @@ const styles = StyleSheet.create({
     marginTop: 12,
     borderRadius: 8,
     shadowColor: '#000',
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+    borderWidth: 1,
+    borderColor: '#e2e8f0'
   },
-  title: { fontSize: 18, fontWeight: 'bold' },
-  category: { fontSize: 12, color: 'gray', marginTop: 4 },
-  content: { fontSize: 14, marginTop: 8 },
+  title: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
+  category: { fontSize: 12, color: '#64748b', marginTop: 4, fontWeight: '600', textTransform: 'uppercase' },
+  content: { fontSize: 14, marginTop: 8, color: '#334155', lineHeight: 20 },
+  emptyText: { color: '#94a3b8', fontSize: 15, fontWeight: '600' }
 });

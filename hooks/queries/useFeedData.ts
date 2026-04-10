@@ -16,7 +16,7 @@ export interface FeedItem {
 
 interface FeedApiPayload {
   items: FeedItem[];
-  nextPage: number | null;
+  nextCursor: string | null;
 }
 
 interface UseFeedDataOptions {
@@ -37,26 +37,25 @@ export function useFeedData(currentUid?: string, options: UseFeedDataOptions = {
   return useInfiniteQuery({
     queryKey: ["feedData", scope, currentUid, sessionId, sessionTopic],
     enabled: authReady && (scope === "FOR_YOU" || !!currentUid),
-    queryFn: async ({ pageParam = 1 }) => {
+    queryFn: async ({ pageParam = null }) => {
       const query = new URLSearchParams({
-        page: String(pageParam),
         mode: scope,
         take: "20",
       });
 
-      if (currentUid) query.set("uid", currentUid);
       if (sessionId) query.set("sessionId", sessionId);
       if (sessionTopic) query.set("sessionTopic", sessionTopic);
+      if (pageParam) query.set("cursor", String(pageParam));
 
       const result = await apiClient<ApiResponse<FeedApiPayload>>(`/api/feed?${query.toString()}`);
 
       return {
         posts: result.data.items ?? [],
-        nextPage: result.data.nextPage,
+        nextCursor: result.data.nextCursor,
       };
     },
-    getNextPageParam: (lastPage) => lastPage?.nextPage ?? undefined,
-    initialPageParam: 1,
+    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
+    initialPageParam: null as string | null,
     retry: 2,
   });
 }

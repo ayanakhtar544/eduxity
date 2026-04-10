@@ -193,14 +193,14 @@ export default function TodoList({ groupId, isLeader }: { groupId: string, isLea
 }
 
 const styles = StyleSheet.create({
-  todoTrayContainer: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e2e8f0', borderTopLeftRadius: 24, borderTopRightRadius: 24, shadowColor: '#000', shadowOffset: {width: 0, height: -5}, shadowOpacity: 0.1, shadowRadius: 10, elevation: 15 },
+  todoTrayContainer: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e2e8f0', borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)', elevation: 15 },
   todoTab: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fef3c7', paddingVertical: 12, paddingHorizontal: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
   todoTabText: { fontSize: 14, fontWeight: '800', color: '#92400e' },
   todoContent: { backgroundColor: '#fff', paddingHorizontal: 15 },
   
   tabToggleRow: { flexDirection: 'row', backgroundColor: '#f1f5f9', borderRadius: 12, padding: 4, marginTop: 15, marginBottom: 10 },
   toggleBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8 },
-  toggleBtnActive: { backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 2 },
+  toggleBtnActive: { backgroundColor: '#fff', elevation: 2, boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)' },
   toggleText: { fontSize: 13, fontWeight: '700', color: '#64748b' },
   toggleTextActive: { color: '#2563eb' },
   

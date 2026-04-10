@@ -1,24 +1,20 @@
 // Location: components/feed/FeedItemRenderer.tsx
 
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, LayoutAnimation } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
 import { apiClient } from '@/core/network/apiClient';
 import { useUserStore } from '@/store/useUserStore';
 
-// 🚨 Ye interface tumhare Prisma DB model se 100% match hona chahiye
+// 🚨 Updated Interface matching new Prisma Schema
 interface FeedItemProps {
   item: {
     id: string;
-    topic?: string;
-    type?: string;
+    topic: string;
+    type: string; // "remember" | "quiz" | "flashcard" | "match" | "mini_game"
     difficulty?: number;
-    payload?: any;
-    title?: string;
-    category?: string;
-    content?: string;
-    createdAt?: Date | string;
+    payload: any; // AI se aane wala actual data
   };
   currentUid?: string;
   onCorrect?: () => void;
@@ -27,92 +23,175 @@ interface FeedItemProps {
 
 export default function FeedItemRenderer({ item, onCorrect, onWrong }: FeedItemProps) {
   const { user } = useUserStore();
+  const payload = item.payload || {};
+
+  // 🔄 Interactions State
+  const [showAnswer, setShowAnswer] = useState(false);
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+
   const track = async (type: "VIEW" | "CORRECT" | "WRONG" | "SKIP" | "SAVE" | "LIKE" | "SHARE" | "BOOKMARK") => {
     if (!user?.uid || !item?.id) return;
     try {
       await apiClient("/api/interactions", {
         method: "POST",
-        body: JSON.stringify({ uid: user.uid, learningItemId: item.id, type }),
+        body: JSON.stringify({ learningItemId: item.id, type }),
       });
     } catch {}
   };
-  let interactive: any = null;
-  if (item.payload) {
-    interactive = { items: [{ type: item.type, ...item.payload }] };
-  } else if (item.content) {
-    try {
-      interactive = JSON.parse(item.content);
-    } catch {
-      interactive = null;
+
+  // ==========================================
+  // 🧠 1. RENDERERS FOR DIFFERENT POST TYPES
+  // ==========================================
+  const renderContent = () => {
+    switch (item.type) {
+      case "quiz":
+        return (
+          <View>
+            <Text style={styles.questionText}>{payload.question}</Text>
+            {(payload.options || []).map((opt: string, idx: number) => {
+              const isSelected = selectedOption === idx;
+              const isCorrect = idx === payload.correctOption;
+              const showResult = selectedOption !== null;
+
+              let bgColor = '#fff';
+              let borderColor = '#e2e8f0';
+              let textColor = '#334155';
+
+              if (showResult) {
+                if (isCorrect) {
+                  bgColor = '#ecfdf5'; borderColor = '#10b981'; textColor = '#065f46';
+                } else if (isSelected) {
+                  bgColor = '#fef2f2'; borderColor = '#ef4444'; textColor = '#991b1b';
+                }
+              } else if (isSelected) {
+                bgColor = '#eef2ff'; borderColor = '#4f46e5';
+              }
+
+              return (
+                <TouchableOpacity 
+                  key={idx} 
+                  disabled={showResult}
+                  style={[styles.quizOption, { backgroundColor: bgColor, borderColor }]}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setSelectedOption(idx);
+                    if (idx === payload.correctOption) {
+                      track("CORRECT"); onCorrect?.();
+                    } else {
+                      track("WRONG"); onWrong?.();
+                    }
+                  }}
+                >
+                  <Text style={[styles.quizOptionText, { color: textColor }]}>{opt}</Text>
+                  {showResult && isCorrect && <Ionicons name="checkmark-circle" size={20} color="#10b981" />}
+                  {showResult && isSelected && !isCorrect && <Ionicons name="close-circle" size={20} color="#ef4444" />}
+                </TouchableOpacity>
+              );
+            })}
+            {selectedOption !== null && payload.explanation && (
+              <View style={styles.explanationBox}>
+                <Text style={styles.explanationLabel}>Explanation:</Text>
+                <Text style={styles.explanationText}>{payload.explanation}</Text>
+              </View>
+            )}
+          </View>
+        );
+
+      case "flashcard":
+        return (
+          <TouchableOpacity 
+            activeOpacity={0.9} 
+            style={styles.flashcardBox}
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
+              setShowAnswer(!showAnswer);
+            }}
+          >
+            <Text style={styles.flashcardLabel}>{showAnswer ? "ANSWER" : "QUESTION"}</Text>
+            <Text style={styles.flashcardText}>
+              {showAnswer ? payload.back : payload.front}
+            </Text>
+            <Text style={styles.tapToFlipHint}>Tap to flip ↺</Text>
+          </TouchableOpacity>
+        );
+
+      case "match":
+      case "mini_game":
+        return (
+          <View style={styles.gameBox}>
+            <Text style={styles.gameTitle}>{payload.statement || payload.task || "Interactive Game"}</Text>
+            {!showAnswer ? (
+              <TouchableOpacity style={styles.revealBtn} onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setShowAnswer(true);
+              }}>
+                <Text style={styles.revealBtnText}>Reveal Answer</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.revealedAnswerBox}>
+                <Text style={styles.revealedAnswerText}>{payload.answer || payload.hint || JSON.stringify(payload.pairs)}</Text>
+              </View>
+            )}
+          </View>
+        );
+
+      case "remember":
+      default:
+        const contentStr = payload.content || payload.codeOrSteps || (payload.points && payload.points.join('\n- '));
+        return (
+          <View>
+            {payload.title && <Text style={styles.summaryTitle}>{payload.title}</Text>}
+            {contentStr ? (
+              <Markdown style={markdownStyles}>{contentStr}</Markdown>
+            ) : (
+              <Text style={styles.emptyContent}>No content available.</Text>
+            )}
+          </View>
+        );
     }
-  }
+  };
 
-  const firstItem = interactive?.items?.[0];
-
+  // ==========================================
+  // 🎨 2. MAIN CARD RENDER
+  // ==========================================
   return (
     <View style={styles.cardContainer}>
       
-      {/* 1. Header Mapping: Title and Category */}
+      {/* HEADER */}
       <View style={styles.cardHeader}>
         <View style={styles.categoryBadge}>
-          <Text style={styles.categoryText}>{item.type || item.category || "General"}</Text>
+          <Text style={styles.categoryText}>{item.type.replace('_', ' ')}</Text>
         </View>
-        <TouchableOpacity>
-          <Ionicons name="bookmark-outline" size={22} color="#64748b" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <Text style={styles.difficultyText}>Lvl {item.difficulty || 1}</Text>
+          <TouchableOpacity onPress={() => track("BOOKMARK")}>
+            <Ionicons name="bookmark-outline" size={22} color="#64748b" />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <Text style={styles.title}>{item.topic || item.title || "Micro Learning"}</Text>
+      <Text style={styles.topicTitle}>{item.topic || "Learning Resource"}</Text>
 
-      {/* 2. Content Mapping: AI Markdown Renderer */}
+      {/* DYNAMIC CONTENT */}
       <View style={styles.contentContainer}>
-        {firstItem?.type === "quiz" ? (
-          <View>
-            <Text style={styles.title}>{firstItem.question}</Text>
-            {(firstItem.options || []).map((opt: string, idx: number) => (
-              <Text key={`${item.id}-${idx}`} style={styles.content}>
-                {`${idx + 1}. ${opt}`}
-              </Text>
-            ))}
-          </View>
-        ) : firstItem?.type === "flashcard" ? (
-          <View>
-            <Text style={styles.category}>Front</Text>
-            <Text style={styles.content}>{firstItem.front}</Text>
-            <Text style={styles.category}>Back</Text>
-            <Text style={styles.content}>{firstItem.back}</Text>
-          </View>
-        ) : item.content ? (
-          <Markdown style={markdownStyles}>
-            {item.content}
-          </Markdown>
-        ) : (
-          <Text style={styles.emptyContent}>No notes available for this topic.</Text>
-        )}
+        {renderContent()}
       </View>
 
-      {/* 3. Interactive Footer (Optional, based on your props) */}
+     {/* 🎯 PURE LEARNING FOCUSED FOOTER */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => { track("CORRECT"); onCorrect?.(); }}>
-          <Ionicons name="checkmark-circle-outline" size={20} color="#10b981" />
-          <Text style={[styles.actionText, { color: '#10b981' }]}>Got It</Text>
-        </TouchableOpacity>
+        {/* Only show "Got it" for theory/remember type cards */}
+        {item.type === "remember" && (
+          <TouchableOpacity style={styles.primaryActionBtn} onPress={() => { track("CORRECT"); onCorrect?.(); }}>
+            <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+            <Text style={styles.primaryActionText}>Mark Complete</Text>
+          </TouchableOpacity>
+        )}
         
-        <TouchableOpacity style={styles.actionBtn} onPress={() => { track("WRONG"); onWrong?.(); }}>
-          <Ionicons name="close-circle-outline" size={20} color="#ef4444" />
-          <Text style={[styles.actionText, { color: '#ef4444' }]}>Review Again</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => track("LIKE")}>
-          <Ionicons name="heart-outline" size={20} color="#f43f5e" />
-          <Text style={[styles.actionText, { color: '#f43f5e' }]}>Like</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => track("BOOKMARK")}>
-          <Ionicons name="bookmark-outline" size={20} color="#4f46e5" />
-          <Text style={[styles.actionText, { color: '#4f46e5' }]}>Bookmark</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => track("SHARE")}>
-          <Ionicons name="share-social-outline" size={20} color="#0ea5e9" />
-          <Text style={[styles.actionText, { color: '#0ea5e9' }]}>Share</Text>
+        <View style={{ flex: 1 }} />
+        
+        <TouchableOpacity style={styles.secondaryActionBtn} onPress={() => track("BOOKMARK")}>
+          <Ionicons name="bookmark" size={18} color="#64748b" />
+          <Text style={styles.secondaryActionText}>Review Later</Text>
         </TouchableOpacity>
       </View>
 
@@ -120,21 +199,23 @@ export default function FeedItemRenderer({ item, onCorrect, onWrong }: FeedItemP
   );
 }
 
-// 🎨 STYLING
+// ==========================================
+// 🎨 3. PREMIUM STYLES
+// ==========================================
 const styles = StyleSheet.create({
   cardContainer: {
     backgroundColor: '#fff',
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 20,
     marginHorizontal: 16,
     marginBottom: 20,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.05,
+    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -144,77 +225,78 @@ const styles = StyleSheet.create({
   },
   categoryBadge: {
     backgroundColor: '#eef2ff',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
   },
   categoryText: {
     color: '#4f46e5',
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '900',
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  title: {
+  difficultyText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '800',
+    alignSelf: 'center',
+  },
+  topicTitle: {
     fontSize: 20,
     fontWeight: '900',
     color: '#0f172a',
     marginBottom: 15,
+    letterSpacing: -0.5,
   },
   contentContainer: {
-    backgroundColor: '#f8fafc',
-    padding: 15,
-    borderRadius: 12,
     marginBottom: 20,
   },
   emptyContent: {
     color: '#94a3b8',
     fontStyle: 'italic',
   },
-  category: {
-    fontSize: 12,
-    color: '#64748b',
-    fontWeight: '700',
-    marginTop: 6,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-  },
-  content: {
-    fontSize: 14,
-    color: '#334155',
-    lineHeight: 22,
-    marginBottom: 4,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    gap: 15,
-    borderTopWidth: 1,
-    borderColor: '#f1f5f9',
-    paddingTop: 15,
-  },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  actionText: {
-    marginLeft: 6,
-    fontSize: 14,
-    fontWeight: '700',
-  },
+
+  // Quiz Styles
+  questionText: { fontSize: 16, fontWeight: '800', color: '#1e293b', marginBottom: 15 },
+  quizOption: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderRadius: 16, borderWidth: 2, marginBottom: 10 },
+  quizOptionText: { fontSize: 15, fontWeight: '700', flex: 1 },
+  explanationBox: { marginTop: 15, padding: 15, backgroundColor: '#f8fafc', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
+  explanationLabel: { fontSize: 12, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: 4 },
+  explanationText: { fontSize: 14, color: '#334155', fontWeight: '500', lineHeight: 20 },
+
+  // Flashcard Styles
+  flashcardBox: { backgroundColor: '#0f172a', padding: 25, borderRadius: 20, alignItems: 'center', justifyContent: 'center', minHeight: 180, shadowColor: '#4f46e5', shadowOpacity: 0.2, shadowRadius: 15, elevation: 5 },
+  flashcardLabel: { fontSize: 12, fontWeight: '900', color: '#64748b', letterSpacing: 1, marginBottom: 15 },
+  flashcardText: { fontSize: 22, fontWeight: '800', color: '#fff', textAlign: 'center', lineHeight: 30 },
+  tapToFlipHint: { fontSize: 12, color: '#475569', fontWeight: '600', position: 'absolute', bottom: 15 },
+
+  // Game/Match Styles
+  gameBox: { backgroundColor: '#f8fafc', padding: 20, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center' },
+  gameTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a', textAlign: 'center', marginBottom: 20 },
+  revealBtn: { backgroundColor: '#4f46e5', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
+  revealBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  revealedAnswerBox: { backgroundColor: '#ecfdf5', padding: 15, borderRadius: 12, width: '100%', borderWidth: 1, borderColor: '#10b981' },
+  revealedAnswerText: { color: '#065f46', fontSize: 16, fontWeight: '700', textAlign: 'center' },
+
+  // Summary Styles
+  summaryTitle: { fontSize: 16, fontWeight: '800', color: '#3b82f6', marginBottom: 8 },
+
+  footer: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderColor: '#f1f5f9', paddingTop: 15, marginTop: 5 },
+  iconBtn: { padding: 8, backgroundColor: '#f8fafc', borderRadius: 20, borderWidth: 1, borderColor: '#f1f5f9' },
+  primaryActionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ecfdf5', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: '#a7f3d0' },
+  primaryActionText: { color: '#065f46', fontWeight: '800', fontSize: 14, marginLeft: 6 },
+  secondaryActionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
+  secondaryActionText: { color: '#475569', fontWeight: '700', fontSize: 13, marginLeft: 6 },
 });
 
-// Custom Markdown Styles for the AI text
+// Custom Markdown Styles
 const markdownStyles = StyleSheet.create({
-  body: { fontSize: 15, color: '#334155', lineHeight: 24 },
-  heading2: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginTop: 10, marginBottom: 5 },
-  heading3: { fontSize: 16, fontWeight: 'bold', color: '#1e293b', marginTop: 10, marginBottom: 5 },
-  strong: { fontWeight: 'bold', color: '#0f172a' },
+  body: { fontSize: 15, color: '#334155', lineHeight: 26, fontWeight: '500' },
+  heading2: { fontSize: 18, fontWeight: '900', color: '#0f172a', marginTop: 15, marginBottom: 8 },
+  heading3: { fontSize: 16, fontWeight: '800', color: '#1e293b', marginTop: 10, marginBottom: 5 },
+  strong: { fontWeight: '900', color: '#0f172a' },
   bullet_list: { marginTop: 5, marginBottom: 15 },
-  list_item: { marginBottom: 5 },
+  list_item: { marginBottom: 8 },
+  code_inline: { backgroundColor: '#f1f5f9', color: '#ec4899', fontWeight: 'bold', padding: 4, borderRadius: 4 },
 });

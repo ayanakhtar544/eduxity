@@ -1,8 +1,9 @@
-import prisma from "@/lib/prisma";
-import { fail, ok } from "@/app/api/_utils/response";
-import { InteractionType } from "@/prisma/generated/client";
-import { withErrorHandler } from "@/app/api/_utils/errorHandler";
+import { prisma } from "@/server/prismaClient";
+import { fail, ok } from "@/server/utils/response";
+import { InteractionType } from "@/server/prisma/generated/client";
+import { withErrorHandler } from '@/server/utils/errorHandler';
 import { coreLogger } from "@/core/logger";
+import { requireAuth } from "@/server/auth/verifyFirebaseToken";
 
 const SCORE_DELTA: Record<InteractionType, number> = {
   VIEW: 0.1,
@@ -16,20 +17,22 @@ const SCORE_DELTA: Record<InteractionType, number> = {
 };
 
 export const POST = withErrorHandler(async (request: Request) => {
+    const authContext = await requireAuth(request);
+    if (!authContext) return fail("Unauthorized", 401);
+    
     const body = await request.json();
-    const { uid, learningItemId, type, dwellTime } = body as {
-      uid: string;
+    const { learningItemId, type, dwellTime } = body as {
       learningItemId: string;
       type: InteractionType;
       dwellTime?: number; // Added dwellTime support
     };
 
-    if (!uid || !learningItemId || !type) {
-      return fail("uid, learningItemId and type are required", 400);
+    if (!learningItemId || !type) {
+      return fail("learningItemId and type are required", 400);
     }
     if (!(type in SCORE_DELTA)) return fail("Invalid interaction type", 400);
 
-    const user = await prisma.user.findUnique({ where: { firebaseUid: uid }, select: { id: true } });
+    const user = await prisma.user.findUnique({ where: { firebaseUid: authContext.uid }, select: { id: true } });
     if (!user) return fail("User not found", 404);
 
     const isCorrect = type === "CORRECT";
@@ -91,6 +94,6 @@ export const POST = withErrorHandler(async (request: Request) => {
       })
     ]);
 
-    coreLogger.info("interaction.tracked", { uid, learningItemId, type });
+    coreLogger.info("interaction.tracked", { uid: authContext.uid, learningItemId, type });
     return ok({ tracked: true });
   }, "interactions");

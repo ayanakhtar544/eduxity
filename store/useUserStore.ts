@@ -1,5 +1,7 @@
 // File: store/useUserStore.ts
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiClient } from '@/core/network/apiClient';
 
 // Explicit type define kar rahe hain
@@ -14,29 +16,37 @@ interface UserState {
 }
 
 // Named export (Very Important!)
-export const useUserStore = create<UserState>((set) => ({
-  user: null,
-  sqlUser: null,
-  authReady: false,
-  setUser: (user) => set({ user }),
-  setSqlUser: (sqlUser) => set({ sqlUser }),
-  setAuthReady: (ready) => set({ authReady: ready }),
-  
-  // firebaseUser ko explicitly 'any' ya Firebase User type do
-  syncUserWithDatabase: async (firebaseUser: any) => {
-    try {
-      if (!firebaseUser?.uid || !firebaseUser?.email) return;
-      const res = await apiClient<any>('/api/auth/sync', {
-        method: 'POST',
-        body: JSON.stringify({
-          firebaseUid: firebaseUser.uid,
-          email: firebaseUser.email,
-          name: firebaseUser.displayName || undefined,
-        }),
-      });
-      set({ sqlUser: res?.data ?? null });
-    } catch (error) {
-      console.error(error);
+export const useUserStore = create<UserState>()(
+  persist(
+    (set) => ({
+      user: null,
+      sqlUser: null,
+      authReady: false,
+      setUser: (user) => set({ user }),
+      setSqlUser: (sqlUser) => set({ sqlUser }),
+      setAuthReady: (ready) => set({ authReady: ready }),
+      
+      syncUserWithDatabase: async (firebaseUser: any) => {
+        try {
+          if (!firebaseUser?.uid || !firebaseUser?.email) return;
+          const res = await apiClient<any>('/api/auth/sync', {
+            method: 'POST',
+            body: JSON.stringify({
+              firebaseUid: firebaseUser.uid,
+              email: firebaseUser.email,
+              name: firebaseUser.displayName || undefined,
+            }),
+          });
+          set({ sqlUser: res?.data ?? null });
+        } catch (error) {
+          console.error(error);
+        }
+      }
+    }),
+    {
+      name: 'user-storage',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({ sqlUser: state.sqlUser }), // Persist only authenticated metadata locally
     }
-  }
-}));
+  )
+);

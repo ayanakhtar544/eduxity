@@ -1,7 +1,7 @@
 // Location: core/api/srsService.ts
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/firebaseConfig';
-import { calculateNextReview, SRSData } from '../../server/algorithms/srsAlgorithm';
+import { calculateNextReview, SRSData } from '../utils/srsAlgorithm';
 
 export const SRSService = {
   

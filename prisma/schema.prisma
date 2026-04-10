@@ -19,17 +19,19 @@ model User {
   preferredTopics     Json?
   preferredDifficulty Int?    @default(2)
 
+  // 🚀 Simplified Gamification Fields (Naya Add Hua Hai)
+  totalPoints         Int     @default(0)
+  currentStreak       Int     @default(0)
+
+  // Relations
   pushTokens       PushToken[]
   sessions         LearningSession[]
   learningItems    LearningItem[]
   interactions     UserInteraction[]
-  feedItems        AiFeedItem[]
-  streak           LearningStreak?
-  leaderboardScore LeaderboardScore?
+  feedItems        FeedItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
 }
 
 model PushToken {
@@ -49,8 +51,7 @@ model LearningSession {
   totalCompleted Int           @default(0)
   startedAt      DateTime      @default(now())
   completedAt    DateTime?
-
-  items LearningItem[]
+  items          LearningItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -70,10 +71,9 @@ model LearningItem {
   engagementScore  Float            @default(0)
   masteredByUser   Boolean          @default(false)
   lastInteractedAt DateTime?
-
-  nextReviewAt   DateTime?
-  reviewInterval Int       @default(0)
-  reviewCount    Int       @default(0)
+  nextReviewAt     DateTime?
+  reviewInterval   Int              @default(0)
+  reviewCount      Int              @default(0)
 
   feedItem     FeedItem?
   interactions UserInteraction[]
@@ -91,11 +91,10 @@ model FeedItem {
   learningItemId    String       @unique
   learningItem      LearningItem @relation(fields: [learningItemId], references: [id], onDelete: Cascade)
   publishedByUserId String?
+  userId            String
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   publishedAt       DateTime     @default(now())
   createdAt         DateTime     @default(now())
-
-
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt(sort: Desc)])
 }
@@ -136,33 +135,4 @@ enum InteractionType {
   LIKE
   SHARE
   BOOKMARK
-}
-
-model LearningStreak {
-  id             String    @id @default(uuid())
-  userId         String    @unique
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  currentStreak  Int       @default(0)
-  longestStreak  Int       @default(0)
-  lastActiveDate DateTime?
-  updatedAt      DateTime  @updatedAt
-  createdAt      DateTime  @default(now())
-}
-
-model LeaderboardScore {
-  id                String   @id @default(uuid())
-  userId            String   @unique
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  score             Float    @default(0)
-  correctAnswers    Int      @default(0)
-  sessionsCompleted Int      @default(0)
-  streak            Int      @default(0)
-  updatedAt         DateTime @updatedAt
-}
-
-model DailyChallenge {
-  id        String   @id @default(uuid())
-  date      DateTime @unique
-  items     String[] // array of item IDs for postgres
-  createdAt DateTime @default(now())
 }

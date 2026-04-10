@@ -1,17 +1,22 @@
 // File: app/api/users/[id]/+api.ts
-import prisma from "@/lib/prisma";
-import { fail, ok } from "@/app/api/_utils/response";
-import { mapPrismaError } from "@/app/api/_utils/prisma";
+import { prisma } from "@/server/prismaClient";
+import { fail, ok } from "@/server/utils/response";
+import { mapPrismaError } from "@/server/utils/errorHandler"; 
+import { requireAuth } from "@/server/auth/verifyFirebaseToken";
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
+    const authContext = await requireAuth(request);
+    if (!authContext) {
+      return fail("Unauthorized", 401);
+    }
+
     const firebaseUid = params.id;
 
     if (!firebaseUid) {
       return fail("User ID is required", 400);
     }
 
-    // Prisma DB se user fetch karo jiska firebaseUid match kare
     const user = await prisma.user.findUnique({
       where: { firebaseUid: firebaseUid }
     });

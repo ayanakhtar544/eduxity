@@ -1,8 +1,24 @@
-import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
+import { Platform } from "react-native";
 
-// Web par ye hook 'null' return karega taaki app crash na ho
-// Android/iOS par ye normal Expo hook ki tarah completely fine kaam karega
-export const useSafeNotificationResponse = Platform.OS === 'web' 
-  ? () => null 
-  : Notifications.useLastNotificationResponse;
+// Lazy-load expo-notifications to prevent web bundle from processing
+// native-only modules. The top-level import pattern causes Metro to
+// bundle the module even when Platform.OS === 'web', triggering warnings.
+let _Notifications: typeof import("expo-notifications") | null = null;
+
+function getNotifications() {
+  if (Platform.OS === "web") return null;
+  if (!_Notifications) {
+    _Notifications = require("expo-notifications") as typeof import("expo-notifications");
+  }
+  return _Notifications;
+}
+
+// Web returns null; native returns the last notification response hook.
+export const useSafeNotificationResponse: () => any =
+  Platform.OS === "web"
+    ? () => null
+    : () => {
+        const N = getNotifications();
+        // eslint-disable-next-line react-hooks/rules-of-hooks
+        return N ? N.useLastNotificationResponse() : null;
+      };

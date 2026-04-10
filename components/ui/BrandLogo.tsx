@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, Platform } from 'react-native';
 import { Image } from 'expo-image';
 
 const LOCAL_LOGO = require('../../assets/images/logo.png');
@@ -56,10 +56,7 @@ const styles = StyleSheet.create({
   },
   glow: {
     // Eduxity Brand Indigo Glow
-    shadowColor: '#4f46e5',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8, // Android ke liye solid elevation
+    boxShadow: '0px 4px 6px rgba(0, 0, 0, 0.1)',
+    elevation: 6, 
   },
 });

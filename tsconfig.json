@@ -5,6 +5,7 @@
     "jsx": "react-native",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
+    "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
       "@/*": [
@@ -13,10 +14,25 @@
     }
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx"
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx",
+    "hooks/**/*.ts",
+    "hooks/**/*.tsx",
+    "store/**/*.ts",
+    "core/**/*.ts",
+    "core/**/*.tsx",
+    "lib/**/*.ts",
+    "shared/**/*.ts",
+    "constants/**/*.ts",
+    "server/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "scratch/**",
+    "android/**",
+    "ios/**",
+    "dist/**"
   ]
 }

@@ -1,30 +1,34 @@
 // ✅ next/server hataya kyunki Expo ise support nahi karta
 // ✅ Standard Web API Response use kiya hai
 
-import prisma from "@/lib/prisma";
-import { fail, ok } from "@/app/api/_utils/response";
-import { mapPrismaError } from "@/app/api/_utils/prisma";
+import { prisma } from "@/server/prismaClient";
+import { fail, ok } from "@/server/utils/response";
+import { mapPrismaError } from "@/server/utils/errorHandler";
+import { requireAuth } from "@/server/auth/verifyFirebaseToken";
+import { z } from "zod";
+
+const SaveTokenSchema = z.object({
+  pushToken: z.string().min(1, "pushToken is required"),
+});
 
 export async function POST(req: Request) {
   try {
-    // 1. Mobile app se aane wala data parse karo
-    const body = await req.json();
-    const { firebaseUid, pushToken } = body;
-
-    // 2. Validation (Senior Dev Check)
-    if (!firebaseUid || !pushToken) {
-      return fail("Missing firebaseUid or pushToken in request body.", 400);
+    const authContext = await requireAuth(req);
+    if (!authContext) {
+      return fail("Unauthorized", 401);
     }
 
-    // 3. Security (Recommendation)
-    // Production mein yahan Authorization header check karna zaroori hai
+    const body = await req.json();
+    const result = SaveTokenSchema.safeParse(body);
 
-    console.log(`[API] Received token for User ${firebaseUid}: ${pushToken}`);
+    if (!result.success) {
+      return fail("pushToken is required.", 400);
+    }
 
-    // 4. Database Update (PRISMA LOGIC)
+    const { pushToken } = result.data;
     
     const user = await prisma.user.findUnique({
-      where: { firebaseUid },
+      where: { firebaseUid: authContext.uid },
     });
 
     if (!user) {
@@ -37,9 +41,7 @@ export async function POST(req: Request) {
       create: { token: pushToken, userId: user.id },
     });
 
-    // 5. Success Response
-    // NextResponse.json ki jagah sirf Response.json use karein
-    return ok({ firebaseUid, pushToken });
+    return ok({ firebaseUid: authContext.uid, pushToken });
 
   } catch (error) {
     console.error("Save Token API Error:", error);

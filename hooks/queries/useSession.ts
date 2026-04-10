@@ -2,7 +2,6 @@ import { useMutation } from "@tanstack/react-query";
 import { apiClient, ApiResponse } from "@/core/network/apiClient";
 
 type StartSessionPayload = {
-  uid: string;
   topic: string;
   preferredType?: string;
   targetExam?: string;

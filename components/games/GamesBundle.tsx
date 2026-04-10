@@ -161,7 +161,7 @@ export const BioTimeAttackGame = () => {
 
 // --- STYLES FOR GAMES ---
 const styles = StyleSheet.create({
-  gameCard: { marginHorizontal: 15, marginBottom: 15, backgroundColor: '#020617', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#1e293b', elevation: 5, shadowColor: '#000', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.3, shadowRadius: 10 },
+  gameCard: { marginHorizontal: 15, marginBottom: 15, backgroundColor: '#020617', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#1e293b', elevation: 5, boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)' },
   gameHeader: { marginBottom: 15, alignItems: 'center' },
   gameTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   gameTitle: { fontSize: 15, fontWeight: '900', marginLeft: 6, letterSpacing: 2, color: '#fff' },

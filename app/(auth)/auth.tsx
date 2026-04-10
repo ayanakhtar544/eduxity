@@ -1,8 +1,8 @@
+// Location: app/(auth)/auth.tsx
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { View, Text } from 'react-native';
 import {
     ActivityIndicator,
     KeyboardAvoidingView,
@@ -11,15 +11,15 @@ import {
     StyleSheet,
     TextInput,
     TouchableOpacity,
+    View,
+    Text
 } from "react-native";
-import Animated, { FadeOutUp, SlideInUp } from "react-native-reanimated";
+import Animated, { FadeInDown, FadeOutUp, SlideInUp } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // 🔥 Firebase Services
 import { auth, db } from "../../core/firebase/firebaseConfig";
-
 import BrandLogo from "../../components/ui/BrandLogo";
-
 import {
     createUserWithEmailAndPassword,
     FacebookAuthProvider,
@@ -36,10 +36,16 @@ export default function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  
+  // 🔥 NAYA: Confirm Password ko dikhane/chhipane ka state
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  
+  // 🔥 NAYA: Confirm Password store karne ka state
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   // 🍞 Custom Toast State
   const [toastMessage, setToastMessage] = useState("");
@@ -58,12 +64,21 @@ export default function AuthScreen() {
 
   // 🚀 1. EMAIL/PASSWORD AUTH LOGIC
   const handleAuth = async () => {
+    // Basic validation
     if (!email.trim() || !password.trim() || (!isLogin && !fullName.trim())) {
       showToast("Please fill all the required fields.", true);
       return;
     }
+    
+    // Password length validation
     if (password.length < 6) {
       showToast("Password must be at least 6 characters.", true);
+      return;
+    }
+
+    // 🔥 NAYA: Sign Up ke time password match check karna
+    if (!isLogin && password !== confirmPassword) {
+      showToast("Passwords do not match!", true);
       return;
     }
 
@@ -73,12 +88,12 @@ export default function AuthScreen() {
 
     try {
       if (isLogin) {
-        // LOGIN (Existing User -> Goes to Tabs)
+        // LOGIN
         await signInWithEmailAndPassword(auth, email.trim(), password);
         showToast("Welcome back!", false);
         router.replace("/(tabs)");
       } else {
-        // SIGNUP (New User -> Goes to Onboarding)
+        // SIGNUP
         const userCred = await createUserWithEmailAndPassword(
           auth,
           email.trim(),
@@ -88,7 +103,7 @@ export default function AuthScreen() {
 
         await updateProfile(user, { displayName: fullName.trim() });
 
-        // 💾 Save to Firestore database
+        // 💾 Save to Firestore
         await setDoc(doc(db, "users", user.uid), {
           uid: user.uid,
           fullName: fullName.trim(),
@@ -96,7 +111,7 @@ export default function AuthScreen() {
           photoURL: "",
           bio: "Eduxity Learner",
           interests: [],
-          eduCoins: 50, // Welcome bonus
+          eduCoins: 50,
           xp: 100,
           level: 1,
           streak: 0,
@@ -106,7 +121,6 @@ export default function AuthScreen() {
         });
 
         showToast("Account created successfully!", false);
-        // 🔥 FIX: Naye user ko Onboarding page pe bhejo
         router.replace({
           pathname: "/onboarding",
           params: { name: fullName.trim() },
@@ -146,13 +160,11 @@ export default function AuthScreen() {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
-      // Check if user already exists in our database
       const userRef = doc(db, "users", user.uid);
       const snap = await getDoc(userRef);
 
       if (!snap.exists()) {
-        // 🔥 NEW USER: Create Profile & Send to Onboarding
-        const fetchedName = user.displayName || "Eduxity User"; // Google se naam liya
+        const fetchedName = user.displayName || "Eduxity User";
 
         await setDoc(userRef, {
           uid: user.uid,
@@ -170,13 +182,11 @@ export default function AuthScreen() {
         });
 
         showToast(`Welcome ${fetchedName}! Let's set up your profile.`, false);
-        // Naye user ko params ke sath onboarding bhej diya taaki wahan naam dikh sake
         router.replace({
           pathname: "/onboarding",
           params: { name: fetchedName },
         });
       } else {
-        // 🔥 EXISTING USER: Seedha App ke andar bhejo
         showToast(`Welcome back ${user.displayName || ""}!`, false);
         router.replace("/(tabs)");
       }
@@ -190,19 +200,13 @@ export default function AuthScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* 🍞 SLEEK NOTIFICATION */}
       {toastMessage !== "" && (
         <Animated.View
           entering={SlideInUp.springify().damping(15)}
           exiting={FadeOutUp}
           style={styles.toastContainer}
         >
-          <View
-            style={[
-              styles.toastPill,
-              isError ? styles.toastError : styles.toastSuccess,
-            ]}
-          >
+          <View style={[styles.toastPill, isError ? styles.toastError : styles.toastSuccess]}>
             <Ionicons
               name={isError ? "warning" : "checkmark-circle"}
               size={20}
@@ -217,34 +221,28 @@ export default function AuthScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.headerArea}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          
+          <Animated.View entering={FadeInDown.duration(600)} style={styles.headerArea}>
             <View style={styles.header}>
               <View style={styles.logoWrapper}>
                 <BrandLogo variant="large" withGlow={true} />
               </View>
-              <Text style={styles.title}>Welcome Back</Text>
+              <Text style={styles.title}>{isLogin ? "Welcome Back" : "Create Account"}</Text>
             </View>
             <Text style={styles.subtitle}>
               {isLogin
                 ? "Log in to access your study materials"
                 : "Join Eduxity and start learning today"}
             </Text>
-          </View>
+          </Animated.View>
 
-          <View style={styles.formArea}>
-            {/* SIGNUP ONLY FIELD */}
+          <Animated.View entering={FadeInDown.delay(200).duration(600)} style={styles.formArea}>
+            
+            {/* FULL NAME (SIGNUP ONLY) */}
             {!isLogin && (
               <View style={styles.inputWrapper}>
-                <Ionicons
-                  name="person-outline"
-                  size={20}
-                  color="#94a3b8"
-                  style={styles.inputIcon}
-                />
+                <Ionicons name="person-outline" size={20} color="#94a3b8" style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="Full Name"
@@ -256,13 +254,9 @@ export default function AuthScreen() {
               </View>
             )}
 
+            {/* EMAIL */}
             <View style={styles.inputWrapper}>
-              <Ionicons
-                name="mail-outline"
-                size={20}
-                color="#94a3b8"
-                style={styles.inputIcon}
-              />
+              <Ionicons name="mail-outline" size={20} color="#94a3b8" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Email Address"
@@ -275,13 +269,9 @@ export default function AuthScreen() {
               />
             </View>
 
+            {/* PASSWORD */}
             <View style={styles.inputWrapper}>
-              <Ionicons
-                name="lock-closed-outline"
-                size={20}
-                color="#94a3b8"
-                style={styles.inputIcon}
-              />
+              <Ionicons name="lock-closed-outline" size={20} color="#94a3b8" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Password"
@@ -291,17 +281,29 @@ export default function AuthScreen() {
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
               />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={{ padding: 10 }}
-              >
-                <Ionicons
-                  name={showPassword ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                  color="#94a3b8"
-                />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 10 }}>
+                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#94a3b8" />
               </TouchableOpacity>
             </View>
+
+            {/* 🔥 NAYA: CONFIRM PASSWORD (SIGNUP ONLY) */}
+            {!isLogin && (
+              <Animated.View entering={FadeInDown.duration(400)} style={styles.inputWrapper}>
+                <Ionicons name="shield-checkmark-outline" size={20} color="#94a3b8" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Confirm Password"
+                  placeholderTextColor="#94a3b8"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry={!showConfirmPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={{ padding: 10 }}>
+                  <Ionicons name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#94a3b8" />
+                </TouchableOpacity>
+              </Animated.View>
+            )}
 
             {isLogin && (
               <TouchableOpacity style={styles.forgotPassBtn}>
@@ -309,70 +311,56 @@ export default function AuthScreen() {
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity
-              style={styles.mainBtn}
-              onPress={handleAuth}
-              disabled={loading}
-            >
+            <TouchableOpacity style={styles.mainBtn} onPress={handleAuth} disabled={loading}>
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.mainBtnText}>
-                  {isLogin ? "Log In" : "Sign Up"}
-                </Text>
+                <Text style={styles.mainBtnText}>{isLogin ? "Log In" : "Sign Up"}</Text>
               )}
             </TouchableOpacity>
-          </View>
+          </Animated.View>
 
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
-            <View style={styles.dividerLine} />
-          </View>
+          <Animated.View entering={FadeInDown.delay(400).duration(600)}>
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
+              <View style={styles.dividerLine} />
+            </View>
 
-          {/* SOCIAL LOGIN BUTTONS */}
-          <View style={styles.socialRow}>
-            <TouchableOpacity
-              style={styles.socialBtn}
-              onPress={() => handleSocialAuth("google")}
-              disabled={loading}
-            >
-              <Ionicons name="logo-google" size={22} color="#db4437" />
-              <Text style={styles.socialBtnText}>Google</Text>
-            </TouchableOpacity>
+            {/* SOCIAL LOGIN BUTTONS */}
+            <View style={styles.socialRow}>
+              <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialAuth("google")} disabled={loading}>
+                <Ionicons name="logo-google" size={22} color="#db4437" />
+                <Text style={styles.socialBtnText}>Google</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.socialBtn}
-              onPress={() => handleSocialAuth("facebook")}
-              disabled={loading}
-            >
-              <Ionicons name="logo-facebook" size={22} color="#1877f2" />
-              <Text style={[styles.socialBtnText, { color: "#1877f2" }]}>
-                Facebook
+              <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialAuth("facebook")} disabled={loading}>
+                <Ionicons name="logo-facebook" size={22} color="#1877f2" />
+                <Text style={[styles.socialBtnText, { color: "#1877f2" }]}>Facebook</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* BOTTOM TOGGLE */}
+            <View style={styles.footerArea}>
+              <Text style={styles.footerText}>
+                {isLogin ? "Don't have an account? " : "Already have an account? "}
               </Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setIsLogin(!isLogin);
+                  setEmail("");
+                  setPassword("");
+                  setConfirmPassword(""); // Reset confirm password too
+                  setFullName("");
+                }}
+              >
+                <Text style={styles.footerLink}>
+                  {isLogin ? "Sign Up" : "Log In"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
 
-          {/* BOTTOM TOGGLE */}
-          <View style={styles.footerArea}>
-            <Text style={styles.footerText}>
-              {isLogin
-                ? "Don't have an account? "
-                : "Already have an account? "}
-            </Text>
-            <TouchableOpacity
-              onPress={() => {
-                setIsLogin(!isLogin);
-                setEmail("");
-                setPassword("");
-                setFullName("");
-              }}
-            >
-              <Text style={styles.footerLink}>
-                {isLogin ? "Sign Up" : "Log In"}
-              </Text>
-            </TouchableOpacity>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -397,21 +385,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 30,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
+    // 🔥 FIX: Modern BoxShadow instead of deprecated props
+    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
     elevation: 5,
     borderWidth: 1,
   },
   toastError: { borderColor: "#fecaca" },
   toastSuccess: { borderColor: "#a7f3d0" },
-  toastText: {
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#0f172a",
-  },
+  toastText: { marginLeft: 8, fontSize: 14, fontWeight: "700", color: "#0f172a" },
 
   scrollContent: {
     flexGrow: 1,
@@ -420,33 +401,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  headerArea: {
-    alignItems: "center",
-    marginBottom: 35,
-    marginTop: Platform.OS === "web" ? 40 : 10,
-  },
-  logoBox: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    backgroundColor: "#eef2ff",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: "#0f172a",
-    marginBottom: 8,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: "#64748b",
-    textAlign: "center",
-    paddingHorizontal: 20,
-  },
+  headerArea: { alignItems: "center", marginBottom: 35, marginTop: Platform.OS === "web" ? 40 : 10 },
+  header: { alignItems: "center", width: "100%" },
+  logoWrapper: { alignItems: "center", justifyContent: "center", marginBottom: 20, width: "100%" },
+  title: { fontSize: 28, fontWeight: "900", color: "#0f172a", marginBottom: 8, letterSpacing: -0.5 },
+  subtitle: { fontSize: 15, color: "#64748b", textAlign: "center", paddingHorizontal: 20 },
 
   formArea: { width: "100%", marginBottom: 25 },
   inputWrapper: {
@@ -478,23 +437,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#4f46e5",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
+    // 🔥 FIX: Modern BoxShadow
+    boxShadow: '0px 6px 12px rgba(79, 70, 229, 0.3)',
     elevation: 5,
+    marginTop: 10,
   },
   mainBtnText: { color: "#fff", fontSize: 16, fontWeight: "800" },
 
   dividerRow: { flexDirection: "row", alignItems: "center", marginBottom: 25 },
   dividerLine: { flex: 1, height: 1, backgroundColor: "#e2e8f0" },
-  dividerText: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#94a3b8",
-    marginHorizontal: 15,
-    letterSpacing: 1,
-  },
+  dividerText: { fontSize: 12, fontWeight: "800", color: "#94a3b8", marginHorizontal: 15, letterSpacing: 1 },
 
   socialRow: { flexDirection: "row", gap: 15, marginBottom: 40 },
   socialBtn: {
@@ -507,31 +459,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
+    // 🔥 FIX: Modern BoxShadow
+    boxShadow: '0px 2px 5px rgba(0, 0, 0, 0.05)',
     elevation: 2,
   },
-  socialBtnText: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#334155",
-    marginLeft: 10,
-  },
+  socialBtnText: { fontSize: 15, fontWeight: "800", color: "#334155", marginLeft: 10 },
 
-  footerArea: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: "auto",
-  },
+  footerArea: { flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: "auto" },
   footerText: { fontSize: 14, color: "#64748b", fontWeight: "500" },
   footerLink: { fontSize: 14, color: "#4f46e5", fontWeight: "800" },
-  logoWrapper: {
-    alignItems: "center", // Ye logo ko horizontal center karega
-    justifyContent: "center",
-    marginBottom: 20, // Title aur logo ke beech thoda gap
-    width: "100%", // Poori screen ki width lega taaki center properly ho
-  },
 });

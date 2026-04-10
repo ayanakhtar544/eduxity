@@ -130,13 +130,13 @@ const styles = StyleSheet.create({
   
   // Grid
   heroGrid: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, marginBottom: 25 },
-  statCard: { flex: 1, paddingVertical: 20, alignItems: 'center', borderRadius: 20, borderWidth: 1, elevation: 1, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 5 },
+  statCard: { flex: 1, paddingVertical: 20, alignItems: 'center', borderRadius: 20, borderWidth: 1, elevation: 1, boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)' },
   iconCircle: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   statValue: { fontSize: 22, fontWeight: '900', color: '#0f172a', marginBottom: 2 },
   statLabel: { fontSize: 12, fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 },
 
   // Weak Spots
-  weakSpotsContainer: { backgroundColor: '#fff', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#0f172a', shadowOpacity: 0.04, shadowRadius: 15, elevation: 3 },
+  weakSpotsContainer: { backgroundColor: '#fff', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#e2e8f0', boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)', elevation: 3 },
   sectionHeader: { marginBottom: 20 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: '#0f172a', marginLeft: 8 },
   sectionSubtitle: { fontSize: 13, color: '#64748b', fontWeight: '500', marginLeft: 28, marginTop: 2 },

@@ -1,36 +1,38 @@
-// File: app/api/feed/+api.ts
-import prisma from "@/lib/prisma";
-import { fail, ok } from "@/app/api/_utils/response";
-import { scoreFeedItem, normalize, recencyDecay } from "@/app/api/_utils/feedRanking";
-import { withErrorHandler } from "@/app/api/_utils/errorHandler";
-import { withErrorHandling } from '@/core/errorHandler';
-import { FeedService } from '@/services/feedService';
+// File: server/api/feed/+api.ts
+import { prisma } from "@/server/prismaClient";
+import { fail, ok } from "@/server/utils/response";
+import { scoreFeedItem, normalize, recencyDecay } from "@/server/utils/feedRanking";
+import { withErrorHandler } from '@/server/utils/errorHandler';
+import { requireAuth } from "@/server/auth/verifyFirebaseToken";
 import { coreLogger } from "@/core/logger";
 
 export const GET = withErrorHandler(async (request: Request) => {
+
+    const authContext = await requireAuth(request);
+    if (!authContext) return fail("Unauthorized", 401);
+
     const { searchParams } = new URL(request.url);
-    const uid = searchParams.get("uid");
-    const page = Number(searchParams.get("page") || "1");
     const mode = searchParams.get("mode") || "FOR_YOU";
     const take = Number(searchParams.get("take") || "20");
-    const skip = Math.max(0, (page - 1) * take);
-
-    if (!uid) return fail("Unauthorized", 401);
+    const cursorStr = searchParams.get("cursor");
+    const cursor = cursorStr ? { id: cursorStr } : undefined;
 
     const user = await prisma.user.findUnique({
-      where: { firebaseUid: uid },
+      where: { firebaseUid: authContext.uid },
       select: { id: true, preferredTopics: true, preferredDifficulty: true },
     });
+    
     if (!user) return fail("User not found", 404);
 
     if (mode === "PERSONALIZED") {
       const items = await prisma.learningItem.findMany({
         where: { userId: user.id, sessionId: { not: null } },
         orderBy: { createdAt: "desc" },
-        skip,
         take,
+        ...(cursor ? { skip: 1, cursor } : {})
       });
-      return ok({ items, nextPage: items.length === take ? page + 1 : null });
+      const nextCursor = items.length === take ? items[items.length - 1].id : null;
+      return ok({ items, nextCursor });
     }
 
     const recentSeen = await prisma.userInteraction.findMany({
@@ -40,6 +42,7 @@ export const GET = withErrorHandler(async (request: Request) => {
       select: { learningItemId: true },
     });
     const recentlySeenIds = new Set(recentSeen.map((i) => i.learningItemId));
+    
     const userTopicInteractions = await prisma.userInteraction.findMany({
       where: { userId: user.id },
       select: { learningItemId: true, type: true, createdAt: true },
@@ -47,10 +50,12 @@ export const GET = withErrorHandler(async (request: Request) => {
       orderBy: { createdAt: "desc" },
     });
 
+    // Cursor Pagination replaces expensive skip mechanisms
     const candidates = await prisma.feedItem.findMany({
       include: { learningItem: true },
-      take: 400,
-      orderBy: { publishedAt: "desc" },
+      take,
+      ...(cursor ? { skip: 1, cursor } : {}),
+      orderBy: { createdAt: "desc" },
     });
 
     const preferredTopics = Array.isArray(user.preferredTopics) ? user.preferredTopics.map(String) : [];
@@ -91,22 +96,23 @@ export const GET = withErrorHandler(async (request: Request) => {
           unseenBoost,
           userPreference,
         });
-        return { item, score, reasons: { topicMatch, difficultyMatch, engagementScore, freshness, unseenBoost, userPreference } };
+        return { entry, item, score, reasons: { topicMatch, difficultyMatch, engagementScore, freshness, unseenBoost, userPreference } };
       })
       .sort((a, b) => b.score - a.score);
 
-    const pageItems = ranked.slice(skip, skip + take).map((x) => x.item);
-    coreLogger.info("feed.ranking.page", {
-      uid,
-      page,
+    const pageItems = ranked.map((x) => x.item);
+    const nextCursor = candidates.length === take ? candidates[candidates.length - 1].id : null;
+
+    coreLogger.info("feed.ranking.page.cursor", {
+      uid: user.id,
       take,
       candidates: filtered.length,
       returned: pageItems.length,
-      top: ranked.slice(0, 3).map((x) => ({ id: x.item.id, score: x.score, reasons: x.reasons })),
+      nextCursor
     });
 
     return ok({
       items: pageItems,
-      nextPage: ranked.length > skip + take ? page + 1 : null,
+      nextCursor,
     });
   }, "feed/get");

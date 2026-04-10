@@ -1,18 +1,19 @@
-import prisma from "@/lib/prisma";
-import { fail, ok } from "@/app/api/_utils/response";
-import { SessionStatus } from "@/prisma/generated/client";
+import { prisma } from "@/server/prismaClient";
+import { fail, ok } from "@/server/utils/response";
+import { withErrorHandler } from "@/server/utils/errorHandler";
+import { SessionStatus } from "@/server/prisma/generated/client";
+import { requireAuth } from "@/server/auth/verifyFirebaseToken";
 
-export async function POST(_request: Request, { params }: { params: { id: string } }) {
-  try {
+export const POST = withErrorHandler(async (request: Request, { params }: { params: { id: string } }) => {
+    const authContext = await requireAuth(request);
+    if (!authContext) return fail("Unauthorized", 401);
+
     const session = await prisma.learningSession.update({
-      where: { id: params.id },
-      data: {
-        status: SessionStatus.COMPLETED,
-        completedAt: new Date(),
-      },
+        where: { id: params.id },
+        data: {
+            status: SessionStatus.COMPLETED,
+            completedAt: new Date(),
+        },
     });
     return ok(session);
-  } catch {
-    return fail("Failed to complete session", 500);
-  }
-}
+}, "sessions/complete");

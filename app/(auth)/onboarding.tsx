@@ -1350,10 +1350,7 @@ const styles = StyleSheet.create({
   avatarSection: { alignItems: "center", marginBottom: 30 },
   avatarWrapper: {
     position: "relative",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
+    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
     elevation: 5,
   },
   avatarImage: {
@@ -1551,10 +1548,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#f1f5f9",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
+    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
     elevation: 10,
     overflow: "hidden",
   },

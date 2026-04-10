@@ -1,21 +1,20 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, ApiResponse } from "@/core/network/apiClient";
-import { useUserStore } from "@/store/useUserStore";
+
+// NOTE: uid is intentionally NOT sent in request bodies here.
+// All authed API routes extract the user identity exclusively from the
+// Firebase Bearer token (set by apiClient from the auth store). Passing
+// uid in the body is redundant and creates a defence-in-depth risk.
 
 export function useStreak() {
-  const { user } = useUserStore();
   const queryClient = useQueryClient();
 
   const updateStreak = useMutation({
     mutationFn: async () => {
-      if (!user?.uid) throw new Error("User not authenticated");
-      return apiClient<ApiResponse<any>>("/streak/update", {
-        method: "POST",
-        body: { uid: user.uid },
-      });
+      return apiClient<ApiResponse<any>>("/streak/update", { method: "POST", body: {} });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["streak", user?.uid] });
+      queryClient.invalidateQueries({ queryKey: ["streak"] });
       queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
     },
   });
@@ -31,7 +30,6 @@ export function useLeaderboard() {
 }
 
 export function useDailyChallenge() {
-  const { user } = useUserStore();
   const queryClient = useQueryClient();
 
   const challenge = useQuery({
@@ -41,10 +39,10 @@ export function useDailyChallenge() {
 
   const completeChallenge = useMutation({
     mutationFn: async (challengeId: string) => {
-      if (!user?.uid) throw new Error("User not authenticated");
+      // uid is NOT sent — server resolves identity from Bearer token
       return apiClient<ApiResponse<any>>("/daily-challenge/complete", {
         method: "POST",
-        body: { uid: user.uid, challengeId },
+        body: { challengeId },
       });
     },
     onSuccess: () => {
@@ -57,14 +55,9 @@ export function useDailyChallenge() {
 }
 
 export function useReviewDue() {
-  const { user } = useUserStore();
-  
   return useQuery({
-    queryKey: ["review-due", user?.uid],
-    queryFn: () => {
-      if (!user?.uid) return null;
-      return apiClient<ApiResponse<any[]>>(`/review/due?uid=${user.uid}`);
-    },
-    enabled: !!user?.uid,
+    queryKey: ["review-due"],
+    // uid is NOT sent as query param — server resolves from Bearer token
+    queryFn: () => apiClient<ApiResponse<any[]>>("/review/due"),
   });
 }

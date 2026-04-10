@@ -1,8 +1,8 @@
 // File: app/index.tsx
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { Redirect, useRouter } from "expo-router"; // 🚨 Redirect add kiya
+import React, { useEffect } from "react";
 import {
   Dimensions,
   SafeAreaView,
@@ -24,6 +24,7 @@ import Animated, {
 } from "react-native-reanimated";
 import BrandLogo from "../components/ui/BrandLogo";
 import EduxityLoader from "../components/ui/EduxityLoader";
+import { useUserStore } from "../store/useUserStore"; // 🚨 User store import kiya
 
 const { width, height } = Dimensions.get("window");
 
@@ -84,15 +85,12 @@ const FloatingElement = ({
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [isChecking, setIsChecking] = useState(true);
+  
+  // 🛡️ NAYA LOGIC: Local state ki jagah Global auth state use kar rahe hain
+  const { user, authReady } = useUserStore();
 
-  // 🛡️ Logic to prevent flash: Check auth and delay splash slightly
-  useEffect(() => {
-    const timer = setTimeout(() => setIsChecking(false), 800); // Thoda zyada time diya smooth transition ke liye
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (isChecking) {
+  // 🚦 STEP 1: Jab tak Firebase load ho raha hai, tumhara loader dikhega
+  if (!authReady) {
     return (
       <View style={styles.loaderScreen}>
         <EduxityLoader />
@@ -100,7 +98,12 @@ export default function HomeScreen() {
     );
   }
 
-  // 👇 ACTUAL ADVANCE WELCOME SCREEN 👇
+  // 🚦 STEP 2: Agar user already logged in hai, toh sidha Home (tabs) me bhej do (Ye fix karega Baar-Baar Login wala issue)
+  if (user) {
+    return <Redirect href="/(tabs)" />;
+  }
+
+  // 🚦 STEP 3: Agar user naya hai ya log out kar chuka hai, toh tumhara ye mast ACTUAL ADVANCE WELCOME SCREEN dikhao 👇
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
@@ -179,7 +182,7 @@ export default function HomeScreen() {
         >
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() => router.push("/auth")}
+            onPress={() => router.push("/(auth)/auth")} // 🚨 Ensure it points to correct auth route
             style={styles.mainButtonWrapper}
           >
             <LinearGradient
@@ -219,7 +222,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc", // Modern off-white slate
+    backgroundColor: "#f8fafc",
   },
   backgroundBlobs: {
     ...StyleSheet.absoluteFillObject,
@@ -253,7 +256,7 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
   highlightText: {
-    color: "#4f46e5", // Brand Indigo
+    color: "#4f46e5", 
   },
   subtitle: {
     fontSize: 16,
@@ -278,10 +281,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
     elevation: 2,
   },
   featureText: {
@@ -294,18 +293,14 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
     position: "absolute",
-    bottom: 50, // Screen ke bottom me chipka rahega
+    bottom: 50, 
     paddingHorizontal: 30,
   },
   mainButtonWrapper: {
     width: "100%",
     borderRadius: 16,
     overflow: "hidden",
-    shadowColor: "#4f46e5",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 15,
-    elevation: 10,
+    elevation: 5,
     marginBottom: 20,
   },
   mainButtonGradient: {

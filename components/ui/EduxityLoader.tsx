@@ -84,7 +84,6 @@ export default function EduxityLoader() {
       transform: [
         { scale: interpolate(transitionProgress.value, [0, 1], [0.8, 1]) }
       ],
-      shadowOpacity: interpolate(transitionProgress.value, [0, 1], [0, 0.3]),
     };
   });
 
@@ -129,10 +128,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     position: 'absolute',
-    shadowColor: '#4f46e5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
+    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
     elevation: 2,
   },
   logoOverlay: {
@@ -141,10 +137,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     position: 'absolute',
-    shadowColor: '#4f46e5',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
+    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
     elevation: 8,
   },
   logoImage: { 

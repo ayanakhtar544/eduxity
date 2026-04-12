@@ -3,17 +3,17 @@ import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-    Alert,
-    Modal,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 // 🔥 PATH CHECK: Ensure these paths match your project structure
@@ -50,12 +50,21 @@ export default function SettingsScreen() {
         await Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success,
         );
+
+      // Clear auth state from Zustand store first
       clearUserData();
+
+      // Then sign out from Firebase
       await signOut(auth);
+
+      // Finally redirect to home
       router.replace("/");
     } catch (error: any) {
-      console.error("Logout Error:", error);
-      Alert.alert("Error", "Failed to logout. Please try again.");
+      console.error("❌ Logout Error:", error);
+      Alert.alert(
+        "Error",
+        error?.message || "Failed to logout. Please try again.",
+      );
     }
   };
 

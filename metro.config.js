@@ -8,4 +8,9 @@ config.transformer = {
   unstable_transformProfile: "default",
 };
 
-module.exports = config;
+config.resolver.extraNodeModules = {
+  events: require.resolve("events/")
+};
+
+
+module.exports = config; 

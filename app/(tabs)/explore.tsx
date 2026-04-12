@@ -5,38 +5,38 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import {
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  query,
-  where,
+    collection,
+    doc,
+    getDoc,
+    onSnapshot,
+    query,
+    where,
 } from "firebase/firestore";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Platform,
-  Image as RNImage,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Platform,
+    Image as RNImage,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import Animated, {
-  FadeInDown,
-  FadeOutDown,
-  LinearTransition,
-  ZoomIn,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
+    FadeInDown,
+    FadeOutDown,
+    LinearTransition,
+    ZoomIn,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
 } from "react-native-reanimated";
 import {
-  SafeAreaView,
-  useSafeAreaInsets,
+    SafeAreaView,
+    useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { auth, db } from "../../core/firebase/firebaseConfig";
 
@@ -175,6 +175,16 @@ export default function MessagesListScreen() {
   // ==========================================
   // 🧠 COMBINE & SORT (Latest Message First)
   // ==========================================
+  const getTimestampValue = (ts: any) => {
+    if (!ts) return 0;
+    if (ts?.toMillis && typeof ts.toMillis === "function") {
+      return ts.toMillis();
+    }
+    if (typeof ts === "number") return ts;
+    const parsed = new Date(ts).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
   const filteredChats = useMemo(() => {
     let combinedChats = [...groups, ...directChats];
     const uid = auth.currentUser?.uid || "";
@@ -207,10 +217,8 @@ export default function MessagesListScreen() {
       const bPinned = b.pinnedBy?.includes(uid) ? 1 : 0;
       if (aPinned !== bPinned) return bPinned - aPinned;
 
-      const timeA =
-        a.lastMessageTime?.toMillis() || a.updatedAt?.toMillis() || 0;
-      const timeB =
-        b.lastMessageTime?.toMillis() || b.updatedAt?.toMillis() || 0;
+      const timeA = getTimestampValue(a.lastMessageTime || a.updatedAt);
+      const timeB = getTimestampValue(b.lastMessageTime || b.updatedAt);
       return timeB - timeA;
     });
   }, [groups, directChats, searchQuery, activeFilter]);
@@ -233,14 +241,16 @@ export default function MessagesListScreen() {
   const renderChatRow = ({ item }: { item: any }) => {
     const uid = auth.currentUser?.uid || "";
 
-    // 🔥 THE ULTIMATE UNREAD BUBBLE FIX (Strict Number parsing)
+    // 🔥 THE ULTIMATE UNREAD BUBBLE FIX (Support multiple field names)
     let unreadCount = 0;
-    if (item.unreadCount && typeof item.unreadCount === "object") {
-      unreadCount = Number(item.unreadCount[uid]) || 0;
-    } else if (typeof item.unreadCount === "number") {
-      unreadCount = item.unreadCount;
-    } else if (item.unread && typeof item.unread === "object") {
-      unreadCount = Number(item.unread[uid]) || 0;
+    const unreadCountsField =
+      item.unreadCount || item.unread || item.unreadCounts || {};
+    if (typeof unreadCountsField === "object") {
+      unreadCount = Number(unreadCountsField[uid]) || 0;
+    } else if (typeof unreadCountsField === "number") {
+      unreadCount = unreadCountsField;
+    } else if (typeof unreadCountsField === "string") {
+      unreadCount = Number(unreadCountsField) || 0;
     }
 
     const isPinned = item.pinnedBy?.includes(uid);
@@ -249,15 +259,23 @@ export default function MessagesListScreen() {
       item.typing?.filter((tUid: string) => tUid !== uid).length > 0;
 
     const timestamp = item.lastMessageTime || item.updatedAt;
+
     const formatTime = (ts: any) => {
-      if (!ts) return "";
-      const date = new Date(ts.toMillis());
+      const millis = getTimestampValue(ts);
+      if (!millis) return "";
+      const date = new Date(millis);
       const today = new Date();
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+
       if (date.toDateString() === today.toDateString()) {
         return date.toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
         });
+      }
+      if (date.toDateString() === yesterday.toDateString()) {
+        return "Yesterday";
       }
       return date.toLocaleDateString([], { month: "short", day: "numeric" });
     };
@@ -786,7 +804,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 6,
-    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
+    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.1)",
     elevation: 2,
   },
   unreadText: { color: "#ffffff", fontSize: 12, fontWeight: "900" },
@@ -817,7 +835,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 10,
     marginBottom: 15,
-    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
+    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.1)",
     elevation: 10,
     borderWidth: 1,
     borderColor: "#f1f5f9",
@@ -845,7 +863,7 @@ const styles = StyleSheet.create({
   },
 
   fabBtn: {
-    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
+    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.1)",
     elevation: 8,
     borderRadius: 32,
   },
@@ -871,7 +889,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(226,232,240,0.8)",
-    boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.1)',
+    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.1)",
     elevation: 10,
   },
   dockInner: {

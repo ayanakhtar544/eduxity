@@ -1,30 +1,19 @@
-import * as admin from "firebase-admin";
-import fs from "fs";
-import path from "path";
-
-import { coreLogger } from "@/core/logger";
+// Location: server/firebaseAdmin.ts
+import * as admin from 'firebase-admin';
 
 if (!admin.apps.length) {
   try {
-    const keyPath = path.resolve(process.cwd(), "serviceAccountKey.json");
-
-    if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-      });
-      coreLogger.info("firebase.admin.init.env");
-    } else if (fs.existsSync(keyPath)) {
-      admin.initializeApp({
-        credential: admin.credential.cert(keyPath),
-      });
-      coreLogger.info("firebase.admin.init.file");
-    } else {
-      admin.initializeApp();
-      coreLogger.info("firebase.admin.init.default");
-    }
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        // Replace \n with actual newlines if coming from env variable
+        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      }),
+    });
+    console.log('Firebase Admin Initialized Successfully');
   } catch (error) {
-    coreLogger.error("firebase.admin.init.failed", error);
+    console.error('Firebase Admin Initialization Error:', error);
   }
 }
 

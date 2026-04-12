@@ -646,7 +646,7 @@ export default function MVPAdvancedChatEngine() {
             <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={styles.headerTitle} numberOfLines={1}>{otherUser?.displayName || groupInfo?.name || "Chat"}</Text>
               <Text style={styles.headerSub} numberOfLines={1}>
-                {typingText || (otherUser ? "Online" : groupInfo?.lastMessage?.text || `${groupInfo?.members?.length || 1} members`)}
+                {typingText || (otherUser ? "Eduxity" : groupInfo?.lastMessage?.text || `${groupInfo?.members?.length || 1} members`)}
               </Text>
             </View>
           </TouchableOpacity>

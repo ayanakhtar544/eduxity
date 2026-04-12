@@ -1,18 +1,18 @@
-import React, { useEffect } from 'react';
-import { Stack } from 'expo-router'; 
-import * as SplashScreen from 'expo-splash-screen';
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import React, { useEffect } from "react";
 
 // TanStack Query Offline Persister
-import { QueryClient } from '@tanstack/react-query';
-import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 
-// Local Imports (SENTRY AUR PUSH NOTIFICATIONS HATA DIYE 🚨)
-import { useUserStore } from '../store/useUserStore';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../core/firebase/firebaseConfig';
-import Toast from 'react-native-toast-message';
+// Local Imports
+import { onAuthStateChanged } from "firebase/auth";
+import Toast from "react-native-toast-message";
+import { auth } from "../core/firebase/firebaseConfig";
+import { useUserStore } from "../store/useUserStore";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -22,8 +22,8 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      gcTime: 1000 * 60 * 60 * 24, 
-      staleTime: 1000 * 60 * 5,    
+      gcTime: 1000 * 60 * 60 * 24,
+      staleTime: 1000 * 60 * 5,
       retry: 2,
       refetchOnWindowFocus: false,
     },
@@ -38,41 +38,83 @@ const asyncStoragePersister = createAsyncStoragePersister({
 // 2. Main Layout Component
 // =========================================================
 export default function RootLayout() {
-  const { user, authReady, setUser, setAuthReady, syncUserWithDatabase } = useUserStore();
+  const {
+    user,
+    authReady,
+    setUser,
+    setAuthReady,
+    syncUserWithDatabase,
+    setAuthError,
+  } = useUserStore();
 
   useEffect(() => {
-    let timeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let unsubscribe: (() => void) | null = null;
+
+    // Set a fallback timeout in case Firebase takes too long
+    timeout = setTimeout(() => {
+      console.warn("⚠️ Firebase auth check timeout - showing app anyway");
       setAuthReady(true);
       SplashScreen.hideAsync().catch(() => {});
-    }, 5000);
+    }, 8000);
 
-    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser ?? null);
-      
-      if (firebaseUser) {
-        // 🔥 SILENT BACKGROUND SYNC: 
-        // Await hata diya taaki UI block na ho aur app instantly khul jaye
-        firebaseUser.getIdToken(true).then(() => {
-          syncUserWithDatabase(firebaseUser).catch(e => console.error("Sync failed silently", e));
-        }).catch(e => console.error("Token refresh failed", e));
+    // Listen to Firebase auth state changes
+    unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      try {
+        if (firebaseUser) {
+          // ✅ User is logged in
+          console.log("✅ User authenticated:", firebaseUser.email);
+          setUser(firebaseUser);
+
+          // 🔄 Sync with database in background (non-blocking)
+          firebaseUser
+            .getIdToken(true)
+            .then(() => {
+              syncUserWithDatabase(firebaseUser).catch((e) => {
+                console.warn("Background sync failed (non-critical):", e);
+                setAuthError(`Background sync failed: ${e.message}`);
+              });
+            })
+            .catch((e) => {
+              console.error("Token refresh failed:", e);
+              setAuthError(`Token refresh failed: ${e.message}`);
+            });
+        } else {
+          // ❌ User is logged out
+          console.log("❌ User not authenticated");
+          setUser(null);
+          setAuthError(null);
+        }
+
+        setAuthReady(true);
+
+        // Clear timeout since auth check completed
+        if (timeout) {
+          clearTimeout(timeout);
+          timeout = null;
+        }
+
+        SplashScreen.hideAsync().catch(() => {});
+      } catch (error) {
+        console.error("❌ Auth state change error:", error);
+        setAuthReady(true);
+        SplashScreen.hideAsync().catch(() => {});
       }
-      
-      setAuthReady(true);
-      if (timeout) clearTimeout(timeout);
-      SplashScreen.hideAsync().catch(() => {});
     });
-    
-    return () => {
-      if (timeout) clearTimeout(timeout);
-      unsub();
-    };
-  }, [setAuthReady, setUser, syncUserWithDatabase]);
 
+    return () => {
+      // Cleanup
+      if (timeout) clearTimeout(timeout);
+      if (unsubscribe) unsubscribe();
+    };
+  }, [setAuthReady, setUser, syncUserWithDatabase, setAuthError]);
+
+  // Don't render anything until auth is ready
   if (!authReady) return null;
 
   return (
-    <PersistQueryClientProvider 
-      client={queryClient} 
+    <PersistQueryClientProvider
+      client={queryClient}
       persistOptions={{ persister: asyncStoragePersister }}
     >
       {/* Main App Navigation Stack */}
@@ -85,5 +127,5 @@ export default function RootLayout() {
       </Stack>
       <Toast />
     </PersistQueryClientProvider>
-  );    
+  );
 }

@@ -554,7 +554,6 @@ export default function NetworkScreen() {
               source={{ uri: friendAvatar || DEFAULT_AVATAR }}
               style={styles.avatarMedium}
             />
-            <View style={styles.onlineDot} />
           </View>
           <View style={{ marginLeft: 12, flex: 1 }}>
             <Text style={styles.userNameList} numberOfLines={1}>

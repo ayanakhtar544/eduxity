@@ -1,8 +1,14 @@
-import { z } from "zod";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { LearningItemType } from "@/server/prisma/generated/client";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { z } from "zod";
 
-const ALLOWED_TYPES: LearningItemType[] = ["quiz", "flashcard", "match", "remember", "mini_game"];
+const ALLOWED_TYPES: LearningItemType[] = [
+  "quiz",
+  "flashcard",
+  "match",
+  "remember",
+  "mini_game",
+];
 
 const MicroItemSchema = z.object({
   type: z.enum(ALLOWED_TYPES),
@@ -29,15 +35,21 @@ const MicroItemsResponseSchema = z.object({
 });
 
 function stripCodeFences(input: string) {
-  return input.replace(/```json/g, "").replace(/```/g, "").trim();
+  return input
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
 }
 
 export async function generateMicroItemsFromAI(params: {
   topic: string;
   preferredType?: string;
   targetExam?: string;
+  language?: string;
   count: number;
+  context?: string;
 }): Promise<MicroLearningItem[]> {
+  const { topic, preferredType, targetExam, language, count, context } = params;
   const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) {
     throw new Error("Missing GEMINI_API_KEY");
@@ -47,7 +59,9 @@ export async function generateMicroItemsFromAI(params: {
   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
   const prompt = `You are an expert AI Tutor. Create a structured 15-step micro-learning course on the topic: "${topic}".
-${context ? `Use the following resources/context to extract insights: ${context}` : ''}
+${context ? `Use the following resources/context to extract insights: ${context}` : ""}
+${targetExam ? `Adapt the course for exam type: ${targetExam}.` : ""}
+${language ? `Write the learning output in ${language} medium.` : ""}
 
 You MUST return a strictly valid JSON array containing exactly 15 objects. 
 Follow this EXACT order and structure:

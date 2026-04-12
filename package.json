@@ -11,6 +11,8 @@
     "lint": "expo lint",
     "dev": "expo start",
     "api": "node --import tsx server/index.ts",
+    "test": "npm run api &sleep 3 && node scripts/e2e-test.mjs",
+    "test:e2e": "node scripts/e2e-test.mjs",
     "postinstall": "node scripts/fix-reanimated-semver.js && node scripts/fix-zustand.js"
   },
   "dependencies": {
@@ -31,6 +33,7 @@
     "@tanstack/react-query-persist-client": "^5.96.2",
     "cors": "^2.8.6",
     "dotenv": "^16.5.0",
+    "events": "^3.3.0",
     "expo": "^55.0.13",
     "expo-asset": "~12.0.12",
     "expo-audio": "~1.1.1",
@@ -60,11 +63,14 @@
     "expo-system-ui": "~6.0.9",
     "expo-video": "~3.0.16",
     "expo-web-browser": "~15.0.10",
+    "expo-auth-session": "^5.0.0",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.3.2",
     "firebase": "^12.10.0",
     "firebase-admin": "^13.7.0",
     "firebase-functions": "^7.2.3",
     "fontfaceobserver": "^2.3.0",
+    "helmet": "^8.1.0",
     "lucide-react": "^0.577.0",
     "lucide-react-native": "^0.577.0",
     "metro": "^0.83.1",
@@ -107,7 +113,7 @@
     "schema": "server/prisma/schema.prisma"
   },
   "private": true,
-  "description": "![Eduxity Banner](https://via.placeholder.com/1200x400.png?text=Eduxity+-+Study.+Connect.+Grow.) _(P.S. Yahan baad mein app ka ek mast banner image laga dena)_",
+  "description": "![Eduxity Banner](https://via.placeholder.com/1200x400.png?text=Eduxity+-+Study.+Connect.+Grow.)\n\nEduxity is a comprehensive educational platform designed to connect students, educators, and institutions. Our mission is to provide a seamless learning experience through innovative tools and resources that foster collaboration and growth.\n\n## Features\n\n- **Interactive Learning Modules**: Engage with dynamic content tailored to various subjects and learning styles.\n- **Community Forums**: Connect with peers and educators to discuss topics, share resources, and collaborate on projects.\n- **Personalized Learning Paths**: Receive customized recommendations based on your interests and progress.\n- **Real-time Analytics**: Track your learning journey with detailed insights and feedback.\n\n## Get Started\n\nJoin Eduxity today and embark on a transformative educational journey. Whether you're a student looking to enhance your learning experience or an educator seeking innovative teaching tools, Eduxity has something for everyone.",
   "keywords": [],
   "author": "",
   "license": "ISC"

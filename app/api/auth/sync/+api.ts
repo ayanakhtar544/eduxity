@@ -1,5 +1,5 @@
-import { prisma } from '../../../lib/prisma';
-import { handleApiError } from '../_utils/errorHandler';
+import { prisma } from "@/lib/prisma";
+import { handleApiError } from "@/server/utils/errorHandler";
 
 export async function POST(request: Request) {
   try {
@@ -9,8 +9,8 @@ export async function POST(request: Request) {
     // 1. Basic Validation
     if (!firebaseUid || !email) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Missing required fields' }), 
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: "Missing required fields" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
 
@@ -22,17 +22,16 @@ export async function POST(request: Request) {
         firebaseUid,
         email,
         name,
-        targetExam: 'JEE',
-        totalPoints: 0,      // Naya simplified field
-        currentStreak: 0,    // Naya simplified field
+        targetExam: "JEE",
+        totalPoints: 0, // Naya simplified field
+        currentStreak: 0, // Naya simplified field
       },
     });
 
-    return new Response(
-      JSON.stringify({ success: true, data: user }), 
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    );
-
+    return new Response(JSON.stringify({ success: true, data: user }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (error) {
     return handleApiError(error);
   }

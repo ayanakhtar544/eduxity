@@ -3,28 +3,27 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { signOut } from "firebase/auth";
 import {
-  arrayRemove,
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  onSnapshot,
-  query,
-  updateDoc,
-  where,
+    arrayRemove,
+    collection,
+    deleteDoc,
+    doc,
+    getDocs,
+    onSnapshot,
+    query,
+    updateDoc,
+    where,
 } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
-  Alert,
-  Dimensions,
-  FlatList,
-  Image,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Dimensions,
+    FlatList,
+    Image,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -38,11 +37,11 @@ export default function ProfileScreen() {
   const user = auth.currentUser;
 
   const [activeTab, setActiveTab] = useState<"posts" | "saved">("posts");
-  const [myPosts, setMyPosts] = useState<any[]>([]); 
+  const [myPosts, setMyPosts] = useState<any[]>([]);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const [myTests, setMyTests] = useState<any[]>([]); 
+  const [myTests, setMyTests] = useState<any[]>([]);
   const [loadingTests, setLoadingTests] = useState(true);
 
   const [savedAIPosts, setSavedAIPosts] = useState<any[]>([]);
@@ -163,11 +162,21 @@ export default function ProfileScreen() {
         style: "destructive",
         onPress: async () => {
           try {
+            // Import here to avoid circular dependencies
+            const { useUserStore } = await import("../../store/useUserStore");
+            const clearUserData = useUserStore.getState().clearUserData;
+
+            // Clear user data from store
+            clearUserData();
+
+            // Sign out from Firebase
             await signOut(auth);
-            router.replace("/login");
+
+            // Redirect to login
+            router.replace("/");
           } catch (error) {
             Alert.alert("Error", "Logout failed, please try again.");
-            console.error(error);
+            console.error("❌ Logout error:", error);
           }
         },
       },
@@ -244,51 +253,87 @@ export default function ProfileScreen() {
 
   const renderFeedItem = ({ item, index }: { item: any; index: number }) => {
     if (item.isSavedAIPost) {
-      const safeContent = typeof item.content === "object" && item.content !== null ? item.content : {};
-      let previewText = safeContent.title || safeContent.front || safeContent.question || safeContent.statement || "Saved Item";
+      const safeContent =
+        typeof item.content === "object" && item.content !== null
+          ? item.content
+          : {};
+      let previewText =
+        safeContent.title ||
+        safeContent.front ||
+        safeContent.question ||
+        safeContent.statement ||
+        "Saved Item";
 
       return (
-        <Animated.View entering={FadeInDown.delay(index * 50).springify()} style={styles.savedCard}>
+        <Animated.View
+          entering={FadeInDown.delay(index * 50).springify()}
+          style={styles.savedCard}
+        >
           <View style={styles.savedCardHeader}>
-            <Text style={styles.savedBadge}>{item.type.replace("_", " ").toUpperCase()}</Text>
+            <Text style={styles.savedBadge}>
+              {item.type.replace("_", " ").toUpperCase()}
+            </Text>
             <TouchableOpacity onPress={() => handleRemoveBookmark(item.id)}>
               <Ionicons name="bookmark" size={24} color="#4f46e5" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.savedTopicText}>{item.topic || "General Topic"}</Text>
-          <Text style={styles.savedPreviewText} numberOfLines={2}>{previewText}</Text>
+          <Text style={styles.savedTopicText}>
+            {item.topic || "General Topic"}
+          </Text>
+          <Text style={styles.savedPreviewText} numberOfLines={2}>
+            {previewText}
+          </Text>
         </Animated.View>
       );
     }
 
     if (item.isExamEngineTest) {
       return (
-        <Animated.View entering={FadeInDown.delay(index * 100).springify()} style={styles.testCard}>
-          <TouchableOpacity activeOpacity={0.8} onPress={() => router.push(`/test-analysis/${item.id}`)} style={{ flex: 1 }}>
+        <Animated.View
+          entering={FadeInDown.delay(index * 100).springify()}
+          style={styles.testCard}
+        >
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => router.push(`/test-analysis/${item.id}`)}
+            style={{ flex: 1 }}
+          >
             <View style={styles.testCardHeader}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <View style={styles.testBadgeContainer}>
                   <Ionicons name="school" size={14} color="#10b981" />
                   <Text style={styles.testBadgeTxt}>CBT EXAM</Text>
                 </View>
-                <Text style={[styles.testCategory, { marginLeft: 10 }]}>{item.category || "TEST"}</Text>
+                <Text style={[styles.testCategory, { marginLeft: 10 }]}>
+                  {item.category || "TEST"}
+                </Text>
               </View>
               {activeTab === "posts" && (
-                <TouchableOpacity onPress={() => handleDeleteTest(item.id)} style={styles.deleteMiniBtn}>
+                <TouchableOpacity
+                  onPress={() => handleDeleteTest(item.id)}
+                  style={styles.deleteMiniBtn}
+                >
                   <Ionicons name="trash-outline" size={18} color="#ef4444" />
                 </TouchableOpacity>
               )}
             </View>
-            <Text style={styles.testCardTitle} numberOfLines={2}>{item.title}</Text>
+            <Text style={styles.testCardTitle} numberOfLines={2}>
+              {item.title}
+            </Text>
             <View style={styles.testCardFooter}>
               <View style={styles.testFooterStat}>
                 <Ionicons name="list" size={14} color="#64748b" />
-                <Text style={styles.testFooterTxt}>{item.questions?.length || 0} Qs</Text>
+                <Text style={styles.testFooterTxt}>
+                  {item.questions?.length || 0} Qs
+                </Text>
               </View>
               <View style={styles.testFooterStat}>
                 <Ionicons name="time" size={14} color="#64748b" />
                 <Text style={styles.testFooterTxt}>
-                  {item.rules?.globalDuration || item.settings?.totalDuration || 0} Mins
+                  {item.rules?.globalDuration ||
+                    item.settings?.totalDuration ||
+                    0}{" "}
+                  Mins
                 </Text>
               </View>
             </View>
@@ -298,22 +343,37 @@ export default function ProfileScreen() {
     }
 
     return (
-      <Animated.View entering={FadeInDown.delay(index * 100).springify()} style={styles.miniPostCard}>
-        <TouchableOpacity activeOpacity={0.8} onPress={() => router.push(`/post/${item.id}`)}>
+      <Animated.View
+        entering={FadeInDown.delay(index * 100).springify()}
+        style={styles.miniPostCard}
+      >
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => router.push(`/post/${item.id}`)}
+        >
           <View style={styles.miniPostHeader}>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
               <View style={styles.badgeContainer}>
                 <Ionicons name="text" size={14} color="#4f46e5" />
-                <Text style={styles.miniPostType}>{item.type?.toUpperCase() || "POST"}</Text>
+                <Text style={styles.miniPostType}>
+                  {item.type?.toUpperCase() || "POST"}
+                </Text>
               </View>
             </View>
             {activeTab === "posts" && (
-              <TouchableOpacity onPress={() => handleDeleteFromProfile(item.id)} style={styles.deleteMiniBtn}>
+              <TouchableOpacity
+                onPress={() => handleDeleteFromProfile(item.id)}
+                style={styles.deleteMiniBtn}
+              >
                 <Ionicons name="trash-outline" size={18} color="#ef4444" />
               </TouchableOpacity>
             )}
           </View>
-          {item.title ? <Text style={styles.miniPostTitle} numberOfLines={1}>{item.title}</Text> : null}
+          {item.title ? (
+            <Text style={styles.miniPostTitle} numberOfLines={1}>
+              {item.title}
+            </Text>
+          ) : null}
           {item.imageUrl && (
             <View style={styles.miniImageContainer}>
               <Image source={{ uri: item.imageUrl }} style={styles.miniImage} />
@@ -328,8 +388,10 @@ export default function ProfileScreen() {
   // 🎮 SIMPLIFIED MVP STATS
   // ==========================================
   // Fallback to old gamification object if new fields aren't present yet
-  const totalPoints = userData?.totalPoints || userData?.gamification?.eduCoins || 0;
-  const currentStreak = userData?.currentStreak || userData?.gamification?.currentStreak || 0;
+  const totalPoints =
+    userData?.totalPoints || userData?.gamification?.eduCoins || 0;
+  const currentStreak =
+    userData?.currentStreak || userData?.gamification?.currentStreak || 0;
   const totalCreations = combinedFeed.length;
 
   return (
@@ -342,7 +404,10 @@ export default function ProfileScreen() {
           @{user?.displayName?.replace(/\s/g, "").toLowerCase() || "student"}
         </Text>
         <View style={styles.topIcons}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push("/edit-profile")}>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() => router.push("/edit-profile")}
+          >
             <Ionicons name="pencil-outline" size={24} color="#0f172a" />
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={handleLogout}>
@@ -363,31 +428,53 @@ export default function ProfileScreen() {
             {/* --- 👤 MAIN PROFILE HEADER --- */}
             <View style={styles.profileSection}>
               <View style={styles.avatarWrapper}>
-                <Image source={{ uri: user?.photoURL || DEFAULT_AVATAR }} style={styles.profileAvatar} />
+                <Image
+                  source={{ uri: user?.photoURL || DEFAULT_AVATAR }}
+                  style={styles.profileAvatar}
+                />
               </View>
 
               <View style={styles.profileDetails}>
-                <Text style={styles.fullName}>{user?.displayName || "Eduxity User"}</Text>
+                <Text style={styles.fullName}>
+                  {user?.displayName || "Eduxity User"}
+                </Text>
                 <View style={styles.roleContainer}>
                   <Ionicons name="school" size={14} color="#4f46e5" />
-                  <Text style={styles.roleText}>{userData?.roleDetail || "Community Member"}</Text>
+                  <Text style={styles.roleText}>
+                    {userData?.roleDetail || "Community Member"}
+                  </Text>
                 </View>
               </View>
             </View>
 
             {/* --- 🔥 MVP STATS DASHBOARD --- */}
             <View style={styles.highlightCardsContainer}>
-              <View style={[styles.highlightCard, { backgroundColor: "#fff7ed", borderColor: "#ffedd5" }]}>
+              <View
+                style={[
+                  styles.highlightCard,
+                  { backgroundColor: "#fff7ed", borderColor: "#ffedd5" },
+                ]}
+              >
                 <Text style={styles.highlightEmoji}>🔥</Text>
                 <Text style={styles.highlightValue}>{currentStreak}</Text>
                 <Text style={styles.highlightLabel}>Day Streak</Text>
               </View>
-              <View style={[styles.highlightCard, { backgroundColor: "#fefce8", borderColor: "#fef9c3" }]}>
+              <View
+                style={[
+                  styles.highlightCard,
+                  { backgroundColor: "#fefce8", borderColor: "#fef9c3" },
+                ]}
+              >
                 <Text style={styles.highlightEmoji}>🪙</Text>
                 <Text style={styles.highlightValue}>{totalPoints}</Text>
                 <Text style={styles.highlightLabel}>Total Points</Text>
               </View>
-              <View style={[styles.highlightCard, { backgroundColor: "#fdf2f8", borderColor: "#fce7f3" }]}>
+              <View
+                style={[
+                  styles.highlightCard,
+                  { backgroundColor: "#fdf2f8", borderColor: "#fce7f3" },
+                ]}
+              >
                 <Text style={styles.highlightEmoji}>📝</Text>
                 <Text style={styles.highlightValue}>{totalCreations}</Text>
                 <Text style={styles.highlightLabel}>Creations</Text>
@@ -397,20 +484,26 @@ export default function ProfileScreen() {
             {/* --- 📍 ABOUT CARD --- */}
             <View style={styles.aboutCard}>
               <Text style={styles.cardTitle}>About Me</Text>
-              <Text style={styles.bioText}>{userData?.bio || "No bio added yet."}</Text>
+              <Text style={styles.bioText}>
+                {userData?.bio || "No bio added yet."}
+              </Text>
 
               <View style={styles.infoRowGrid}>
                 {userData?.institutionName && (
                   <View style={styles.infoRow}>
                     <Ionicons name="business" size={16} color="#64748b" />
-                    <Text style={styles.infoText}>{userData.institutionName}</Text>
+                    <Text style={styles.infoText}>
+                      {userData.institutionName}
+                    </Text>
                   </View>
                 )}
                 {(userData?.city || userData?.state) && (
                   <View style={styles.infoRow}>
                     <Ionicons name="location" size={16} color="#64748b" />
                     <Text style={styles.infoText}>
-                      {[userData?.city, userData?.state].filter(Boolean).join(", ")}
+                      {[userData?.city, userData?.state]
+                        .filter(Boolean)
+                        .join(", ")}
                     </Text>
                   </View>
                 )}
@@ -420,21 +513,45 @@ export default function ProfileScreen() {
             {/* --- 🗂️ TAB SELECTOR --- */}
             <View style={styles.tabContainer}>
               <TouchableOpacity
-                style={[styles.tabBtn, activeTab === "posts" && styles.activeTabBtn]}
+                style={[
+                  styles.tabBtn,
+                  activeTab === "posts" && styles.activeTabBtn,
+                ]}
                 onPress={() => setActiveTab("posts")}
               >
-                <Ionicons name="grid-outline" size={20} color={activeTab === "posts" ? "#4f46e5" : "#64748b"} />
-                <Text style={[styles.tabText, activeTab === "posts" && styles.activeTabText]}>
+                <Ionicons
+                  name="grid-outline"
+                  size={20}
+                  color={activeTab === "posts" ? "#4f46e5" : "#64748b"}
+                />
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "posts" && styles.activeTabText,
+                  ]}
+                >
                   My Creation ({combinedFeed.length})
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.tabBtn, activeTab === "saved" && styles.activeTabBtn]}
+                style={[
+                  styles.tabBtn,
+                  activeTab === "saved" && styles.activeTabBtn,
+                ]}
                 onPress={() => setActiveTab("saved")}
               >
-                <Ionicons name="bookmark-outline" size={20} color={activeTab === "saved" ? "#4f46e5" : "#64748b"} />
-                <Text style={[styles.tabText, activeTab === "saved" && styles.activeTabText]}>
+                <Ionicons
+                  name="bookmark-outline"
+                  size={20}
+                  color={activeTab === "saved" ? "#4f46e5" : "#64748b"}
+                />
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "saved" && styles.activeTabText,
+                  ]}
+                >
                   Saved ({savedAIPosts.length})
                 </Text>
               </TouchableOpacity>
@@ -444,9 +561,19 @@ export default function ProfileScreen() {
         renderItem={renderFeedItem}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name={activeTab === "posts" ? "document-text-outline" : "bookmarks-outline"} size={60} color="#cbd5e1" />
+            <Ionicons
+              name={
+                activeTab === "posts"
+                  ? "document-text-outline"
+                  : "bookmarks-outline"
+              }
+              size={60}
+              color="#cbd5e1"
+            />
             <Text style={styles.emptyText}>
-              {activeTab === "posts" ? "You haven't posted or created tests yet." : "You haven't saved any AI posts yet."}
+              {activeTab === "posts"
+                ? "You haven't posted or created tests yet."
+                : "You haven't saved any AI posts yet."}
             </Text>
           </View>
         }

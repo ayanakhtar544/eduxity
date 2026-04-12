@@ -1,7 +1,4 @@
-import { fail } from "@/server/utils/response";
-
-// Re-export mapPrismaError so callers can import from either utils/errorHandler or utils/prisma
-export { mapPrismaError } from "@/server/utils/prisma";
+import { fail } from "./response";
 
 export function withErrorHandler<T extends any[]>(
   handler: (...args: T) => Promise<Response>,
@@ -12,7 +9,14 @@ export function withErrorHandler<T extends any[]>(
       return await handler(...args);
     } catch (error: any) {
       const message = error?.message || `${context} failed`;
+      console.error(`[${context}] Error:`, error);
       return fail(message, 500);
     }
   };
+}
+
+export function handleApiError(error: any): Response {
+  const message = error?.message || "API failed";
+  console.error("[API] Error:", error);
+  return fail(message, 500);
 }
